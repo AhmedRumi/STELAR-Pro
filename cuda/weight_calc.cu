@@ -17,6 +17,17 @@ struct CompactBipartition {
     int rightEnd;         // End index of right subtree range (exclusive)
 };
 
+// Mixed bipartition structure for cross-tree recombination
+// Left and right sides can come from different gene trees
+struct MixedCompactBipartition {
+    int leftTreeIndex;    // Gene tree index for left side
+    int leftStart;        // Start index of left subtree range (inclusive)
+    int leftEnd;          // End index of left subtree range (exclusive)
+    int rightTreeIndex;   // Gene tree index for right side (may differ from left)
+    int rightStart;       // Start index of right subtree range (inclusive)
+    int rightEnd;         // End index of right subtree range (exclusive)
+};
+
 // Legacy device function to calculate intersection cardinality using BitSets
 __device__ int intersectionCardinality(unsigned long long* bits1, unsigned long long* bits2, int bitsetSize) {
     int count = 0;
@@ -117,6 +128,48 @@ __device__ double calculateCompactScore(
         inverseIndex, orderings, numTaxa);
     
     // Apply same scoring formula as original implementation
+    double score1 = 0.0;
+    if (aa + bb >= 2) {
+        score1 = aa * bb * (aa + bb - 2) / 2.0;
+    }
+    
+    double score2 = 0.0;
+    if (ab + ba >= 2) {
+        score2 = ab * ba * (ab + ba - 2) / 2.0;
+    }
+    
+    return score1 + score2;
+}
+
+// Device function to calculate score for mixed bipartition (cross-tree recombination)
+// Key difference: left and right sides use separate tree indices
+__device__ double calculateMixedCompactScore(
+    MixedCompactBipartition mixed, CompactBipartition geneTree,
+    int* inverseIndex, int* orderings, int numTaxa
+) {
+    // Calculate four intersection sizes: AA, AB, BA, BB
+    // Use leftTreeIndex for left side, rightTreeIndex for right side
+    int aa = compactRangeIntersection(
+        mixed.leftTreeIndex, mixed.leftStart, mixed.leftEnd,
+        geneTree.geneTreeIndex, geneTree.leftStart, geneTree.leftEnd,
+        inverseIndex, orderings, numTaxa);
+        
+    int bb = compactRangeIntersection(
+        mixed.rightTreeIndex, mixed.rightStart, mixed.rightEnd,
+        geneTree.geneTreeIndex, geneTree.rightStart, geneTree.rightEnd,
+        inverseIndex, orderings, numTaxa);
+        
+    int ab = compactRangeIntersection(
+        mixed.leftTreeIndex, mixed.leftStart, mixed.leftEnd,
+        geneTree.geneTreeIndex, geneTree.rightStart, geneTree.rightEnd,
+        inverseIndex, orderings, numTaxa);
+        
+    int ba = compactRangeIntersection(
+        mixed.rightTreeIndex, mixed.rightStart, mixed.rightEnd,
+        geneTree.geneTreeIndex, geneTree.leftStart, geneTree.leftEnd,
+        inverseIndex, orderings, numTaxa);
+    
+    // Apply same scoring formula
     double score1 = 0.0;
     if (aa + bb >= 2) {
         score1 = aa * bb * (aa + bb - 2) / 2.0;
@@ -358,5 +411,132 @@ extern "C" {
         cudaFree(dOrderings);
         
         printf("==== COMPACT GPU KERNEL COMPLETED SUCCESSFULLY ====\n");
+    }
+    
+    // Mixed bipartition kernel for cross-tree recombination
+    __global__ void calculateMixedCompactWeightsKernel(
+        MixedCompactBipartition* mixedCandidates,  // Array of mixed bipartition candidates
+        CompactBipartition* geneTreeBips,           // Array of compact gene tree bipartitions
+        int* frequencies,                           // Array of frequencies for gene tree bipartitions
+        double* weights,                            // Output array for weights
+        int* inverseIndex,                          // Flattened inverse index
+        int* orderings,                             // Flattened orderings
+        int numCandidates,                          // Number of mixed bipartition candidates
+        int numGeneTreeBips,                        // Number of gene tree bipartitions
+        int numTaxa                                 // Number of taxa
+    ) {
+        int candidateIdx = blockIdx.x * blockDim.x + threadIdx.x;
+        if (candidateIdx >= numCandidates) return;
+        
+        double totalScore = 0.0;
+        MixedCompactBipartition candidate = mixedCandidates[candidateIdx];
+        
+        // Calculate score against all gene tree bipartitions
+        for (int i = 0; i < numGeneTreeBips; i++) {
+            double score = calculateMixedCompactScore(candidate, geneTreeBips[i], inverseIndex, orderings, numTaxa);
+            totalScore += score * frequencies[i];
+        }
+        
+        weights[candidateIdx] = totalScore;
+    }
+    
+    // Host function to launch the mixed bipartition kernel
+    void launchMixedWeightCalculation(
+        MixedCompactBipartition* hMixedCandidates,
+        CompactBipartition* hGeneTreeBips,
+        int* hFrequencies,
+        double* hWeights,
+        int* hInverseIndex,
+        int* hOrderings,
+        int numCandidates,
+        int numGeneTreeBips,
+        int numTrees,
+        int numTaxa
+    ) {
+        printf("==== LAUNCHING MIXED BIPARTITION GPU KERNEL ====\n");
+        printf("Mixed candidates: %d, Gene tree bips: %d, Trees: %d, Taxa: %d\n", 
+               numCandidates, numGeneTreeBips, numTrees, numTaxa);
+        
+        // Device allocations
+        MixedCompactBipartition *dMixedCandidates;
+        CompactBipartition *dGeneTreeBips;
+        int *dFrequencies, *dInverseIndex, *dOrderings;
+        double *dWeights;
+        
+        // Calculate memory sizes
+        size_t mixedCandidateSize = numCandidates * sizeof(MixedCompactBipartition);
+        size_t geneTreeSize = numGeneTreeBips * sizeof(CompactBipartition);
+        size_t frequencySize = numGeneTreeBips * sizeof(int);
+        size_t weightsSize = numCandidates * sizeof(double);
+        size_t inverseIndexSize = (size_t)numTrees * numTaxa * sizeof(int);
+        size_t orderingSize = (size_t)numTrees * numTaxa * sizeof(int);
+        
+        printf("Memory allocations:\n");
+        printf("  Mixed candidates: %zu KB\n", mixedCandidateSize / 1024);
+        printf("  Gene trees: %zu KB\n", geneTreeSize / 1024);
+        printf("  Inverse index: %zu MB\n", inverseIndexSize / (1024 * 1024));
+        printf("  Orderings: %zu MB\n", orderingSize / (1024 * 1024));
+        printf("  Total: %zu MB\n", (mixedCandidateSize + geneTreeSize + frequencySize + weightsSize + inverseIndexSize + orderingSize) / (1024 * 1024));
+        
+        // Allocate device memory
+        cudaMalloc(&dMixedCandidates, mixedCandidateSize);
+        cudaMalloc(&dGeneTreeBips, geneTreeSize);
+        cudaMalloc(&dFrequencies, frequencySize);
+        cudaMalloc(&dWeights, weightsSize);
+        cudaMalloc(&dInverseIndex, inverseIndexSize);
+        cudaMalloc(&dOrderings, orderingSize);
+        
+        // Copy data to device
+        printf("Copying data to GPU...\n");
+        cudaMemcpy(dMixedCandidates, hMixedCandidates, mixedCandidateSize, cudaMemcpyHostToDevice);
+        cudaMemcpy(dGeneTreeBips, hGeneTreeBips, geneTreeSize, cudaMemcpyHostToDevice);
+        cudaMemcpy(dFrequencies, hFrequencies, frequencySize, cudaMemcpyHostToDevice);
+        cudaMemcpy(dInverseIndex, hInverseIndex, inverseIndexSize, cudaMemcpyHostToDevice);
+        cudaMemcpy(dOrderings, hOrderings, orderingSize, cudaMemcpyHostToDevice);
+        
+        // Configure kernel launch parameters
+        int blockSize = 256;
+        int gridSize = (numCandidates + blockSize - 1) / blockSize;
+        
+        printf("Kernel configuration: %d blocks x %d threads = %d total threads\n", 
+               gridSize, blockSize, gridSize * blockSize);
+        
+        // Launch kernel
+        printf("Launching mixed bipartition weight calculation kernel...\n");
+        calculateMixedCompactWeightsKernel<<<gridSize, blockSize>>>(
+            dMixedCandidates, dGeneTreeBips, dFrequencies, dWeights,
+            dInverseIndex, dOrderings, numCandidates, numGeneTreeBips, numTaxa
+        );
+        
+        // Check for kernel launch errors
+        cudaError_t kernelError = cudaGetLastError();
+        if (kernelError != cudaSuccess) {
+            printf("CUDA kernel launch error: %s\n", cudaGetErrorString(kernelError));
+            return;
+        }
+        
+        // Wait for kernel to complete
+        cudaDeviceSynchronize();
+        
+        // Check for kernel execution errors
+        cudaError_t syncError = cudaGetLastError();
+        if (syncError != cudaSuccess) {
+            printf("CUDA kernel execution error: %s\n", cudaGetErrorString(syncError));
+            return;
+        }
+        
+        // Copy results back to host
+        printf("Copying results back to host...\n");
+        cudaMemcpy(hWeights, dWeights, weightsSize, cudaMemcpyDeviceToHost);
+        
+        // Free device memory
+        cudaFree(dMixedCandidates);
+        cudaFree(dGeneTreeBips);
+        cudaFree(dFrequencies);
+        cudaFree(dWeights);
+        cudaFree(dInverseIndex);
+        cudaFree(dOrderings);
+        
+        printf("==== MIXED BIPARTITION GPU KERNEL COMPLETED SUCCESSFULLY ====\n");
     }
 } 

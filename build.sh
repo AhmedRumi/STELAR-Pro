@@ -8,17 +8,17 @@ NC='\033[0m' # No Color
 
 echo "=== STELAR-X Build Script ==="
 
-# # Build CUDA code
-# echo -e "\n${YELLOW}Building CUDA code...${NC}"
-# cd cuda
-# make clean
-# make
-# if [ $? -ne 0 ]; then
-#     echo -e "${RED}CUDA compilation failed!${NC}"
-#     exit 1
-# fi
-# cd ..
-# echo -e "${GREEN}CUDA compilation successful${NC}"
+# Build CUDA code
+echo -e "\n${YELLOW}Building CUDA code...${NC}"
+cd cuda
+make clean
+make
+if [ $? -ne 0 ]; then
+    echo -e "${RED}CUDA compilation failed!${NC}"
+    exit 1
+fi
+cd ..
+echo -e "${GREEN}CUDA compilation successful${NC}"
 
 # Build Java code
 echo -e "\n${YELLOW}Building Java code...${NC}"

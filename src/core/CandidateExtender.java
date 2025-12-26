@@ -324,11 +324,11 @@ public class CandidateExtender {
                         }
                     }
                     
-                    // EXPENSIVE VERIFICATION: Check A ∩ B = ∅ and A ∪ B = C
-                    if (!verifyDisjointAndUnion(sideA, sideB, clusterHash)) {
-                        verificationFailures.incrementAndGet();
-                        continue; // Skip invalid pairs
-                    }
+                    // // EXPENSIVE VERIFICATION: Check A ∩ B = ∅ and A ∪ B = C
+                    // if (!verifyDisjointAndUnion(sideA, sideB, clusterHash)) {
+                    //     verificationFailures.incrementAndGet();
+                    //     continue; // Skip invalid pairs
+                    // }
                     
                     // Create ONE mixed bipartition (representatives of equivalent clusters)
                     MixedBipartition mixed;

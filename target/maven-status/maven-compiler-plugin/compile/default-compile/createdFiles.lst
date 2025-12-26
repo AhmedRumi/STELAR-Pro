@@ -28,6 +28,7 @@ taxon/Taxon.class
 core/ClusterHashManager.class
 core/WeightCalculator$WeightCalcLib$Bipartition.class
 core/MemoryOptimizedWeightCalculator.class
+core/WeightCalculator$WeightCalcLib$MixedCompactBipartition.class
 tree/TreePrinter$PrintableNode.class
 core/MemoryOptimizedWeightCalculator$1.class
 utils/HashUtils.class

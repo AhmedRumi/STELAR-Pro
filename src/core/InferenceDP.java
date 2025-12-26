@@ -7,6 +7,7 @@ import java.util.Map;
 
 import preprocessing.GeneTrees;
 import tree.RangeBipartition;
+import tree.MixedBipartition;
 import tree.Tree;
 import tree.TreeNode;
 import utils.BitSet;
@@ -36,6 +37,16 @@ public class InferenceDP {
         this.clusterToRangeBips = new HashMap<>();
         this.dpMemo = new HashMap<>();
         this.dpChoice = new HashMap<>();
+    }
+    
+    /**
+     * Enable mixed bipartitions (cross-tree recombination) for extended candidate set.
+     * This should be called before solve() if mixed bipartitions are to be used.
+     * 
+     * @param mixedBips List of mixed bipartitions from CandidateExtender
+     */
+    public void enableMixedBipartitions(List<MixedBipartition> mixedBips) {
+        memoryOptimizedDP.enableMixedBipartitions(mixedBips);
     }
     
     private void preprocessCandidates() {

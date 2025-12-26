@@ -61,6 +61,26 @@ public class WeightCalculator {
             }
         }
         
+        // Mixed compact bipartition structure for cross-tree recombination
+        // Left and right sides can come from different gene trees
+        @Structure.FieldOrder({"leftTreeIndex", "leftStart", "leftEnd", "rightTreeIndex", "rightStart", "rightEnd"})
+        public static class MixedCompactBipartition extends Structure {
+            public int leftTreeIndex;   // Gene tree index for left side
+            public int leftStart;
+            public int leftEnd;
+            public int rightTreeIndex;  // Gene tree index for right side (may differ from left)
+            public int rightStart;
+            public int rightEnd;
+            
+            public MixedCompactBipartition() {
+                super();
+            }
+            
+            public MixedCompactBipartition(Pointer p) {
+                super(p);
+            }
+        }
+        
         // Legacy BitSet-based kernel (for fallback)
         void launchWeightCalculation(
             Bipartition[] candidates,
@@ -75,6 +95,21 @@ public class WeightCalculator {
         // New memory-optimized kernel using compact ranges and inverse indices
         void launchCompactWeightCalculation(
             CompactBipartition[] candidates,
+            CompactBipartition[] geneTreeBips,
+            int[] frequencies,
+            double[] weights,
+            Pointer inverseIndexPtr,    // Flattened [tree*numTaxa + taxon] = position
+            Pointer orderingPtr,        // Flattened [tree*numTaxa + position] = taxon
+            int numCandidates,
+            int numGeneTreeBips,
+            int numTrees,
+            int numTaxa
+        );
+        
+        // Mixed bipartition kernel for cross-tree recombination
+        // Handles bipartitions where left and right sides come from different gene trees
+        void launchMixedWeightCalculation(
+            MixedCompactBipartition[] mixedCandidates,
             CompactBipartition[] geneTreeBips,
             int[] frequencies,
             double[] weights,

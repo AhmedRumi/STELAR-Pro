@@ -271,6 +271,323 @@ public class MemoryOptimizedWeightCalculator {
         return totalScore;
     }
     
+    // ========================================================================
+    // MIXED BIPARTITION SUPPORT
+    // For cross-tree recombination where left and right sides may come from
+    // different gene trees.
+    // ========================================================================
+    
+    /**
+     * Calculate score between a MixedBipartition and a RangeBipartition (gene tree).
+     * 
+     * Same intersection logic as calculateRangeScore, but uses separate tree indices
+     * for left and right sides of the mixed bipartition.
+     * 
+     * @param mixed The mixed bipartition (sides may be from different trees)
+     * @param geneTree The gene tree bipartition
+     * @return The score contribution
+     */
+    private double calculateMixedScore(MixedBipartition mixed, RangeBipartition geneTree) {
+        // Calculate four intersection sizes: AA, AB, BA, BB
+        // Key difference: use leftTreeIndex for left side, rightTreeIndex for right side
+        int aa = inverseIndexManager.getRangeIntersectionSize(
+            mixed.leftTreeIndex, mixed.leftStart, mixed.leftEnd,
+            geneTree.geneTreeIndex, geneTree.leftStart, geneTree.leftEnd);
+            
+        int bb = inverseIndexManager.getRangeIntersectionSize(
+            mixed.rightTreeIndex, mixed.rightStart, mixed.rightEnd,
+            geneTree.geneTreeIndex, geneTree.rightStart, geneTree.rightEnd);
+            
+        int ab = inverseIndexManager.getRangeIntersectionSize(
+            mixed.leftTreeIndex, mixed.leftStart, mixed.leftEnd,
+            geneTree.geneTreeIndex, geneTree.rightStart, geneTree.rightEnd);
+            
+        int ba = inverseIndexManager.getRangeIntersectionSize(
+            mixed.rightTreeIndex, mixed.rightStart, mixed.rightEnd,
+            geneTree.geneTreeIndex, geneTree.leftStart, geneTree.leftEnd);
+        
+        totalIntersectionCalculations += 4;
+        
+        // Same scoring formula as RangeBipartition
+        double score1 = 0;
+        if (aa + bb >= 2) {
+            score1 = aa * bb * (aa + bb - 2) / 2.0;
+        }
+        
+        double score2 = 0;
+        if (ab + ba >= 2) {
+            score2 = ab * ba * (ab + ba - 2) / 2.0;
+        }
+        
+        return score1 + score2;
+    }
+    
+    /**
+     * Calculate total weight for a single MixedBipartition.
+     * Sums the score contribution from all gene tree bipartitions.
+     * 
+     * @param mixed The mixed bipartition
+     * @return The total weight
+     */
+    public double calculateMixedWeight(MixedBipartition mixed) {
+        double totalScore = 0.0;
+        
+        for (Map.Entry<RangeBipartition, Integer> entry : geneTrees.rangeBipartitions.entrySet()) {
+            RangeBipartition geneTreeRange = entry.getKey();
+            int frequency = entry.getValue();
+            
+            double score = calculateMixedScore(mixed, geneTreeRange);
+            totalScore += score * frequency;
+            
+            totalScoreCalculations++;
+        }
+        
+        return totalScore;
+    }
+    
+    /**
+     * Calculate weights for a list of MixedBipartitions.
+     * Uses the configured computation mode (CPU single/parallel/GPU).
+     * 
+     * @param mixedCandidates List of mixed bipartitions
+     * @return Map of mixed bipartition to weight
+     */
+    public Map<MixedBipartition, Double> calculateMixedWeights(List<MixedBipartition> mixedCandidates) {
+        System.out.println("==== MIXED BIPARTITION WEIGHT CALCULATION STARTED ====");
+        System.out.println("Number of mixed candidates: " + mixedCandidates.size());
+        
+        long startTime = System.currentTimeMillis();
+        
+        Map<MixedBipartition, Double> result;
+        switch (Config.COMPUTATION_MODE) {
+            case CPU_SINGLE:
+                result = calculateMixedWeightsSingleThread(mixedCandidates);
+                break;
+            case CPU_PARALLEL:
+                result = calculateMixedWeightsMultiThread(mixedCandidates);
+                break;
+            case GPU_PARALLEL:
+                System.out.println("Using GPU for mixed bipartition weight calculation");
+                result = calculateMixedWeightsGPU(mixedCandidates);
+                break;
+            default:
+                throw new IllegalStateException("Unknown computation mode: " + Config.COMPUTATION_MODE);
+        }
+        
+        long endTime = System.currentTimeMillis();
+        
+        System.out.println("==== MIXED BIPARTITION WEIGHT CALCULATION COMPLETED ====");
+        System.out.println("Processing time: " + (endTime - startTime) + " ms");
+        System.out.println("Mixed bipartitions processed: " + result.size());
+        
+        return result;
+    }
+    
+    /**
+     * Single-threaded weight calculation for mixed bipartitions.
+     */
+    private Map<MixedBipartition, Double> calculateMixedWeightsSingleThread(List<MixedBipartition> candidates) {
+        Map<MixedBipartition, Double> weights = new HashMap<>();
+        
+        int processed = 0;
+        for (MixedBipartition mixed : candidates) {
+            double weight = calculateMixedWeight(mixed);
+            weights.put(mixed, weight);
+            
+            processed++;
+            if (processed % 1000 == 0 || processed == candidates.size()) {
+                System.out.println("Processed " + processed + "/" + candidates.size() + " mixed bipartitions");
+            }
+        }
+        
+        return weights;
+    }
+    
+    /**
+     * Multi-threaded weight calculation for mixed bipartitions.
+     */
+    private Map<MixedBipartition, Double> calculateMixedWeightsMultiThread(List<MixedBipartition> candidates) {
+        Map<MixedBipartition, Double> weights = new ConcurrentHashMap<>();
+        int numThreads = Runtime.getRuntime().availableProcessors();
+        
+        Threading.startThreading(numThreads);
+        
+        int chunkSize = Math.max(1, (candidates.size() + numThreads - 1) / numThreads);
+        int actualThreads = Math.min(numThreads, (candidates.size() + chunkSize - 1) / chunkSize);
+        CountDownLatch latch = new CountDownLatch(actualThreads);
+        
+        System.out.println("Using " + actualThreads + " threads for mixed bipartition weight calculation");
+        
+        for (int i = 0; i < actualThreads; i++) {
+            final int startIdx = i * chunkSize;
+            final int endIdx = Math.min(startIdx + chunkSize, candidates.size());
+            final int threadId = i;
+            
+            Threading.execute(() -> {
+                try {
+                    if (startIdx >= endIdx || startIdx >= candidates.size()) {
+                        return;
+                    }
+                    
+                    for (int j = startIdx; j < endIdx; j++) {
+                        MixedBipartition mixed = candidates.get(j);
+                        double weight = calculateMixedWeight(mixed);
+                        weights.put(mixed, weight);
+                    }
+                    
+                    System.out.println("Thread " + threadId + " completed " + (endIdx - startIdx) + " mixed bipartitions");
+                    
+                } finally {
+                    latch.countDown();
+                }
+            });
+        }
+        
+        try {
+            latch.await();
+        } catch (InterruptedException e) {
+            Thread.currentThread().interrupt();
+            throw new RuntimeException("Mixed weight calculation interrupted", e);
+        } finally {
+            Threading.shutdown();
+        }
+        
+        return weights;
+    }
+    
+    /**
+     * GPU weight calculation for mixed bipartitions using MixedCompactBipartition kernel.
+     */
+    private Map<MixedBipartition, Double> calculateMixedWeightsGPU(List<MixedBipartition> candidates) {
+        System.out.println("==== STARTING MIXED BIPARTITION GPU CALCULATION ====");
+        
+        try {
+            // Check if CUDA library is available
+            try {
+                WeightCalcLib.INSTANCE.toString();
+                System.out.println("CUDA library loaded successfully for mixed bipartitions");
+            } catch (UnsatisfiedLinkError e) {
+                System.err.println("CUDA library not found: " + e.getMessage());
+                System.out.println("Falling back to CPU calculation for mixed bipartitions...");
+                return calculateMixedWeightsMultiThread(candidates);
+            }
+            
+            int numCandidates = candidates.size();
+            int numTrees = inverseIndexManager.getNumTrees();
+            int numTaxa = inverseIndexManager.getNumTaxa();
+            
+            // Extract gene tree ranges and frequencies
+            List<RangeBipartition> geneTreeRanges = new ArrayList<>();
+            List<Integer> frequencies = new ArrayList<>();
+            
+            for (Map.Entry<Object, List<RangeBipartition>> entry : hashToBipartitions.entrySet()) {
+                List<RangeBipartition> ranges = entry.getValue();
+                if (!ranges.isEmpty()) {
+                    geneTreeRanges.add(ranges.get(0)); // Representative
+                    frequencies.add(ranges.size());    // Frequency
+                }
+            }
+            
+            int numGeneTreeBips = geneTreeRanges.size();
+            
+            System.out.println("Mixed GPU Parameters:");
+            System.out.println("  Mixed candidates: " + numCandidates);
+            System.out.println("  Gene tree bipartitions: " + numGeneTreeBips);
+            System.out.println("  Trees: " + numTrees);
+            System.out.println("  Taxa: " + numTaxa);
+            
+            // Convert mixed candidates to GPU format using contiguous memory allocation
+            WeightCalcLib.MixedCompactBipartition mixedTemplate = new WeightCalcLib.MixedCompactBipartition();
+            WeightCalcLib.MixedCompactBipartition[] mixedArray = 
+                (WeightCalcLib.MixedCompactBipartition[]) mixedTemplate.toArray(numCandidates);
+            
+            for (int i = 0; i < numCandidates; i++) {
+                MixedBipartition mixed = candidates.get(i);
+                mixedArray[i].leftTreeIndex = mixed.leftTreeIndex;
+                mixedArray[i].leftStart = mixed.leftStart;
+                mixedArray[i].leftEnd = mixed.leftEnd;
+                mixedArray[i].rightTreeIndex = mixed.rightTreeIndex;
+                mixedArray[i].rightStart = mixed.rightStart;
+                mixedArray[i].rightEnd = mixed.rightEnd;
+            }
+            
+            // Convert gene tree ranges to GPU compact format
+            WeightCalcLib.CompactBipartition geneTreeTemplate = new WeightCalcLib.CompactBipartition();
+            WeightCalcLib.CompactBipartition[] geneTreeArray = 
+                (WeightCalcLib.CompactBipartition[]) geneTreeTemplate.toArray(numGeneTreeBips);
+            
+            for (int i = 0; i < numGeneTreeBips; i++) {
+                RangeBipartition range = geneTreeRanges.get(i);
+                geneTreeArray[i].geneTreeIndex = range.geneTreeIndex;
+                geneTreeArray[i].leftStart = range.leftStart;
+                geneTreeArray[i].leftEnd = range.leftEnd;
+                geneTreeArray[i].rightStart = range.rightStart;
+                geneTreeArray[i].rightEnd = range.rightEnd;
+            }
+            
+            // Prepare frequency array
+            int[] frequencyArray = frequencies.stream().mapToInt(Integer::intValue).toArray();
+            
+            // Prepare result array
+            double[] weights = new double[numCandidates];
+            
+            // Flatten inverse index and ordering arrays for GPU
+            Memory inverseIndexMemory = flattenInverseIndex();
+            Memory orderingMemory = flattenOrderings();
+            
+            // Launch mixed bipartition GPU kernel
+            System.out.println("Launching mixed bipartition GPU kernel...");
+            System.out.flush(); // Flush to ensure we see logs before native call
+            
+            try {
+                WeightCalcLib.INSTANCE.launchMixedWeightCalculation(
+                    mixedArray,
+                    geneTreeArray,
+                    frequencyArray,
+                    weights,
+                    inverseIndexMemory,
+                    orderingMemory,
+                    numCandidates,
+                    numGeneTreeBips,
+                    numTrees,
+                    numTaxa
+                );
+            } catch (UnsatisfiedLinkError e) {
+                System.err.println("ERROR: launchMixedWeightCalculation not found in CUDA library!");
+                System.err.println("The CUDA library needs to be rebuilt with the new mixed bipartition kernel.");
+                System.err.println("Run: ./build.sh to rebuild the CUDA library");
+                System.err.println("JNA Error: " + e.getMessage());
+                throw e;
+            } catch (Exception e) {
+                System.err.println("ERROR calling launchMixedWeightCalculation: " + e.getMessage());
+                e.printStackTrace();
+                throw e;
+            }
+            
+            System.out.println("==== MIXED BIPARTITION GPU KERNEL COMPLETED ====");
+            
+            // Convert results back to Java Map
+            Map<MixedBipartition, Double> result = new HashMap<>();
+            for (int i = 0; i < numCandidates; i++) {
+                result.put(candidates.get(i), weights[i]);
+            }
+            
+            return result;
+            
+        } catch (Exception e) {
+            System.err.println("Mixed bipartition GPU calculation failed: " + e.getMessage());
+            e.printStackTrace();
+            System.out.println("Falling back to CPU calculation...");
+            return calculateMixedWeightsMultiThread(candidates);
+        }
+    }
+    
+    /**
+     * Get the inverse index manager (for external use).
+     */
+    public InverseIndexManager getInverseIndexManager() {
+        return inverseIndexManager;
+    }
     
     // Removed expensive buildCandidateRangeMapping and findMatchingRange methods
     // Using direct calculation approach instead
