@@ -1,0 +1,2 @@
+algorithm,input_file,output_file,running_time_s,max_cpu_mb,max_gpu_mb,exit_code
+stelar-x,all_gt_bs_rooted_48.tre,out-48.tre,0.901,287.906,15.360,0

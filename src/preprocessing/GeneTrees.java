@@ -17,7 +17,9 @@ import utils.Threading;
 import taxon.Taxon;
 import tree.Tree;
 import tree.RangeBipartition;
+import tree.MixedBipartition;
 import tree.MemoryEfficientBipartitionManager;
+import core.CandidateExtender;
 
 /**
  * GeneTrees: Preprocessing and management of input gene trees for wQFM-TREE.
@@ -48,6 +50,12 @@ public class GeneTrees {
     public Map<String, Taxon> taxaMap;          // Label to RealTaxon mapping
     public int realTaxaCount;                       // Total number of real taxa
     public String path;                             // Input file path
+    
+    // Memory-efficient bipartition manager (stored for candidate extension)
+    private MemoryEfficientBipartitionManager bipartitionManager;
+    
+    // Extended candidates from cross-tree recombination
+    private List<MixedBipartition> mixedBipartitions;
 
     /**
      * Extracts taxon names from a single Newick tree string.
@@ -296,11 +304,11 @@ public class GeneTrees {
 
         // Now use the memory-efficient bipartition manager to process RangeBipartitions
         System.out.println("\n=== Memory-Efficient RangeBipartition Processing ===");
-        MemoryEfficientBipartitionManager bipartitionManager = 
+        this.bipartitionManager = 
             new MemoryEfficientBipartitionManager(this.geneTrees, this.realTaxaCount);
         
         // Process gene trees using range-based representation
-        this.rangeBipartitions = bipartitionManager.processGeneTreesParallel();
+        this.rangeBipartitions = this.bipartitionManager.processGeneTreesParallel();
         
         // Output preprocessing statistics
         System.out.println("\n=== Gene Tree Processing Complete ===");
@@ -391,6 +399,80 @@ public class GeneTrees {
         // }
         
         return candidates;
+    }
+    
+    /**
+     * Generates extended candidate bipartitions using cross-tree recombination.
+     * 
+     * This method extends the candidate set CB by adding mixed bipartitions formed
+     * by combining clusters from different gene trees, subject to cluster consistency:
+     * - Each mixed bipartition (A|B) must satisfy A ∪ B = C for some cluster C
+     *   already in the DP state space (induced by observed gene tree bipartitions)
+     * 
+     * The extension can improve the optimal DP score by enabling cluster resolutions
+     * that are not present in any single gene tree.
+     * 
+     * @param enableExtension Whether to enable cross-tree recombination
+     * @return Extended candidate list containing both observed and mixed bipartitions
+     */
+    public List<RangeBipartition> generateExtendedCandidateBipartitions(boolean enableExtension) {
+        // Start with observed bipartitions from gene trees
+        List<RangeBipartition> candidates = generateCandidateBipartitions(false);
+        
+        if (!enableExtension || bipartitionManager == null) {
+            System.out.println("Cross-tree recombination disabled or bipartition manager not available");
+            return candidates;
+        }
+        
+        System.out.println("\n=== CROSS-TREE RECOMBINATION: Extending Candidate Set ===");
+        System.out.println("Original candidates (observed bipartitions): " + candidates.size());
+        
+        // Create CandidateExtender with prefix arrays from bipartition manager
+        long[][] prefixSums = bipartitionManager.getPrefixSums();
+        long[][] prefixXORs = bipartitionManager.getPrefixXORs();
+        int[][] geneTreeOrderings = bipartitionManager.getGeneTreeTaxaOrdering();
+        
+        CandidateExtender extender = new CandidateExtender(
+            candidates, prefixSums, prefixXORs, geneTreeOrderings);
+        
+        // Generate mixed bipartitions via cross-tree recombination
+        List<MixedBipartition> mixed = extender.generateMixedBipartitions();
+        this.mixedBipartitions = mixed;
+        
+        // Print statistics
+        System.out.println(extender.getStatistics());
+        
+        // Count cross-tree vs same-tree mixed bipartitions
+        long crossTreeCount = mixed.stream().filter(MixedBipartition::isCrossTree).count();
+        long sameTreeCount = mixed.size() - crossTreeCount;
+        
+        System.out.println("Mixed bipartition breakdown:");
+        System.out.println("  Cross-tree (new candidates): " + crossTreeCount);
+        System.out.println("  Same-tree (potentially redundant): " + sameTreeCount);
+        
+        // For now, we only return the observed bipartitions for weight computation
+        // The mixed bipartitions are stored separately and can be used later
+        // when weight computation is updated to handle MixedBipartition
+        System.out.println("\nNote: Currently using only observed bipartitions for weight computation");
+        System.out.println("Extended candidate set stored in mixedBipartitions field");
+        System.out.println("=== CROSS-TREE RECOMBINATION COMPLETE ===\n");
+        
+        return candidates;
+    }
+    
+    /**
+     * Get the mixed bipartitions generated by cross-tree recombination.
+     * Returns null if cross-tree recombination has not been run.
+     */
+    public List<MixedBipartition> getMixedBipartitions() {
+        return mixedBipartitions;
+    }
+    
+    /**
+     * Get the bipartition manager for external access to prefix arrays.
+     */
+    public MemoryEfficientBipartitionManager getBipartitionManager() {
+        return bipartitionManager;
     }
     
     // Removed addValidBipartition method - no longer used with memory-efficient approach

@@ -152,6 +152,8 @@ public class MemoryOptimizedInferenceDP {
         System.out.println("Memo hits: " + memoHits + " (" + 
                          (dpCalls > 0 ? String.format("%.2f%%", 100.0 * memoHits / dpCalls) : "0%") + ")");
         System.out.println("Cluster validations: " + clusterValidations);
+        System.out.println("Unique clusters in DP state space: " + clusterHashToRangeBips.size());
+        System.out.println("Unique clusters visited (memoized): " + dpMemo.size());
         
         // Print cluster hash manager statistics
         System.out.println("\n" + clusterHashManager.getStatistics());
