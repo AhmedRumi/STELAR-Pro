@@ -229,15 +229,16 @@ else
 fi
 
 # Launch STELAR -- prefer using TIME_CMD if available, otherwise run directly
+# Capture both stdout and stderr to TIME_TMP (using tee to also show live output)
 STELAR_PID=""
 if [[ "${TIME_MONITOR:-false}" = true && -n "$TIME_CMD" ]]; then
   (
-    cd "$STELAR_ROOT" && "$TIME_CMD" -v ./run.sh "$ALL_GT_FILE" "$OUT_STELAR" $STELAR_OPTS < /dev/null
-  ) 2> "$TIME_TMP" &
+    cd "$STELAR_ROOT" && "$TIME_CMD" -v ./run.sh "$ALL_GT_FILE" "$OUT_STELAR" $STELAR_OPTS < /dev/null 2>&1 | tee "$TIME_TMP"
+  ) &
   STELAR_PID=$!
 else
   (
-    cd "$STELAR_ROOT" && ./run.sh "$ALL_GT_FILE" "$OUT_STELAR" $STELAR_OPTS < /dev/null
+    cd "$STELAR_ROOT" && ./run.sh "$ALL_GT_FILE" "$OUT_STELAR" $STELAR_OPTS < /dev/null 2>&1 | tee "$TIME_TMP"
   ) &
   STELAR_PID=$!
 fi
@@ -314,9 +315,19 @@ fi
 # cleanup small sentinel
 rm -f "${SIMPHY_RUN_DIR%/}/.stelar_done" 2>/dev/null || true
 
+# Extract the optimal triplet score from STELAR output
+OPTIMAL_TRIPLET_SCORE="NA"
+if [[ -f "$TIME_TMP" ]]; then
+  SCORE_LINE=$(grep "OPTIMAL_TRIPLET_SCORE:" "$TIME_TMP" 2>/dev/null | tail -n1 || true)
+  if [[ -n "$SCORE_LINE" ]]; then
+    OPTIMAL_TRIPLET_SCORE=$(echo "$SCORE_LINE" | awk -F: '{gsub(/^[ \t]+/,"",$2); print $2}' | tr -d ' ')
+  fi
+fi
+
 echo "STELAR finished in ${RUNNING_TIME}s (exit code ${STELAR_EXIT_CODE})"
 echo "Max CPU RAM (MB): ${MAX_CPU_MB}"
 echo "Max GPU VRAM (MB): ${MAX_GPU_MB}"
+echo "Optimal Triplet Score: ${OPTIMAL_TRIPLET_SCORE}"
 
 # RF calculation (if rf.py exists and true species tree present)
 RF_RATE="NA"
@@ -344,26 +355,30 @@ fi
 
 # Write CSV (overwrite every run)
 mkdir -p "$(dirname "$STAT_FILE")"
-echo "alg,num-taxa,gene-trees,replicate,sb,spmin,spmax,rf-rate,running-time-s,max-cpu-mb,max-gpu-mb" > "$STAT_FILE"
-CSV_ROW="stelar,${TAXA_NUM},${GENE_TREES},${REPLICATE},${SB},${SPMIN},${SPMAX},${RF_RATE},${RUNNING_TIME},${MAX_CPU_MB},${MAX_GPU_MB}"
+echo "alg,num-taxa,gene-trees,replicate,sb,spmin,spmax,rf-rate,optimal-triplet-score,running-time-s,max-cpu-mb,max-gpu-mb" > "$STAT_FILE"
+CSV_ROW="stelar,${TAXA_NUM},${GENE_TREES},${REPLICATE},${SB},${SPMIN},${SPMAX},${RF_RATE},${OPTIMAL_TRIPLET_SCORE},${RUNNING_TIME},${MAX_CPU_MB},${MAX_GPU_MB}"
 echo "$CSV_ROW" >> "$STAT_FILE"
 
 echo "Wrote stats to $STAT_FILE"
 
 
 
-# Notification disabled
+# Send notification (ntfy)
+if [[ "$NO_NOTIFY" = false ]] && command -v curl >/dev/null 2>&1; then
+  STATUS_EMOJI=$(if [[ $STELAR_EXIT_CODE -eq 0 ]]; then echo "🎉"; else echo "❌"; fi)
+  STATUS_TEXT=$(if [[ $STELAR_EXIT_CODE -eq 0 ]]; then echo "completed"; else echo "failed (exit $STELAR_EXIT_CODE)"; fi)
+  
+  curl -s -d "${STATUS_EMOJI} STELAR ${STATUS_TEXT} for ${TAXA_NUM} taxa and ${GENE_TREES} gene trees!
 
-# # Send notification (ntfy)
-# if [[ "$NO_NOTIFY" = false ]] && command -v curl >/dev/null 2>&1; then
-#   curl -s -d "🎉 STELAR completed for ${TAXA_NUM} taxa and ${GENE_TREES} gene trees!
+📊 Results:
+• RF Rate: ${RF_RATE}
+• Optimal Triplet Score: ${OPTIMAL_TRIPLET_SCORE}
+• Running time: ${RUNNING_TIME}s
+• Max CPU RAM: ${MAX_CPU_MB} MB
+• Max GPU VRAM: ${MAX_GPU_MB} MB
 
-# 📊 Results:
-# alg,num-taxa,gene-trees,replicate,sb,spmin,spmax,rf-rate,running-time-s,max-cpu-mb,max-gpu-mb
-# $CSV_ROW
-
-# 📁 Stats saved to: $STAT_FILE" ntfy.sh/anik-test || true
-# fi
+📁 Stats saved to: $STAT_FILE" ntfy.sh/anik-test || true
+fi
 
 
 

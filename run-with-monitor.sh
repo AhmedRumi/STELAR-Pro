@@ -18,6 +18,7 @@ TIME_MONITOR=true     # when true: run `time -v` if available and capture stderr
 GPU_MONITOR=true      # when true: sample nvidia-smi while stelar runs
 NO_NOTIFY=false       # when true: skip ntfy.sh notifications
 DEBUG=0               # set DEBUG=1 to enable set -x
+USE_MIXED=true        # when true: use cross-tree recombination (--use-mixed)
 
 print_help() {
   cat <<EOF
@@ -32,6 +33,8 @@ Required:
 Optional:
   --stelar-root      Path to STELAR-X root directory (default: current directory)
   --stelar-opts      STELAR options (default: "$STELAR_OPTS")
+  --use-mixed        Enable cross-tree recombination (default: ON)
+  --no-mixed         Disable cross-tree recombination
   --no-time-monitor  Disable time-monitoring (overrides default ON)
   --no-gpu-monitor   Disable GPU-monitoring (overrides default ON)
   --no-notify, -nn   Disable ntfy.sh notifications
@@ -41,7 +44,7 @@ Optional:
 Examples:
   $0 my_genes.tre my_output.tre
   $0 input.tre output.tre --stelar-opts "CPU_PARALLEL DISTANCE_CONSENSUS"
-  $0 input.tre output.tre --no-time-monitor --no-gpu-monitor --no-notify
+  $0 input.tre output.tre --no-mixed --no-time-monitor --no-notify
 EOF
 }
 
@@ -61,6 +64,8 @@ while [[ $# -gt 0 ]]; do
   case "$1" in
     --stelar-root) STELAR_ROOT="$2"; shift 2 ;;
     --stelar-opts) STELAR_OPTS="$2"; shift 2 ;;
+    --use-mixed) USE_MIXED=true; shift ;;
+    --no-mixed) USE_MIXED=false; shift ;;
     --no-time-monitor) TIME_MONITOR=false; shift ;;
     --no-gpu-monitor) GPU_MONITOR=false; shift ;;
     --no-notify|-nn) NO_NOTIFY=true; shift ;;
@@ -91,6 +96,7 @@ echo "Input file:     $INPUT_FILE"
 echo "Output file:    $OUTPUT_FILE"
 echo "STELAR root:    $STELAR_ROOT"
 echo "STELAR options: $STELAR_OPTS"
+echo "Cross-tree recombination: $(if [[ "$USE_MIXED" = true ]]; then echo "enabled"; else echo "disabled"; fi)"
 echo "Time monitor:   $TIME_MONITOR"
 echo "GPU monitor:    $GPU_MONITOR"
 echo "Notifications:  $(if [[ "$NO_NOTIFY" = true ]]; then echo "disabled"; else echo "enabled"; fi)"
@@ -200,19 +206,26 @@ else
 fi
 
 # Launch STELAR -- prefer using TIME_CMD if available, otherwise run directly
+# Build complete argument list including USE_MIXED
+# run.sh args: INPUT OUTPUT COMPUTATION_MODE EXPANSION_METHOD DISTANCE_METHOD VERBOSE USE_MIXED
+# STELAR_OPTS typically contains: "COMPUTATION_MODE EXPANSION_METHOD"
+# We need to add DISTANCE_METHOD(UPGMA), VERBOSE(false), and USE_MIXED
+STELAR_FULL_ARGS="$STELAR_OPTS UPGMA false $USE_MIXED"
+
 STELAR_PID=""
 echo -e "${YELLOW}Running STELAR-X...${NC}"
-echo -e "${YELLOW}Command: cd $STELAR_ROOT && ./run.sh \"$INPUT_FILE\" \"$OUTPUT_FILE\" $STELAR_OPTS${NC}"
+echo -e "${YELLOW}Command: cd $STELAR_ROOT && ./run.sh \"$INPUT_FILE\" \"$OUTPUT_FILE\" $STELAR_FULL_ARGS${NC}"
 echo
 
+# Capture both stdout and stderr to TIME_TMP (using tee to also show live output)
 if [[ "${TIME_MONITOR:-false}" = true && -n "$TIME_CMD" ]]; then
   (
-    cd "$STELAR_ROOT" && "$TIME_CMD" -v ./run.sh "$INPUT_FILE" "$OUTPUT_FILE" $STELAR_OPTS < /dev/null
-  ) 2> "$TIME_TMP" &
+    cd "$STELAR_ROOT" && "$TIME_CMD" -v ./run.sh "$INPUT_FILE" "$OUTPUT_FILE" $STELAR_FULL_ARGS < /dev/null 2>&1 | tee "$TIME_TMP"
+  ) &
   STELAR_PID=$!
 else
   (
-    cd "$STELAR_ROOT" && ./run.sh "$INPUT_FILE" "$OUTPUT_FILE" $STELAR_OPTS < /dev/null
+    cd "$STELAR_ROOT" && ./run.sh "$INPUT_FILE" "$OUTPUT_FILE" $STELAR_FULL_ARGS < /dev/null 2>&1 | tee "$TIME_TMP"
   ) &
   STELAR_PID=$!
 fi
@@ -249,6 +262,15 @@ fi
 MAX_GPU_VAL="NA"
 if [[ -f "$MON_TMP" ]]; then
   MAX_GPU_VAL=$(cat "$MON_TMP" 2>/dev/null || echo "NA")
+fi
+
+# Extract the optimal triplet score from STELAR output
+OPTIMAL_TRIPLET_SCORE="NA"
+if [[ -f "$TIME_TMP" ]]; then
+  SCORE_LINE=$(grep "OPTIMAL_TRIPLET_SCORE:" "$TIME_TMP" 2>/dev/null | tail -n1 || true)
+  if [[ -n "$SCORE_LINE" ]]; then
+    OPTIMAL_TRIPLET_SCORE=$(echo "$SCORE_LINE" | awk -F: '{gsub(/^[ \t]+/,"",$2); print $2}' | tr -d ' ')
+  fi
 fi
 
 # Convert GPU MiB -> MB (decimal) if numeric
@@ -289,6 +311,7 @@ echo "Status:         $(if [[ $STELAR_EXIT_CODE -eq 0 ]]; then echo -e "${GREEN}
 echo "Running time:   ${RUNNING_TIME}s"
 echo "Max CPU RAM:    ${MAX_CPU_MB} MB"
 echo "Max GPU VRAM:   ${MAX_GPU_MB} MB"
+echo -e "${YELLOW}Optimal Triplet Score: ${OPTIMAL_TRIPLET_SCORE}${NC}"
 echo "Input file:     $INPUT_FILE"
 echo "Output file:    $OUTPUT_FILE"
 echo "Output exists:  $(if [[ -f "$OUTPUT_FILE" ]]; then echo "Yes"; else echo "No"; fi)"
@@ -298,28 +321,28 @@ fi
 
 # Create a simple stats file next to the output
 STATS_FILE="${OUTPUT_FILE%.tre}_stats.csv"
-echo "algorithm,input_file,output_file,running_time_s,max_cpu_mb,max_gpu_mb,exit_code" > "$STATS_FILE"
-echo "stelar-x,$(basename "$INPUT_FILE"),$(basename "$OUTPUT_FILE"),${RUNNING_TIME},${MAX_CPU_MB},${MAX_GPU_MB},${STELAR_EXIT_CODE}" >> "$STATS_FILE"
+echo "algorithm,input_file,output_file,running_time_s,max_cpu_mb,max_gpu_mb,optimal_triplet_score,exit_code" > "$STATS_FILE"
+echo "stelar-x,$(basename "$INPUT_FILE"),$(basename "$OUTPUT_FILE"),${RUNNING_TIME},${MAX_CPU_MB},${MAX_GPU_MB},${OPTIMAL_TRIPLET_SCORE},${STELAR_EXIT_CODE}" >> "$STATS_FILE"
 echo "Stats saved to: $STATS_FILE"
 
-# Notification disabled
-# # Send notification (ntfy) if enabled and curl available
-# if [[ "$NO_NOTIFY" = false ]] && command -v curl >/dev/null 2>&1; then
-#   STATUS_EMOJI=$(if [[ $STELAR_EXIT_CODE -eq 0 ]]; then echo "🎉"; else echo "❌"; fi)
-#   STATUS_TEXT=$(if [[ $STELAR_EXIT_CODE -eq 0 ]]; then echo "completed successfully"; else echo "failed (exit $STELAR_EXIT_CODE)"; fi)
+# Send notification (ntfy) if enabled and curl available
+if [[ "$NO_NOTIFY" = false ]] && command -v curl >/dev/null 2>&1; then
+  STATUS_EMOJI=$(if [[ $STELAR_EXIT_CODE -eq 0 ]]; then echo "🎉"; else echo "❌"; fi)
+  STATUS_TEXT=$(if [[ $STELAR_EXIT_CODE -eq 0 ]]; then echo "completed successfully"; else echo "failed (exit $STELAR_EXIT_CODE)"; fi)
   
-#   curl -s -d "${STATUS_EMOJI} STELAR-X ${STATUS_TEXT}!
+  curl -s -d "${STATUS_EMOJI} STELAR-X ${STATUS_TEXT}!
 
-# 📊 Performance:
-# • Running time: ${RUNNING_TIME}s
-# • Max CPU RAM: ${MAX_CPU_MB} MB
-# • Max GPU VRAM: ${MAX_GPU_MB} MB
+📊 Performance:
+• Running time: ${RUNNING_TIME}s
+• Max CPU RAM: ${MAX_CPU_MB} MB
+• Max GPU VRAM: ${MAX_GPU_MB} MB
+• Optimal Triplet Score: ${OPTIMAL_TRIPLET_SCORE}
 
-# 📁 Files:
-# • Input: $(basename "$INPUT_FILE")
-# • Output: $(basename "$OUTPUT_FILE")
-# • Stats: $(basename "$STATS_FILE")" ntfy.sh/anik-test || true
-# fi
+📁 Files:
+• Input: $(basename "$INPUT_FILE")
+• Output: $(basename "$OUTPUT_FILE")
+• Stats: $(basename "$STATS_FILE")" ntfy.sh/anik-test || true
+fi
 
 echo
 if [[ $STELAR_EXIT_CODE -eq 0 ]]; then

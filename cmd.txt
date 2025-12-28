@@ -2,4 +2,10 @@
 
 ./run-with-monitor.sh all_gt_bs_rooted_37.tre out-37.tre
 
-./run-with-monitor.sh all_gt_bs_rooted_48.tre out-48.tre --stelar-opts "--use-mixed"
+./run-with-monitor.sh all_gt_bs_rooted_48.tre out-48.tre
+
+./run-with-monitor.sh all_gt_bs_rooted_48.tre out-48.tre --no-mixed
+
+./run-with-monitor.sh all_gt_angio.tre out-angio-mixed.tre
+
+./run-with-monitor.sh all_gt_angio.tre out-angio-no-mixed.tre --no-mixed

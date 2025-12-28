@@ -2,7 +2,7 @@
 
 
 # STELAR-X Run Script with Bipartition Expansion Support
-# Usage: ./run.sh [input_file] [output_file] [computation_mode] [expansion_method] [distance_method] [verbose]
+# Usage: ./run.sh [input_file] [output_file] [computation_mode] [expansion_method] [distance_method] [verbose] [use_mixed]
 #
 # Arguments (all optional, will use defaults if not provided):
 #   input_file       - Gene trees file (default: all_gt_bs_rooted_100.tre)
@@ -11,6 +11,7 @@
 #   expansion_method - NONE, DISTANCE_ONLY, CONSENSUS_ONLY, DISTANCE_CONSENSUS, FULL (default: DISTANCE_CONSENSUS)
 #   distance_method  - UPGMA, NEIGHBOR_JOINING, BOTH (default: UPGMA)
 #   verbose         - true/false for verbose expansion output (default: false)
+#   use_mixed       - true/false for cross-tree recombination (default: true)
 #
 # Examples:
 #   ./run.sh                                                    # Use all defaults
@@ -18,6 +19,7 @@
 #   ./run.sh in.tre out.tre CPU_PARALLEL DISTANCE_ONLY   # Distance expansion only
 #   ./run.sh in.tre out.tre GPU_PARALLEL NONE            # No expansion (original STELAR)
 #   ./run.sh in.tre out.tre GPU_PARALLEL FULL UPGMA true # Full expansion with verbose output
+#   ./run.sh in.tre out.tre GPU_PARALLEL NONE UPGMA false false # No expansion, no mixed bipartitions
 
 
 #  ./run.sh all_gt_bs_rooted_11.tre out.tre GPU_PARALLEL NONE
@@ -29,7 +31,7 @@
 if [[ "$1" == "-h" || "$1" == "--help" ]]; then
     echo "STELAR-X Run Script"
     echo ""
-    echo "Usage: $0 [input_file] [output_file] [computation_mode] [expansion_method] [distance_method] [verbose]"
+    echo "Usage: $0 [input_file] [output_file] [computation_mode] [expansion_method] [distance_method] [verbose] [use_mixed]"
     echo ""
     echo "Arguments (all optional):"
     echo "  input_file       Gene trees file (default: all_gt_bs_rooted_100.tre)"
@@ -38,6 +40,7 @@ if [[ "$1" == "-h" || "$1" == "--help" ]]; then
     echo "  expansion_method NONE, DISTANCE_ONLY, CONSENSUS_ONLY, DISTANCE_CONSENSUS, FULL (default: DISTANCE_CONSENSUS)"
     echo "  distance_method  UPGMA, NEIGHBOR_JOINING, BOTH (default: UPGMA)"
     echo "  verbose         true/false for verbose expansion output (default: false)"
+    echo "  use_mixed       true/false for cross-tree recombination (default: true)"
     echo ""
     echo "Examples:"
     echo "  $0                                                    # Use all defaults"
@@ -45,6 +48,7 @@ if [[ "$1" == "-h" || "$1" == "--help" ]]; then
     echo "  $0 in.tre out.tre CPU_PARALLEL DISTANCE_ONLY   # Distance expansion only"
     echo "  $0 in.tre out.tre CPU_PARALLEL NONE            # No expansion (original STELAR)"
     echo "  $0 in.tre out.tre GPU_PARALLEL FULL UPGMA true # Full expansion with verbose output"
+    echo "  $0 in.tre out.tre GPU_PARALLEL NONE UPGMA false false # No mixed bipartitions"
     echo ""
     echo "Bipartition Expansion Methods:"
     echo "  NONE              - No expansion, original STELAR behavior"
@@ -62,6 +66,7 @@ DEFAULT_COMPUTATION_MODE="GPU_PARALLEL"
 DEFAULT_EXPANSION_METHOD="NONE"
 DEFAULT_DISTANCE_METHOD="UPGMA"
 DEFAULT_VERBOSE_EXPANSION="false"
+DEFAULT_USE_MIXED="true"
 
 # Get arguments or use defaults
 INPUT_FILE=${1:-$DEFAULT_INPUT_FILE}
@@ -70,6 +75,7 @@ COMPUTATION_MODE=${3:-$DEFAULT_COMPUTATION_MODE}
 EXPANSION_METHOD=${4:-$DEFAULT_EXPANSION_METHOD}
 DISTANCE_METHOD=${5:-$DEFAULT_DISTANCE_METHOD}
 VERBOSE_EXPANSION=${6:-$DEFAULT_VERBOSE_EXPANSION}
+USE_MIXED=${7:-$DEFAULT_USE_MIXED}
 
 # Colors for output
 GREEN='\033[0;32m'
@@ -108,6 +114,7 @@ echo "Computation mode: $COMPUTATION_MODE"
 echo "Expansion method: $EXPANSION_METHOD"
 echo "Distance method: $DISTANCE_METHOD"
 echo "Verbose expansion: $VERBOSE_EXPANSION"
+echo "Cross-tree recombination (use_mixed): $USE_MIXED"
 echo
 
 # Check if input file exists
@@ -157,6 +164,13 @@ fi
 # Add no-expansion flag if expansion is disabled
 if [ "$EXPANSION_METHOD" = "NONE" ]; then
     JAVA_ARGS="$JAVA_ARGS --no-expansion"
+fi
+
+# Add mixed bipartition flag
+if [ "$USE_MIXED" = "true" ]; then
+    JAVA_ARGS="$JAVA_ARGS --use-mixed"
+else
+    JAVA_ARGS="$JAVA_ARGS --no-mixed"
 fi
 
 # Run the program with the library path set for this run only

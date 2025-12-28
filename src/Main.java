@@ -69,6 +69,8 @@ public class Main {
                 }
             } else if (args[i].equals("--use-mixed") || args[i].equals("--extend-candidates")) {
                 useMixedBipartitions = true;
+            } else if (args[i].equals("--no-mixed")) {
+                useMixedBipartitions = false;
             }
         }
 
@@ -83,7 +85,8 @@ public class Main {
             System.out.println("  --lambda <val> Lambda parameter for branch support (default: 0.5)");
             System.out.println("  -v            Verbose expansion output");
             System.out.println("  --no-expansion Disable bipartition expansion");
-            System.out.println("  --use-mixed   Enable cross-tree recombination (mixed bipartitions in DP)");
+            System.out.println("  --use-mixed   Enable cross-tree recombination (default: ON)");
+            System.out.println("  --no-mixed    Disable cross-tree recombination");
             System.exit(-1);
         }
 
@@ -248,7 +251,9 @@ public class Main {
         long endTime = System.nanoTime();
         double duration = (endTime - startTime) / 1_000_000_000.0; // Convert to seconds
 
-        System.out.println("Score: " + score);
+        System.out.println("\n========================================");
+        System.out.println("OPTIMAL_TRIPLET_SCORE: " + score);
+        System.out.println("========================================");
         System.out.println("Time taken: " + duration + " seconds");
         System.out.println("Program completed successfully!");
         System.out.println("Output written to: " + outputFilePath);
