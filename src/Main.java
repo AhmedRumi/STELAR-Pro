@@ -2,11 +2,14 @@ import java.io.FileWriter;
 import java.io.IOException;
 import java.io.File;
 import java.io.FileNotFoundException;
+import java.io.BufferedReader;
+import java.io.FileReader;
 import java.util.ArrayList;
 import java.util.List;
 import preprocessing.GeneTrees;
 import utils.Config;
 import core.InferenceDP;
+import core.SpeciesTreeScorer;
 import tree.RangeBipartition;
 import tree.MixedBipartition;
 import tree.Tree;
@@ -34,6 +37,7 @@ public class Main {
         String branchSupport = null;
         double lambda = 0.5;
         boolean useMixedBipartitions = true;  // Cross-tree recombination flag
+        String speciesTreePath = null;  // For score-only mode
 
         // Parse command line arguments
         for (int i = 0; i < args.length; i++) {
@@ -43,6 +47,9 @@ public class Main {
             } else if (args[i].equals("-o") && i + 1 < args.length) {
                 outputFilePath = args[i + 1];
                 i++; // Skip next argument as it's the file path
+            } else if ((args[i].equals("-c") || args[i].equals("--score")) && i + 1 < args.length) {
+                speciesTreePath = args[i + 1];
+                i++; // Skip next argument as it's the species tree path
             } else if (args[i].equals("-m") && i + 1 < args.length) {
                 computationMode = args[i + 1];
                 i++; // Skip next argument as it's the mode
@@ -75,9 +82,16 @@ public class Main {
         }
 
         // Validate required arguments
-        if (inputFilePath == null || outputFilePath == null) {
-            System.out.println("Usage: java Main -i <input_file> -o <output_file> [options]");
+        // Score-only mode: -i gene_trees.tre -c species_tree.tre (no -o needed)
+        // Inference mode: -i gene_trees.tre -o output.tre
+        if (inputFilePath == null || (outputFilePath == null && speciesTreePath == null)) {
+            System.out.println("Usage:");
+            System.out.println("  Inference mode: java Main -i <gene_trees> -o <output_file> [options]");
+            System.out.println("  Score mode:     java Main -i <gene_trees> -c <species_tree> [options]");
+            System.out.println("");
             System.out.println("Options:");
+            System.out.println("  -c <tree>     Calculate triplet score between gene trees and given species tree");
+            System.out.println("  --score <tree> Same as -c");
             System.out.println("  -m <mode>     Computation mode: CPU_SINGLE, CPU_PARALLEL, GPU_PARALLEL");
             System.out.println("  -e <method>   Expansion method: NONE, DISTANCE_ONLY, CONSENSUS_ONLY, DISTANCE_CONSENSUS, FULL");
             System.out.println("  -d <method>   Distance method: UPGMA, NEIGHBOR_JOINING, BOTH");
@@ -140,17 +154,28 @@ public class Main {
             System.out.println("Verbose expansion output enabled.");
         }
 
+        // Determine mode
+        boolean scoreMode = (speciesTreePath != null);
+        
         System.out.println("Input file: " + inputFilePath);
-        System.out.println("Output file: " + outputFilePath);
-        System.out.println("Computation mode: " + Config.COMPUTATION_MODE);
-        System.out.println("Expansion method: " + utils.BipartitionExpansionConfig.EXPANSION_METHOD);
-        if (utils.BipartitionExpansionConfig.isDistanceExpansionEnabled()) {
-            System.out.println("Distance method: " + utils.BipartitionExpansionConfig.DISTANCE_METHOD);
+        if (scoreMode) {
+            System.out.println("Mode: SCORE (calculate triplet score for given species tree)");
+            System.out.println("Species tree: " + speciesTreePath);
+        } else {
+            System.out.println("Mode: INFERENCE (find optimal species tree)");
+            System.out.println("Output file: " + outputFilePath);
         }
-        System.out.println("Cross-tree recombination (--use-mixed): " + (useMixedBipartitions ? "ENABLED" : "disabled"));
-        if (branchSupport != null) {
-            System.out.println("Branch support: " + branchSupport);
-            System.out.println("Lambda parameter: " + lambda);
+        System.out.println("Computation mode: " + Config.COMPUTATION_MODE);
+        if (!scoreMode) {
+            System.out.println("Expansion method: " + utils.BipartitionExpansionConfig.EXPANSION_METHOD);
+            if (utils.BipartitionExpansionConfig.isDistanceExpansionEnabled()) {
+                System.out.println("Distance method: " + utils.BipartitionExpansionConfig.DISTANCE_METHOD);
+            }
+            System.out.println("Cross-tree recombination (--use-mixed): " + (useMixedBipartitions ? "ENABLED" : "disabled"));
+            if (branchSupport != null) {
+                System.out.println("Branch support: " + branchSupport);
+                System.out.println("Lambda parameter: " + lambda);
+            }
         }
 
         long startTime = System.nanoTime();
@@ -160,6 +185,55 @@ public class Main {
         geneTrees.readTaxaNames(); // Ensure taxaMap is initialized
         geneTrees.readGeneTrees(null);
 
+        // ================================================================
+        // SCORE MODE: Calculate triplet score for given species tree
+        // ================================================================
+        if (scoreMode) {
+            // Validate species tree file exists
+            File speciesFile = new File(speciesTreePath);
+            if (!speciesFile.exists()) {
+                System.err.println("Error: Species tree file '" + speciesTreePath + "' does not exist.");
+                System.exit(-1);
+            }
+            
+            // Read species tree newick
+            String speciesNewick = null;
+            try (BufferedReader reader = new BufferedReader(new FileReader(speciesTreePath))) {
+                speciesNewick = reader.readLine();
+                if (speciesNewick != null) {
+                    speciesNewick = speciesNewick.trim();
+                }
+            }
+            
+            if (speciesNewick == null || speciesNewick.isEmpty()) {
+                System.err.println("Error: Species tree file is empty.");
+                System.exit(-1);
+            }
+            
+            System.out.println("\nParsing species tree...");
+            Tree speciesTree = new Tree(speciesNewick, geneTrees.taxaMap);
+            System.out.println("Species tree parsed: " + speciesTree.leavesCount + " leaves");
+            
+            // Calculate triplet score
+            SpeciesTreeScorer scorer = new SpeciesTreeScorer(geneTrees);
+            double score = scorer.calculateScore(speciesTree);
+            
+            long endTime = System.nanoTime();
+            double duration = (endTime - startTime) / 1_000_000_000.0;
+            
+            System.out.println("\n========================================");
+            System.out.println("TRIPLET_SCORE: " + score);
+            System.out.println("========================================");
+            System.out.println("Time taken: " + duration + " seconds");
+            System.out.println("Score calculation completed successfully!");
+            
+            return;
+        }
+
+        // ================================================================
+        // INFERENCE MODE: Find optimal species tree via DP
+        // ================================================================
+        
         // Generate candidate bipartitions with cross-tree recombination extension
         System.out.println("Generating candidate bipartitions...");
         

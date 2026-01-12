@@ -1,0 +1,15 @@
+
+Triplet Score Comparison
+=========================
+
+with / without bipartition mixing between trees
+
+Angiosperms
+
+without - 4545044543751
+with 	- 4545409042107
+
+1KP
+
+without - 24131538564
+with	- 24131945335

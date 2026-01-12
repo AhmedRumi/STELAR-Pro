@@ -1,5 +1,7 @@
 ./run-with-monitor.sh 1kp-og.tre out-1kp-og.tre
 
+./run-with-monitor.sh 1kp-og-2.tre out-1kp-og.tre
+
 ./run-with-monitor.sh all_gt_bs_rooted_37.tre out-37.tre
 
 ./run-with-monitor.sh all_gt_bs_rooted_48.tre out-48.tre
@@ -9,3 +11,9 @@
 ./run-with-monitor.sh all_gt_angio.tre out-angio-mixed.tre
 
 ./run-with-monitor.sh all_gt_angio.tre out-angio-no-mixed.tre --no-mixed
+
+./run-with-monitor.sh s_angio.tre out.tre
+
+./calc.sh all_gt_bs_rooted_37.tre out-37.tre GPU_PARALLEL
+
+./calc.sh all_gt_angio.tre s_angio.tre GPU_PARALLEL

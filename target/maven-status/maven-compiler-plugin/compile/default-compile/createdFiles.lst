@@ -2,6 +2,7 @@ tree/RangeBipartition$HashPair.class
 utils/BitSet.class
 tree/RangeBipartition$SumHashFunction.class
 tree/MemoryEfficientBipartitionManager.class
+core/SpeciesTreeScorer$1.class
 core/MemoryOptimizedInferenceDP.class
 tree/TreeNode.class
 utils/BipartitionExpansionConfig$ExpansionMethod.class
@@ -29,6 +30,7 @@ core/ClusterHashManager.class
 core/WeightCalculator$WeightCalcLib$Bipartition.class
 core/MemoryOptimizedWeightCalculator.class
 core/WeightCalculator$WeightCalcLib$MixedCompactBipartition.class
+core/SpeciesTreeScorer.class
 tree/TreePrinter$PrintableNode.class
 core/MemoryOptimizedWeightCalculator$1.class
 utils/HashUtils.class
