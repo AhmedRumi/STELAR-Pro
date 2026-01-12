@@ -17,3 +17,12 @@
 ./calc.sh all_gt_bs_rooted_37.tre out-37.tre GPU_PARALLEL
 
 ./calc.sh all_gt_angio.tre s_angio.tre GPU_PARALLEL
+
+./calc.sh all.tre s_angio.tre GPU_PARALLEL
+
+
+cat all_gt_angio.tre s_angio.tre > all_angio.tre 
+
+./run-with-monitor.sh all_angio.tre out-angio-leaked-mixed.tre
+
+./run-with-monitor.sh all_angio.tre out-angio-leaked-no-mixed.tre --no-mixed
