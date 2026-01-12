@@ -21,8 +21,19 @@
 ./calc.sh all.tre s_angio.tre GPU_PARALLEL
 
 
+cat all_gt_angio_con.tre s_angio.tre > all_gt_angio_con_leaked.tre
+
 cat all_gt_angio.tre s_angio.tre > all_angio.tre 
+
+./run-with-monitor.sh all_gt_angio_con.tre out-angio-con-no-mixed.tre --no-mixed
+
+./run-with-monitor.sh all_gt_angio_con.tre out-angio-con-no-mixed.tre --no-mixed
 
 ./run-with-monitor.sh all_angio.tre out-angio-leaked-mixed.tre
 
 ./run-with-monitor.sh all_angio.tre out-angio-leaked-no-mixed.tre --no-mixed
+
+./run-with-monitor.sh all_gt_angio_con_leaked.tre out-angio-con-leaked-mixed.tre
+
+./run-with-monitor.sh all_gt_angio_con_leaked.tre out-angio-con-leaked-no-mixed.tre --no-mixed
+
