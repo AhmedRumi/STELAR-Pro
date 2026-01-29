@@ -22,4 +22,5 @@ MY-UTILS/
 
 __pycache__/
 
+data/*
 

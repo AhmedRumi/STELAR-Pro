@@ -14,11 +14,11 @@
 
 ./run-with-monitor.sh --input s_angio.tre --output out.tre
 
-./calc.sh all_gt_bs_rooted_37.tre out-37.tre GPU_PARALLEL
+./get_triplet_score_stelar.sh -i all_gt_bs_rooted_37.tre -st out-37.tre -m GPU_PARALLEL
 
-./calc.sh all_gt_angio.tre s_angio.tre GPU_PARALLEL
+./get_triplet_score_stelar.sh -i all_gt_angio.tre -st s_angio.tre -m GPU_PARALLEL
 
-./calc.sh all.tre s_angio.tre GPU_PARALLEL
+./get_triplet_score_stelar.sh -i all.tre -st s_angio.tre -m GPU_PARALLEL
 
 
 cat all_gt_angio_con.tre s_angio.tre > all_gt_angio_con_leaked.tre
@@ -36,3 +36,12 @@ cat all_gt_angio.tre s_angio.tre > all_angio.tre
 ./run-with-monitor.sh --input all_gt_angio_con_leaked.tre --output out-angio-con-leaked-mixed.tre --expansion
 
 ./run-with-monitor.sh --input all_gt_angio_con_leaked.tre --output out-angio-con-leaked-no-mixed.tre
+
+
+./get_quartet_score_astral.sh \
+  -i all_gt_bs_rooted_48.tre \
+  -st true_48.tre
+
+./get_quartet_score_astral.sh \
+  -i ~/research/STELAR-X/data/10k-astral-dataset/10k-astral-outputs/R1/estimatedgenetre.gtr.tre-gpu241GPU \
+  -st ~/research/STELAR-X/data/10k-astral-dataset/10k-simphy/R1/s_tree.trees

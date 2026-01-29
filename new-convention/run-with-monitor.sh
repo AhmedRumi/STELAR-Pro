@@ -1,96 +1,195 @@
 #!/usr/bin/env bash
 # run-with-monitor.sh
-# Simple wrapper for STELAR-X that monitors time, memory, and GPU usage
-# Usage examples:
-#   ./run-with-monitor.sh --input input.tre --output output.tre
-#   ./run-with-monitor.sh --input input.tre --output output.tre --no-time-monitor --no-gpu-monitor
+# STELAR-X wrapper that monitors time, memory, and GPU usage
 #
+# For detailed help: ./run-with-monitor.sh -h
+
 set -euo pipefail
+
+# ===== CONFIGURATION =====
+NTFY_CHANNEL_NAME="anik-test"
 
 # Defaults
 INPUT_FILE=""
 OUTPUT_FILE=""
 STELAR_ROOT="$(pwd)"  # assume we're running from STELAR-X root
-STELAR_OPTS=""        # optional extra args passed through to run.sh
+
+# STELAR options
+NUM_THREADS=""  # Empty means use all available
+CPU_ONLY=false  # GPU is default, --cpu disables it
+EXPANSION_METHOD="NONE"
+DISTANCE_METHOD="UPGMA"
+VERBOSE_EXPANSION=false
 
 # Monitoring options (DEFAULT: ON)
 TIME_MONITOR=true     # when true: run `time -v` if available and capture stderr
 GPU_MONITOR=true      # when true: sample nvidia-smi while stelar runs
 NO_NOTIFY=false       # when true: skip ntfy.sh notifications
 DEBUG=0               # set DEBUG=1 to enable set -x
-STELAR_ARGS=()
-
-print_help() {
-  cat <<EOF
-run-with-monitor.sh - STELAR-X wrapper with performance monitoring
-
-Usage: $0 --input <input_file> --output <output_file> [options]
-
-Required:
-  --input, -i        Path to gene trees file
-  --output, -o       Path to output species tree file
-
-Optional:
-  --stelar-root      Path to STELAR-X root directory (default: current directory)
-  --stelar-opts      Extra STELAR options passed to run.sh (default: empty)
-  --expansion, -e    Enable mixed bipartitions (default: OFF)
-  --no-time-monitor  Disable time-monitoring (overrides default ON)
-  --no-gpu-monitor   Disable GPU-monitoring (overrides default ON)
-  --no-notify, -nn   Disable ntfy.sh notifications
-  --debug            Enable shell tracing
-  --help, -h         Show this message
-
-Examples:
-  $0 --input my_genes.tre --output my_output.tre
-  $0 --input input.tre --output output.tre --cpu-parallel --expansion
-  $0 --input input.tre --output output.tre --no-time-monitor --no-notify
-EOF
-}
-
-# Parse arguments
-POSITIONAL=()
-while [[ $# -gt 0 ]]; do
-  case "$1" in
-    -i|--input) INPUT_FILE="$2"; shift 2 ;;
-    -o|--output) OUTPUT_FILE="$2"; shift 2 ;;
-    --stelar-root) STELAR_ROOT="$2"; shift 2 ;;
-    --stelar-opts)
-      read -r -a TMP_OPTS <<< "$2"
-      STELAR_ARGS+=("${TMP_OPTS[@]}")
-      shift 2
-      ;;
-    --no-time-monitor) TIME_MONITOR=false; shift ;;
-    --no-gpu-monitor) GPU_MONITOR=false; shift ;;
-    --no-notify|-nn) NO_NOTIFY=true; shift ;;
-    --debug) DEBUG=1; shift ;;
-    --help|-h) print_help; exit 0 ;;
-    --cpu|--cpu-parallel|--gpu|--gpu-parallel|--expansion|-e) STELAR_ARGS+=("$1"); shift ;;
-    -m|--mode|-s|--support|--branch-support|--lambda)
-      STELAR_ARGS+=("$1" "$2"); shift 2 ;;
-    -v|--verbose) STELAR_ARGS+=("$1"); shift ;;
-    --) shift; STELAR_ARGS+=("$@"); break ;;
-    *) POSITIONAL+=("$1"); shift ;;
-  esac
-done
-
-# Positional args are no longer supported
-if [[ ${#POSITIONAL[@]} -gt 0 ]]; then
-  echo "Error: Positional arguments are not supported. Use -i/--input and -o/--output."
-  print_help
-  exit 1
-fi
-
-if [[ -z "$INPUT_FILE" || -z "$OUTPUT_FILE" ]]; then
-  echo "Error: Both --input and --output are required."
-  print_help
-  exit 1
-fi
 
 # Colors for output
 GREEN='\033[0;32m'
 RED='\033[0;31m'
 YELLOW='\033[1;33m'
 NC='\033[0m' # No Color
+
+print_help() {
+  cat <<EOF
+run-with-monitor.sh - STELAR-X wrapper with performance monitoring
+
+Usage:
+    $0 -i <input_file> -o <output_file> [options]
+    $0 --help
+
+Required:
+    -i, --input FILE        Path to gene trees file
+    -o, --output FILE       Path to output species tree file
+
+STELAR Options:
+    --threads NUM           Number of threads to use (default: all available)
+    --cpu                   Use CPU only (GPU acceleration is enabled by default)
+    -e, --expansion METHOD  Bipartition expansion method (default: NONE)
+                            Options: NONE, DISTANCE_ONLY, CONSENSUS_ONLY,
+                                     DISTANCE_CONSENSUS, FULL
+    -d, --distance METHOD   Distance calculation method (default: UPGMA)
+                            Options: UPGMA, NEIGHBOR_JOINING, BOTH
+    -v, --verbose           Enable verbose expansion output
+
+Monitoring Options:
+    --stelar-root DIR       Path to STELAR-X root directory (default: current directory)
+    --no-time-monitor       Disable time-monitoring (overrides default ON)
+    --no-gpu-monitor        Disable GPU-monitoring (overrides default ON)
+    --no-notify, -nn        Disable ntfy.sh notifications
+    --debug                 Enable shell tracing
+
+General:
+    -h, --help              Show this message and exit
+
+Examples:
+    # Basic usage with GPU acceleration (default)
+    $0 -i genes.tre -o species.tre
+
+    # Use 4 threads with GPU acceleration
+    $0 -i genes.tre -o species.tre --threads 4
+
+    # Use CPU only (no GPU)
+    $0 -i genes.tre -o species.tre --cpu
+
+    # CPU only with 4 threads
+    $0 -i genes.tre -o species.tre --cpu --threads 4
+
+    # Disable monitoring for faster execution
+    $0 -i input.tre -o output.tre --no-time-monitor --no-gpu-monitor
+EOF
+}
+
+# Parse arguments
+while [[ $# -gt 0 ]]; do
+  case "$1" in
+    -i|--input)
+      if [[ -z "${2:-}" ]]; then
+        echo -e "${RED}Error: --input requires a file argument${NC}" >&2
+        exit 1
+      fi
+      INPUT_FILE="$2"
+      shift 2
+      ;;
+    -o|--output)
+      if [[ -z "${2:-}" ]]; then
+        echo -e "${RED}Error: --output requires a file argument${NC}" >&2
+        exit 1
+      fi
+      OUTPUT_FILE="$2"
+      shift 2
+      ;;
+    --threads)
+      if [[ -z "${2:-}" ]]; then
+        echo -e "${RED}Error: --threads requires a number argument${NC}" >&2
+        exit 1
+      fi
+      if ! [[ "$2" =~ ^[0-9]+$ ]] || [[ "$2" -lt 1 ]]; then
+        echo -e "${RED}Error: --threads must be a positive integer${NC}" >&2
+        exit 1
+      fi
+      NUM_THREADS="$2"
+      shift 2
+      ;;
+    --cpu)
+      CPU_ONLY=true
+      shift
+      ;;
+    -e|--expansion)
+      if [[ -z "${2:-}" ]]; then
+        echo -e "${RED}Error: --expansion requires a method argument${NC}" >&2
+        exit 1
+      fi
+      EXPANSION_METHOD="$2"
+      shift 2
+      ;;
+    -d|--distance)
+      if [[ -z "${2:-}" ]]; then
+        echo -e "${RED}Error: --distance requires a method argument${NC}" >&2
+        exit 1
+      fi
+      DISTANCE_METHOD="$2"
+      shift 2
+      ;;
+    -v|--verbose)
+      VERBOSE_EXPANSION=true
+      shift
+      ;;
+    --stelar-root)
+      if [[ -z "${2:-}" ]]; then
+        echo -e "${RED}Error: --stelar-root requires a directory argument${NC}" >&2
+        exit 1
+      fi
+      STELAR_ROOT="$2"
+      shift 2
+      ;;
+    --no-time-monitor)
+      TIME_MONITOR=false
+      shift
+      ;;
+    --no-gpu-monitor)
+      GPU_MONITOR=false
+      shift
+      ;;
+    --no-notify|-nn)
+      NO_NOTIFY=true
+      shift
+      ;;
+    --debug)
+      DEBUG=1
+      shift
+      ;;
+    -h|--help)
+      print_help
+      exit 0
+      ;;
+    -*)
+      echo -e "${RED}Error: Unknown option: $1${NC}" >&2
+      echo "Use '$0 --help' for usage information."
+      exit 1
+      ;;
+    *)
+      echo -e "${RED}Error: Unexpected argument: $1${NC}" >&2
+      exit 1
+      ;;
+  esac
+done
+
+# Validate required arguments
+if [[ -z "$INPUT_FILE" ]]; then
+  echo -e "${RED}Error: Input file is required.${NC}" >&2
+  echo "Usage: $0 -i <input_file> -o <output_file> [options]"
+  exit 1
+fi
+
+if [[ -z "$OUTPUT_FILE" ]]; then
+  echo -e "${RED}Error: Output file is required.${NC}" >&2
+  echo "Usage: $0 -i <input_file> -o <output_file> [options]"
+  exit 1
+fi
 
 # Convert to absolute paths
 INPUT_FILE=$(realpath "$INPUT_FILE")
@@ -103,30 +202,33 @@ if [[ "${DEBUG:-0}" = "1" ]]; then
 fi
 
 echo "=== STELAR-X Monitor Wrapper ==="
-echo "Input file:     $INPUT_FILE"
-echo "Output file:    $OUTPUT_FILE"
-echo "STELAR root:    $STELAR_ROOT"
-echo "STELAR options: ${STELAR_ARGS[*]:-(defaults)}"
-echo "Cross-tree recombination: enabled by --expansion"
-echo "Time monitor:   $TIME_MONITOR"
-echo "GPU monitor:    $GPU_MONITOR"
-echo "Notifications:  $(if [[ "$NO_NOTIFY" = true ]]; then echo "disabled"; else echo "enabled"; fi)"
+echo "Input file:       $INPUT_FILE"
+echo "Output file:      $OUTPUT_FILE"
+echo "STELAR root:      $STELAR_ROOT"
+echo "Threads:          ${NUM_THREADS:-auto}"
+echo "Mode:             $(if [[ "$CPU_ONLY" == true ]]; then echo "CPU only"; else echo "GPU (with CPU fallback)"; fi)"
+echo "Expansion method: $EXPANSION_METHOD"
+echo "Distance method:  $DISTANCE_METHOD"
+echo "Verbose:          $VERBOSE_EXPANSION"
+echo "Time monitor:     $TIME_MONITOR"
+echo "GPU monitor:      $GPU_MONITOR"
+echo "Notifications:    $(if [[ "$NO_NOTIFY" = true ]]; then echo "disabled"; else echo "enabled"; fi)"
 echo
 
 # Validate input file
 if [[ ! -f "$INPUT_FILE" ]]; then
-  echo -e "${RED}Error: Input file '$INPUT_FILE' does not exist.${NC}"
+  echo -e "${RED}Error: Input file '$INPUT_FILE' does not exist.${NC}" >&2
   exit 1
 fi
 
 # Validate STELAR root
 if [[ ! -d "$STELAR_ROOT" ]]; then
-  echo -e "${RED}Error: STELAR root directory '$STELAR_ROOT' does not exist.${NC}"
+  echo -e "${RED}Error: STELAR root directory '$STELAR_ROOT' does not exist.${NC}" >&2
   exit 1
 fi
 
 if [[ ! -f "$STELAR_ROOT/run.sh" ]]; then
-  echo -e "${RED}Error: run.sh not found in '$STELAR_ROOT'.${NC}"
+  echo -e "${RED}Error: run.sh not found in '$STELAR_ROOT'.${NC}" >&2
   exit 1
 fi
 
@@ -216,20 +318,48 @@ else
   fi
 fi
 
+# Build STELAR command with flag-based arguments
+STELAR_ARGS="-i \"$INPUT_FILE\" -o \"$OUTPUT_FILE\""
+
+# Add thread count if specified
+if [[ -n "$NUM_THREADS" ]]; then
+  STELAR_ARGS="$STELAR_ARGS --threads $NUM_THREADS"
+fi
+
+# Add CPU-only flag if specified (GPU is default)
+if [[ "$CPU_ONLY" == true ]]; then
+  STELAR_ARGS="$STELAR_ARGS --cpu"
+fi
+
+# Add expansion method
+if [[ "$EXPANSION_METHOD" != "NONE" ]]; then
+  STELAR_ARGS="$STELAR_ARGS -e \"$EXPANSION_METHOD\""
+fi
+
+# Add distance method
+if [[ "$DISTANCE_METHOD" != "UPGMA" ]]; then
+  STELAR_ARGS="$STELAR_ARGS -d \"$DISTANCE_METHOD\""
+fi
+
+# Add verbose flag
+if [[ "$VERBOSE_EXPANSION" == true ]]; then
+  STELAR_ARGS="$STELAR_ARGS -v"
+fi
+
+# Launch STELAR -- prefer using TIME_CMD if available, otherwise run directly
 STELAR_PID=""
 echo -e "${YELLOW}Running STELAR-X...${NC}"
-echo -e "${YELLOW}Command: cd $STELAR_ROOT && ./run.sh --input \"$INPUT_FILE\" --output \"$OUTPUT_FILE\" ${STELAR_ARGS[*]}${NC}"
+echo -e "${YELLOW}Command: cd $STELAR_ROOT && ./run.sh $STELAR_ARGS${NC}"
 echo
 
-# Capture both stdout and stderr to TIME_TMP (using tee to also show live output)
 if [[ "${TIME_MONITOR:-false}" = true && -n "$TIME_CMD" ]]; then
   (
-    cd "$STELAR_ROOT" && "$TIME_CMD" -v ./run.sh --input "$INPUT_FILE" --output "$OUTPUT_FILE" "${STELAR_ARGS[@]}" < /dev/null 2>&1 | tee "$TIME_TMP"
-  ) &
+    cd "$STELAR_ROOT" && eval "$TIME_CMD -v ./run.sh $STELAR_ARGS" < /dev/null
+  ) 2> "$TIME_TMP" &
   STELAR_PID=$!
 else
   (
-    cd "$STELAR_ROOT" && ./run.sh --input "$INPUT_FILE" --output "$OUTPUT_FILE" "${STELAR_ARGS[@]}" < /dev/null 2>&1 | tee "$TIME_TMP"
+    cd "$STELAR_ROOT" && eval "./run.sh $STELAR_ARGS" < /dev/null
   ) &
   STELAR_PID=$!
 fi
@@ -268,15 +398,6 @@ if [[ -f "$MON_TMP" ]]; then
   MAX_GPU_VAL=$(cat "$MON_TMP" 2>/dev/null || echo "NA")
 fi
 
-# Extract the optimal triplet score from STELAR output
-OPTIMAL_TRIPLET_SCORE="NA"
-if [[ -f "$TIME_TMP" ]]; then
-  SCORE_LINE=$(grep "OPTIMAL_TRIPLET_SCORE:" "$TIME_TMP" 2>/dev/null | tail -n1 || true)
-  if [[ -n "$SCORE_LINE" ]]; then
-    OPTIMAL_TRIPLET_SCORE=$(echo "$SCORE_LINE" | awk -F: '{gsub(/^[ \t]+/,"",$2); print $2}' | tr -d ' ')
-  fi
-fi
-
 # Convert GPU MiB -> MB (decimal) if numeric
 if [[ "$MAX_GPU_VAL" =~ ^[0-9]+$ ]]; then
   MAX_GPU_MB=$(awk "BEGIN{printf \"%.3f\", ${MAX_GPU_VAL} * 1.024}")
@@ -311,41 +432,41 @@ fi
 
 echo
 echo -e "${GREEN}=== STELAR-X Execution Summary ===${NC}"
-echo "Status:         $(if [[ $STELAR_EXIT_CODE -eq 0 ]]; then echo -e "${GREEN}SUCCESS${NC}"; else echo -e "${RED}FAILED (exit code $STELAR_EXIT_CODE)${NC}"; fi)"
-echo "Running time:   ${RUNNING_TIME}s"
-echo "Max CPU RAM:    ${MAX_CPU_MB} MB"
-echo "Max GPU VRAM:   ${MAX_GPU_MB} MB"
-echo -e "${YELLOW}Optimal Triplet Score: ${OPTIMAL_TRIPLET_SCORE}${NC}"
-echo "Input file:     $INPUT_FILE"
-echo "Output file:    $OUTPUT_FILE"
-echo "Output exists:  $(if [[ -f "$OUTPUT_FILE" ]]; then echo "Yes"; else echo "No"; fi)"
+echo "Status:           $(if [[ $STELAR_EXIT_CODE -eq 0 ]]; then echo -e "${GREEN}SUCCESS${NC}"; else echo -e "${RED}FAILED (exit code $STELAR_EXIT_CODE)${NC}"; fi)"
+echo "Running time:     ${RUNNING_TIME}s"
+echo "Max CPU RAM:      ${MAX_CPU_MB} MB"
+echo "Max GPU VRAM:     ${MAX_GPU_MB} MB"
+echo "Input file:       $INPUT_FILE"
+echo "Output file:      $OUTPUT_FILE"
+echo "Output exists:    $(if [[ -f "$OUTPUT_FILE" ]]; then echo "Yes"; else echo "No"; fi)"
 if [[ -f "$OUTPUT_FILE" ]]; then
-  echo "Output size:    $(wc -l < "$OUTPUT_FILE") lines"
+  echo "Output size:      $(wc -l < "$OUTPUT_FILE") lines"
 fi
 
 # Create a simple stats file next to the output
 STATS_FILE="${OUTPUT_FILE%.tre}_stats.csv"
-echo "algorithm,input_file,output_file,running_time_s,max_cpu_mb,max_gpu_mb,optimal_triplet_score,exit_code" > "$STATS_FILE"
-echo "stelar-x,$(basename "$INPUT_FILE"),$(basename "$OUTPUT_FILE"),${RUNNING_TIME},${MAX_CPU_MB},${MAX_GPU_MB},${OPTIMAL_TRIPLET_SCORE},${STELAR_EXIT_CODE}" >> "$STATS_FILE"
-echo "Stats saved to: $STATS_FILE"
+echo "algorithm,input_file,output_file,threads,mode,expansion_method,distance_method,running_time_s,max_cpu_mb,max_gpu_mb,exit_code" > "$STATS_FILE"
+echo "stelar-x,$(basename "$INPUT_FILE"),$(basename "$OUTPUT_FILE"),${NUM_THREADS:-auto},$(if [[ "$CPU_ONLY" == true ]]; then echo "cpu"; else echo "gpu"; fi),${EXPANSION_METHOD},${DISTANCE_METHOD},${RUNNING_TIME},${MAX_CPU_MB},${MAX_GPU_MB},${STELAR_EXIT_CODE}" >> "$STATS_FILE"
+echo "Stats saved to:   $STATS_FILE"
 
-# Send notification (ntfy) if enabled and curl available
-if [[ "$NO_NOTIFY" = false ]] && command -v curl >/dev/null 2>&1; then
-  STATUS_EMOJI=$(if [[ $STELAR_EXIT_CODE -eq 0 ]]; then echo "🎉"; else echo "❌"; fi)
-  STATUS_TEXT=$(if [[ $STELAR_EXIT_CODE -eq 0 ]]; then echo "completed successfully"; else echo "failed (exit $STELAR_EXIT_CODE)"; fi)
+# Send ntfy notification
+if [[ "$NO_NOTIFY" != true && -n "$NTFY_CHANNEL_NAME" ]]; then
+  STATUS_EMOJI=$(if [[ $STELAR_EXIT_CODE -eq 0 ]]; then echo "✅"; else echo "❌"; fi)
+  STATUS_TEXT=$(if [[ $STELAR_EXIT_CODE -eq 0 ]]; then echo "SUCCESS"; else echo "FAILED"; fi)
+  MODE_TEXT=$(if [[ "$CPU_ONLY" == true ]]; then echo "CPU"; else echo "GPU"; fi)
   
-  curl -s -d "${STATUS_EMOJI} STELAR-X ${STATUS_TEXT}!
+  NTFY_MSG="${STATUS_EMOJI} STELAR-X ${STATUS_TEXT}
 
-📊 Performance:
-• Running time: ${RUNNING_TIME}s
-• Max CPU RAM: ${MAX_CPU_MB} MB
-• Max GPU VRAM: ${MAX_GPU_MB} MB
-• Optimal Triplet Score: ${OPTIMAL_TRIPLET_SCORE}
+Input: $(basename "$INPUT_FILE")
+Output: $(basename "$OUTPUT_FILE")
 
-📁 Files:
-• Input: $(basename "$INPUT_FILE")
-• Output: $(basename "$OUTPUT_FILE")
-• Stats: $(basename "$STATS_FILE")" ntfy.sh/anik-test || true
+Time: ${RUNNING_TIME}s
+CPU RAM: ${MAX_CPU_MB} MB
+GPU VRAM: ${MAX_GPU_MB} MB
+Mode: ${MODE_TEXT} | Threads: ${NUM_THREADS:-auto}"
+
+  curl -s -d "$NTFY_MSG" "https://ntfy.sh/${NTFY_CHANNEL_NAME}" >/dev/null 2>&1 || true
+  echo -e "${GREEN}Notification sent to ntfy.sh/${NTFY_CHANNEL_NAME}${NC}"
 fi
 
 echo
