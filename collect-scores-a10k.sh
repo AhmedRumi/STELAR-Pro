@@ -129,7 +129,7 @@ for i in $(seq "$START_REP" "$END_REP"); do
                  # Try to find the file. It seems variable.
                  # User example: estimatedgenetre.gtr.tre-gpu241GPU
                  # We will look for *.tre (excluding cleaned ones)
-                 SPECIES_TREE=$(find "$REPL_ASTRAL_DIR" -maxdepth 1 -name "*.tre" ! -name "*-cleaned*" | head -n1 || true)
+                 SPECIES_TREE=$(find "$REPL_ASTRAL_DIR" -maxdepth 1 -name "*estimatedgenetre*" ! -name "*-cleaned*" ! -name "*.log" | head -n1 || true)
                  BASE_OUT_DIR="$REPL_ASTRAL_DIR"
              else
                  # "true" ASTRAL might not exist in standard dataset, but let's check
@@ -169,20 +169,6 @@ for i in $(seq "$START_REP" "$END_REP"); do
         
         echo "  [$ALG-$TREE_TYPE] Calculating scores..."
         
-        # --- Quartet Score ---
-        Q_SCORE="NA"
-        Q_NORM_SCORE="NA"
-        
-        Q_LOG=$(mktemp)
-        "${STELAR_ROOT}/get_quartet_score_astral.sh" -i "$GENE_TREES" -st "$SPECIES_TREE" > "$Q_LOG" 2>&1 || true
-        
-        # Parse Quartet Scores
-        # "Final quartet score is: 12345"
-        # "Final normalized quartet score is: 0.12345"
-        Q_SCORE=$(grep "Final quartet score is" "$Q_LOG" | awk '{print $NF}' || echo "NA")
-        Q_NORM_SCORE=$(grep "Final normalized quartet score is" "$Q_LOG" | awk '{print $NF}' || echo "NA")
-        rm -f "$Q_LOG"
-        
         # --- Triplet Score ---
         T_SCORE="NA"
         T_NORM_SCORE="NA"
@@ -204,7 +190,7 @@ for i in $(seq "$START_REP" "$END_REP"); do
         fi
         
         T_LOG=$(mktemp)
-        "${STELAR_ROOT}/get_triplet_score_stelar.sh" -i "$GT_FOR_TRIPLET" -st "$ST_FOR_TRIPLET" > "$T_LOG" 2>&1 || true
+        "${STELAR_ROOT}/get_triplet_score_stelar.sh" -i "$GT_FOR_TRIPLET" -st "$ST_FOR_TRIPLET" 2>&1 | tee "$T_LOG" || true
         
         # Parse Triplet Scores
         # OPTIMAL_TRIPLET_SCORE: 12345.0
@@ -223,6 +209,20 @@ for i in $(seq "$START_REP" "$END_REP"); do
         if [[ -n "$CLEAN_TEMP" && -f "$CLEAN_TEMP" ]]; then
             rm -f "$CLEAN_TEMP"
         fi
+
+        # --- Quartet Score ---
+        Q_SCORE="NA"
+        Q_NORM_SCORE="NA"
+        
+        Q_LOG=$(mktemp)
+        "${STELAR_ROOT}/get_quartet_score_astral.sh" -i "$GENE_TREES" -st "$SPECIES_TREE" 2>&1 | tee "$Q_LOG" || true
+        
+        # Parse Quartet Scores
+        # "Final quartet score is: 12345"
+        # "Final normalized quartet score is: 0.12345"
+        Q_SCORE=$(grep "Final quartet score is" "$Q_LOG" | awk '{print $NF}' || echo "NA")
+        Q_NORM_SCORE=$(grep "Final normalized quartet score is" "$Q_LOG" | awk '{print $NF}' || echo "NA")
+        rm -f "$Q_LOG"
         
         # Write CSV
         echo "dataset,alg,replicate,tree_type,triplet_score,norm_triplet_score,quartet_score,norm_quartet_score" > "$STAT_FILE"
