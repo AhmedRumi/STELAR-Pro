@@ -240,14 +240,14 @@ for REPL in "${REPL_LIST[@]}"; do
   if [[ "$TREE_TYPE" == "estimated" ]]; then
     GT_DIR="${REPL_DIR%/}/estimatedgenetrees"
   else
-    GT_DIR="${REPL_DIR%/}/truegenetrees"
+    GT_DIR="${REPL_DIR%/}"
   fi
 
   GT_FILE=""
   if [[ -f "${GT_DIR%/}/estimatedgenetrees.tre" ]]; then
     GT_FILE="${GT_DIR%/}/estimatedgenetrees.tre"
-  elif [[ -f "${GT_DIR%/}/truegenetrees.tre" ]]; then
-    GT_FILE="${GT_DIR%/}/truegenetrees.tre"
+  elif [[ -f "${GT_DIR%/}/truegenetrees" ]]; then
+    GT_FILE="${GT_DIR%/}/truegenetrees"
   else
     GT_FILE="$(find "$GT_DIR" -maxdepth 1 -type f -name '*.tre' | head -n1 || true)"
   fi
