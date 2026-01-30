@@ -270,10 +270,45 @@ fi
 
 # Extract the optimal triplet score from STELAR output
 OPTIMAL_TRIPLET_SCORE="NA"
+NUM_TAXA="NA"
+NUM_GENE_TREES="NA"
+NORMALIZED_SCORE="NA"
+
 if [[ -f "$TIME_TMP" ]]; then
   SCORE_LINE=$(grep "OPTIMAL_TRIPLET_SCORE:" "$TIME_TMP" 2>/dev/null | tail -n1 || true)
   if [[ -n "$SCORE_LINE" ]]; then
     OPTIMAL_TRIPLET_SCORE=$(echo "$SCORE_LINE" | awk -F: '{gsub(/^[ \t]+/,"",$2); print $2}' | tr -d ' ')
+  fi
+
+  # Extract taxa count and gene tree count for normalization
+  # Look for "Real taxa count (dataset): 37"
+  TAXA_LINE=$(grep "Real taxa count (dataset):" "$TIME_TMP" 2>/dev/null | tail -n1 || true)
+  if [[ -n "$TAXA_LINE" ]]; then
+     NUM_TAXA=$(echo "$TAXA_LINE" | awk -F: '{print $2}' | tr -d ' ')
+  fi
+  
+  # Look for "Trees: 200" or similar. 
+  # In the log: "Range candidates: 1085\nGene tree bipartitions: 1085\nTrees: 200"
+  # Also "Inverse Index Manager Statistics:\n  Trees: 200"
+  TREES_LINE=$(grep "Trees:" "$TIME_TMP" 2>/dev/null | head -n1 || true)
+  if [[ -n "$TREES_LINE" ]]; then
+     NUM_GENE_TREES=$(echo "$TREES_LINE" | awk -F: '{print $2}' | tr -d ' ')
+  fi
+fi
+
+# Calculate normalized score if we have all components
+if [[ "$OPTIMAL_TRIPLET_SCORE" != "NA" && "$NUM_TAXA" != "NA" && "$NUM_GENE_TREES" != "NA" ]]; then
+  # Remove decimals for taxa/trees just in case
+  n=$(echo "$NUM_TAXA" | awk '{print int($1)}')
+  k=$(echo "$NUM_GENE_TREES" | awk '{print int($1)}')
+  
+  if [[ "$n" -ge 3 && "$k" -gt 0 ]]; then
+      # nC3 = n * (n-1) * (n-2) / 6
+      TOTAL_TRIPLETS=$(echo "$n * ($n - 1) * ($n - 2) / 6" | bc)
+      
+      # Normalized = Score / (k * nC3)
+      # Using awk for floating point division
+      NORMALIZED_SCORE=$(awk -v score="$OPTIMAL_TRIPLET_SCORE" -v k="$k" -v trips="$TOTAL_TRIPLETS" 'BEGIN { printf "%.6f", score / (k * trips) }')
   fi
 fi
 
@@ -315,7 +350,10 @@ echo "Status:         $(if [[ $STELAR_EXIT_CODE -eq 0 ]]; then echo -e "${GREEN}
 echo "Running time:   ${RUNNING_TIME}s"
 echo "Max CPU RAM:    ${MAX_CPU_MB} MB"
 echo "Max GPU VRAM:   ${MAX_GPU_MB} MB"
-echo -e "${YELLOW}Optimal Triplet Score: ${OPTIMAL_TRIPLET_SCORE}${NC}"
+echo
+echo "Optimal Triplet Score:    ${OPTIMAL_TRIPLET_SCORE}"
+echo "Normalized Triplet Score: ${NORMALIZED_SCORE}"
+echo
 echo "Input file:     $INPUT_FILE"
 echo "Output file:    $OUTPUT_FILE"
 echo "Output exists:  $(if [[ -f "$OUTPUT_FILE" ]]; then echo "Yes"; else echo "No"; fi)"
@@ -325,8 +363,8 @@ fi
 
 # Create a simple stats file next to the output
 STATS_FILE="${OUTPUT_FILE%.tre}_stats.csv"
-echo "algorithm,input_file,output_file,running_time_s,max_cpu_mb,max_gpu_mb,optimal_triplet_score,exit_code" > "$STATS_FILE"
-echo "stelar-x,$(basename "$INPUT_FILE"),$(basename "$OUTPUT_FILE"),${RUNNING_TIME},${MAX_CPU_MB},${MAX_GPU_MB},${OPTIMAL_TRIPLET_SCORE},${STELAR_EXIT_CODE}" >> "$STATS_FILE"
+echo "algorithm,input_file,output_file,running_time_s,max_cpu_mb,max_gpu_mb,optimal_triplet_score,normalized_triplet_score,exit_code" > "$STATS_FILE"
+echo "stelar-x,$(basename "$INPUT_FILE"),$(basename "$OUTPUT_FILE"),${RUNNING_TIME},${MAX_CPU_MB},${MAX_GPU_MB},${OPTIMAL_TRIPLET_SCORE},${NORMALIZED_SCORE},${STELAR_EXIT_CODE}" >> "$STATS_FILE"
 echo "Stats saved to: $STATS_FILE"
 
 # Send notification (ntfy) if enabled and curl available
@@ -340,6 +378,7 @@ if [[ "$NO_NOTIFY" = false ]] && command -v curl >/dev/null 2>&1; then
 • Running time: ${RUNNING_TIME}s
 • Max CPU RAM: ${MAX_CPU_MB} MB
 • Max GPU VRAM: ${MAX_GPU_MB} MB
+• Normalized Triplet Score: ${NORMALIZED_SCORE}
 • Optimal Triplet Score: ${OPTIMAL_TRIPLET_SCORE}
 
 📁 Files:

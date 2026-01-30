@@ -1,7 +1,7 @@
 #!/bin/bash
 
 # STELAR-X Triplet Score Calculator
-# Usage: ./get_triplet_score_stelar.sh -i <gene_trees_file> -st <species_tree_file> [-m <computation_mode>]
+# Usage: ./get_triplet_score_stelar.sh -i <gene_trees_file> -st <species_tree_file> [computation_mode_flags]
 
 # Colors for output
 GREEN='\033[0;32m'
@@ -12,7 +12,7 @@ NC='\033[0m' # No Color
 # Default configuration
 GENE_TREES_FILE=""
 SPECIES_TREE_FILE=""
-COMPUTATION_MODE="CPU_PARALLEL"
+COMPUTATION_MODE="GPU_PARALLEL"
 
 # Function to display usage
 usage() {
@@ -20,12 +20,14 @@ usage() {
     echo ""
     echo "Calculates the triplet score between gene trees and a given species tree."
     echo ""
-    echo "Usage: $0 -i <gene_trees_file> -st <species_tree_file> [-m <computation_mode>]"
+    echo "Usage: $0 -i <gene_trees_file> -st <species_tree_file> [--cpu | --cpu-single | --gpu]"
     echo ""
     echo "Arguments:"
     echo "  -i, --input        File containing gene trees in Newick format"
     echo "  -st, --species-tree File containing the species tree to score"
-    echo "  -m, --mode         CPU_SINGLE, CPU_PARALLEL (default), GPU_PARALLEL"
+    echo "  --cpu              Run in CPU parallel mode"
+    echo "  --cpu-single       Run in CPU single-threaded mode"
+    echo "  --gpu              Run in GPU parallel mode (default)"
     echo "  -h, --help         Show this help message"
     exit 1
 }
@@ -41,9 +43,17 @@ while [[ $# -gt 0 ]]; do
             SPECIES_TREE_FILE="$2"
             shift 2
             ;;
-        -m|--mode)
-            COMPUTATION_MODE="$2"
-            shift 2
+        --cpu)
+            COMPUTATION_MODE="CPU_PARALLEL"
+            shift
+            ;;
+        --cpu-single)
+            COMPUTATION_MODE="CPU_SINGLE"
+            shift
+            ;;
+        --gpu|--gpu-parallel)
+            COMPUTATION_MODE="GPU_PARALLEL"
+            shift
             ;;
         -h|--help)
             usage
@@ -69,14 +79,6 @@ fi
 
 if [[ ! -f "$SPECIES_TREE_FILE" ]]; then
     echo -e "${RED}Error: Species tree file '$SPECIES_TREE_FILE' does not exist.${NC}"
-    exit 1
-fi
-
-# Validate computation mode
-VALID_MODES=("CPU_SINGLE" "CPU_PARALLEL" "GPU_PARALLEL")
-if [[ ! " ${VALID_MODES[@]} " =~ " ${COMPUTATION_MODE} " ]]; then
-    echo -e "${RED}Error: Invalid computation mode '$COMPUTATION_MODE'${NC}"
-    echo "Valid modes: ${VALID_MODES[*]}"
     exit 1
 fi
 
