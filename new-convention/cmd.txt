@@ -1,38 +1,135 @@
-./run-with-monitor.sh --input 1kp-og.tre --output out-1kp-og.tre
 
-./run-with-monitor.sh --input 1kp-og-2.tre --output out-1kp-og.tre
+cd ASTER 
+make
 
-./run-with-monitor.sh --input all_gt_bs_rooted_37.tre --output out-37.tre
+## if problem happens
+# confirm which ld is being used (currently it's conda's)
+which ld
+ld --version | head -n 1
 
-./run-with-monitor.sh --input all_gt_bs_rooted_48.tre --output out-48.tre
+# temporarily prefer system toolchain over conda's
+export PATH=/usr/bin:$PATH
 
-./run-with-monitor.sh --input all_gt_bs_rooted_48.tre --output out-48.tre
+# (optional but helpful) ensure gcc uses system binutils
+export LD=/usr/bin/ld
 
-./run-with-monitor.sh --input all_gt_angio.tre --output out-angio-mixed.tre --expansion
-
-./run-with-monitor.sh --input all_gt_angio.tre --output out-angio-no-mixed.tre
-
-./run-with-monitor.sh --input s_angio.tre --output out.tre
-
-./calc.sh all_gt_bs_rooted_37.tre out-37.tre GPU_PARALLEL
-
-./calc.sh all_gt_angio.tre s_angio.tre GPU_PARALLEL
-
-./calc.sh all.tre s_angio.tre GPU_PARALLEL
+cd ~/phylogeny/STELAR-MP/ASTER
+make clean 2>/dev/null || true
+make
 
 
-cat all_gt_angio_con.tre s_angio.tre > all_gt_angio_con_leaked.tre
+make astral_int128
 
-cat all_gt_angio.tre s_angio.tre > all_angio.tre 
+ASTER/bin/astral4 -C -i all_gt_bs_rooted_200.tre -o out.tre -t 8
 
-./run-with-monitor.sh --input all_gt_angio_con.tre --output out-angio-con-no-mixed.tre
+ASTER/bin/astral4_int128 -i all_gt_bs_rooted_37.tre -o out-37.tre
 
-./run-with-monitor.sh --input all_gt_angio_con.tre --output out-angio-con-no-mixed.tre
+./run-with-monitor.sh -h
 
-./run-with-monitor.sh --input all_angio.tre --output out-angio-leaked-mixed.tre --expansion
+./run-with-monitor.sh -i all_gt_bs_rooted_37.tre -o out-37.tre
 
-./run-with-monitor.sh --input all_angio.tre --output out-angio-leaked-no-mixed.tre
+./run-with-monitor.sh -i all_gt_bs_rooted_200.tre -o out-200.tre
 
-./run-with-monitor.sh --input all_gt_angio_con_leaked.tre --output out-angio-con-leaked-mixed.tre --expansion
+./run-aster-with-monitor.sh -i all_gt_bs_rooted_200.tre -o out.tre -t 16 -C
 
-./run-with-monitor.sh --input all_gt_angio_con_leaked.tre --output out-angio-con-leaked-no-mixed.tre
+## Unified baseline runner (with monitoring)
+./run-baseline-with-monitor.sh -m aster -i all_gt_bs_rooted_37.tre -o data/out-aster.tre --aster-opts "-t 16 -C"
+./run-baseline-with-monitor.sh -m astral -i all_gt_bs_rooted_37.tre -o data/out-astral.tre --astral-opts "-t 8"
+./run-baseline-with-monitor.sh -m treeqmc -i all_gt_bs_rooted_37.tre -o data/out-treeqmc.tre
+./run-baseline-with-monitor.sh -m wqfmtree -i all_gt_bs_rooted_37.tre -o data/out-wqfm.tre
+./run-baseline-with-monitor.sh -m supertriplets -i all_gt_bs_rooted_37.tre -o data/out-supertriplets.tre
+./run-baseline-with-monitor.sh -m tmc -i all_gt_bs_rooted_37.tre -o data/out-tmc.tre --tmc-opts "--nd 1000"
+
+./run-bulk-simulated.sh -m stelar
+
+./run-bulk-simulated.sh -m aster --aster-opts "-t 32"
+./run-bulk-simulated.sh -m astral --astral-opts "-t 8" --astral-Xms 8g --astral-Xmx 64g
+./run-bulk-simulated.sh -m treeqmc
+./run-bulk-simulated.sh -m wqfmtree
+./run-bulk-simulated.sh -m supertriplets
+./run-bulk-simulated.sh -m tmc
+
+# must have datasets at base-dir/phylo-datasets 
+./run-bulk-standard.sh 
+
+## Java memory options (STELAR / ASTRAL)
+./run.sh -i all_gt_bs_rooted_200.tre -o out-200.tre --Xms 8g --Xmx 64g
+STELAR_XMS=8g STELAR_XMX=64g ./run.sh -i all_gt_bs_rooted_200.tre -o out-200.tre
+ASTRAL_XMS=8g ASTRAL_XMX=64g ./baselines/ASTRAL/run_astral.sh -i all_gt_bs_rooted_200.tre -o out-astral.tre
+./baselines/ASTRAL/run_astral.sh -i all_gt_bs_rooted_200.tre -o out-astral.tre --Xms 8g --Xmx 64g
+
+/home/aaniksahaa/Desktop/a10k/10k-astral-dataset
+
+./run-a10k.sh -m stelar --data-dir /home/aaniksahaa/Desktop/a10k/10k-astral-dataset --tree-type estimated
+
+./run-a10k.sh -m stelar --data-dir /home/aaniksahaa/Desktop/a10k/10k-astral-dataset --tree-type estimated -sr 2 -er 2
+
+./run-a10k.sh -m astral --data-dir /home/aaniksahaa/Desktop/a10k/10k-astral-dataset --tree-type estimated -sr 2 -er 2
+
+
+## A10K dataset runner (10k-astral-dataset layout)
+./run-a10k.sh -m stelar --data-dir /home/user/phylogeny/datasets/10k-astral-dataset --tree-type estimated --stelar-opts "--threads 16"
+./run-a10k.sh -m aster --data-dir /home/user/phylogeny/datasets/10k-astral-dataset --tree-type estimated --aster-opts "-t 32"
+./run-a10k.sh -m astral --data-dir /home/user/phylogeny/datasets/10k-astral-dataset --tree-type estimated --astral-opts "-t 8" --astral-Xms 8g --astral-Xmx 64g
+./run-a10k.sh -m treeqmc --data-dir /home/user/phylogeny/datasets/10k-astral-dataset --tree-type estimated
+./run-a10k.sh -m wqfmtree --data-dir /home/user/phylogeny/datasets/10k-astral-dataset --tree-type estimated
+./run-a10k.sh -m supertriplets --data-dir /home/user/phylogeny/datasets/10k-astral-dataset --tree-type estimated
+./run-a10k.sh -m tmc --data-dir /home/user/phylogeny/datasets/10k-astral-dataset --tree-type estimated --tmc-opts "--nd 1000"
+
+## A10K runner with --replicates (examples)
+./run-a10k.sh -m stelar --data-dir /home/user/phylogeny/datasets/10k-astral-dataset --tree-type estimated --replicates "1-5" --stelar-opts "--threads 16"
+./run-a10k.sh -m aster --data-dir /home/user/phylogeny/datasets/10k-astral-dataset --tree-type estimated --replicates "R1,R3,R5" --aster-opts "-t 32"
+./run-a10k.sh -m astral --data-dir /home/user/phylogeny/datasets/10k-astral-dataset --tree-type true --replicates "2-4" --astral-opts "-t 8" --astral-Xms 8g --astral-Xmx 64g
+
+## A10K runner with --start-rep/--end-rep (examples)
+./run-a10k.sh -m stelar --data-dir /home/user/phylogeny/datasets/10k-astral-dataset --tree-type estimated --start-rep 4 --end-rep 15 --stelar-opts "--threads 16"
+./run-a10k.sh -m aster --data-dir /home/user/phylogeny/datasets/10k-astral-dataset --tree-type estimated -sr 1 -er 20 --aster-opts "-t 32"
+./run-a10k.sh -m astral --data-dir /home/user/phylogeny/datasets/10k-astral-dataset --tree-type true -sr 7 -er 9 --astral-opts "-t 8" --astral-Xms 8g --astral-Xmx 64g
+
+## Simulated baseline tests with memory params
+./test-stelar-simulated.sh -t 1000 -g 500 --stelar-opts "--xms 8g --xmx 64g"
+./test-baseline-simulated.sh -m astral -t 1000 -g 500 --astral-opts "-t 8" --astral-Xms 8g --astral-Xmx 64g
+./run-a10k.sh -m astral --data-dir /home/user/phylogeny/datasets/10k-astral-dataset --tree-type estimated --astral-opts "-t 8"
+./run-a10k.sh -m treeqmc --data-dir /home/user/phylogeny/datasets/10k-astral-dataset --tree-type estimated
+./run-a10k.sh -m wqfmtree --data-dir /home/user/phylogeny/datasets/10k-astral-dataset --tree-type estimated
+./run-a10k.sh -m supertriplets --data-dir /home/user/phylogeny/datasets/10k-astral-dataset --tree-type estimated
+./run-a10k.sh -m tmc --data-dir /home/user/phylogeny/datasets/10k-astral-dataset --tree-type estimated --tmc-opts "--nd 1000"
+
+
+Astral 10K:
+============
+
+python cleaner.py data/a10k/R1/estimatedgenetrees.tre data/a10k/R1/est-r.tre
+./run-with-monitor.sh -i data/a10k/R1/est-r.tre -o data/a10k/R1/stelar-est-out.tre
+
+python rf.py data/a10k/R1/stelar-est-out.tre data/a10k/R1/s_tree.trees
+
+python cleaner.py data/a10k/R1/estimatedgenetrees.tre data/a10k/R1/est-r-og-0.tre --outgroup "0"
+
+./run-with-monitor.sh -i data/a10k/R1/est-r-og-0.tre -o data/a10k/R1/stelar-est-og-0-out.tre
+
+python rf.py data/a10k/R1/stelar-est-og-0-out.tre data/a10k/R1/s_tree.trees
+
+
+in branch ext: 
+./run-with-monitor.sh data/a10k/R1/est-r-og-0.tre data/a10k/R1/stelar-est-og-0-out-mixed.tre
+
+python rf.py data/a10k/R1/stelar-est-og-0-out-mixed.tre data/a10k/R1/s_tree.trees
+
+
+Avian 363:
+===========
+
+cd data 
+
+wget https://erda.ku.dk/archives/341f72708302f1d0c461ad616e783b86/B10K/data_upload/01_alignments_and_gene_trees/intergenic_regions/63430.gene.trees.gz
+
+gunzip 63430.gene.trees.gz
+
+python cleaner.py data/63430.gene.trees data/63k-r-rand.tre
+
+python cleaner.py data/63430.gene.trees data/63k-r-og-strcam.tre --outgroup "Struthio_camelus"
+
+./run-with-monitor.sh -i data/63k-r-rand.tre -o data/sp-63k-r-rand.tre
+
+./run-with-monitor.sh -i data/63k-r-og-strcam.tre -o data/sp-63k-r-og-strcam.tre
