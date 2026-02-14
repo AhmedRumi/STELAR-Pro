@@ -26,7 +26,7 @@ ASTER/bin/astral4_int128 -i all_gt_bs_rooted_37.tre -o out-37.tre
 
 ./run-with-monitor.sh -h
 
-./run-with-monitor.sh -i all_gt_bs_rooted_37.tre -o out-37.tre
+./run-with-monitor.sh -i all_gt_bs_rooted_37.tre -o out-37.tre -e 
 
 ./run-with-monitor.sh -i all_gt_bs_rooted_48.tre -o out-48.tre
 
