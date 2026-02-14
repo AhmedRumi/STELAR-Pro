@@ -40,7 +40,7 @@ ALGORITHMS=("stelar")
 
 
 # Algorithm-specific options
-STELAR_OPTS="-e"  # STELAR-X uses --cpu flag if GPU not needed
+STELAR_OPTS=""  # STELAR-X uses --cpu flag if GPU not needed
 ASTER_OPTS="-t 16"  # ASTER thread count
 ASTRAL_OPTS=""  # ASTRAL doesn't need special options for basic runs
 TREEQMC_OPTS=""  # TreeQMC doesn't need special options for basic runs
@@ -107,6 +107,10 @@ innerFolderNames["1000-taxon"]="estimated-genetrees/model.1000.2000000.0.000001/
 
 innerFolderNames["500-taxon"]="estimated-genetrees/model.500.2000000.0.000001/1000-gt true-genetrees/model.500.2000000.0.000001/1000-gt"
 innerFolderNames["1000-taxon"]="estimated-genetrees/model.1000.2000000.0.000001/1000-gt true-genetrees/model.1000.2000000.0.000001/1000-gt"
+
+
+# innerFolderNames["500-taxon"]="true-genetrees/model.500.2000000.0.000001/1000-gt"
+# innerFolderNames["1000-taxon"]="true-genetrees/model.1000.2000000.0.000001/1000-gt"
 
 
 innerFolderNames["biological"]="nuclear"
