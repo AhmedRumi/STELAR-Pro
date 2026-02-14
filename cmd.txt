@@ -92,6 +92,14 @@ ASTER/bin/astral4_int128 -i all_gt_bs_rooted_37.tre -o out-37.tre
 
 ./run-bulk-standard.sh -m "stelar" -f "37-taxon" --stelar-opts "-e"
 
+./run-bulk-standard.sh -m "stelar" -f "500-taxon"
+
+./run-bulk-standard.sh -m "stelar" -f "500-taxon" --stelar-opts "-e"
+
+./run-bulk-standard.sh -m "stelar" -f "1000-taxon"
+
+./run-bulk-standard.sh -m "stelar" -f "1000-taxon" --stelar-opts "-e"
+
 
 
 ## Java memory options (STELAR / ASTRAL)
