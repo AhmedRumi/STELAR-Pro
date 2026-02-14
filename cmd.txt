@@ -51,8 +51,48 @@ ASTER/bin/astral4_int128 -i all_gt_bs_rooted_37.tre -o out-37.tre
 ./run-bulk-simulated.sh -m supertriplets
 ./run-bulk-simulated.sh -m tmc
 
-# must have datasets at base-dir/phylo-datasets 
+
+
+
+# Run Bulk Standard 
+====================
+
+# must have datasets at base-dir/datasets/standard
 ./run-bulk-standard.sh 
+
+./run-bulk-standard.sh 
+
+./run-bulk-standard.sh -m "stelar;astral;aster" -f "37-taxon;48-taxon" --fresh
+
+## Bulk standard runner (multiple methods/folders)
+./run-bulk-standard.sh -m "stelar;astral;aster" -f "37-taxon;48-taxon"
+./run-bulk-standard.sh -m "treeqmc;wqfmtree;supertriplets;tmc" -f "500-taxon;1000-taxon"
+./run-bulk-standard.sh -m "stelar;stp-nni" -f "37-taxon" --fresh
+./run-bulk-standard.sh -m "aster;astral" -f "500-taxon;1000-taxon" --base-dir "$HOME/phylogeny" --dataset-dir "$HOME/phylogeny/datasets/standard"
+./run-bulk-standard.sh -m "stelar;aster;astral" -f "37-taxon;500-taxon" --no-notify
+./run-bulk-standard.sh -m "supertriplets;tmc;stp-nni" -f "37-taxon;48-taxon" --fresh --no-notify
+
+## Bulk standard runner (method opts override examples)
+./run-bulk-standard.sh -m "stelar" -f "37-taxon" --stelar-opts "--cpu --xms 8g --xmx 64g"
+./run-bulk-standard.sh -m "aster" -f "37-taxon;48-taxon" --aster-opts "-t 32 -C"
+./run-bulk-standard.sh -m "astral" -f "500-taxon;1000-taxon" --astral-opts "-t 8"
+./run-bulk-standard.sh -m "treeqmc;wqfmtree" -f "37-taxon" --treeqmc-opts "" --wqfm-opts ""
+./run-bulk-standard.sh -m "supertriplets;stp-nni" -f "37-taxon;48-taxon" --supertriplets-opts ""
+./run-bulk-standard.sh -m "tmc" -f "500-taxon" --tmc-opts "--nd 1000"
+
+## Bulk standard runner (combined multi-method + per-method opts)
+./run-bulk-standard.sh -m "stelar;aster;astral;tmc" -f "37-taxon;500-taxon" --stelar-opts "--cpu" --aster-opts "-t 16 -C" --astral-opts "-t 8" --tmc-opts "--nd 1000"
+./run-bulk-standard.sh -m "treeqmc;wqfmtree;supertriplets" -f "48-taxon;1000-taxon" --treeqmc-opts "" --wqfm-opts "" --supertriplets-opts "" --fresh
+./run-bulk-standard.sh -m "stelar;stp-nni" -f "37-taxon;48-taxon" --stelar-opts "--cpu --xms 8g --xmx 64g" --supertriplets-opts "" --fresh --no-notify
+
+## You can pass opts for methods not in -m; they are ignored safely
+./run-bulk-standard.sh -m "stelar;astral" -f "37-taxon" --stelar-opts "--cpu" --aster-opts "-t 64 -C" --tmc-opts "--nd 2000"
+
+
+
+./run-bulk-standard.sh -m "stelar" -f "37-taxon" --stelar-opts "-e"
+
+
 
 ## Java memory options (STELAR / ASTRAL)
 ./run.sh -i all_gt_bs_rooted_200.tre -o out-200.tre --Xms 8g --Xmx 64g
