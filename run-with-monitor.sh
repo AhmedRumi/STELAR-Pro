@@ -10,7 +10,7 @@ set -euo pipefail
 # Defaults
 INPUT_FILE=""
 OUTPUT_FILE=""
-STELAR_ROOT="$(pwd)"  # assume we're running from STELAR-X root
+STELAR_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"  # resolve relative to script location
 STELAR_OPTS=""        # optional extra args passed through to run.sh
 
 # Monitoring options (DEFAULT: ON)
@@ -127,6 +127,11 @@ fi
 
 if [[ ! -f "$STELAR_ROOT/run.sh" ]]; then
   echo -e "${RED}Error: run.sh not found in '$STELAR_ROOT'.${NC}"
+  exit 1
+fi
+
+if [[ ! -f "$STELAR_ROOT/target/stelar-x-1.0.0-SNAPSHOT.jar" ]]; then
+  echo -e "${RED}Error: JAR not found. Please run ./install.sh first.${NC}"
   exit 1
 fi
 
