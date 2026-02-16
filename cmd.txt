@@ -186,6 +186,36 @@ STELAR_XMS=8g STELAR_XMX=64g ./run.sh -i all_gt_bs_rooted_200.tre -o out-200.tre
 ASTRAL_XMS=8g ASTRAL_XMX=64g ./baselines/ASTRAL/run_astral.sh -i all_gt_bs_rooted_200.tre -o out-astral.tre
 ./baselines/ASTRAL/run_astral.sh -i all_gt_bs_rooted_200.tre -o out-astral.tre --Xms 8g --Xmx 64g
 
+
+==========================================================================================
+# a10k dataset download 
+==========================================================================================
+
+mkdir -p data
+
+cd data 
+
+~/utils/hf-data-transfer/hf_download.sh \
+  --repo-id imAniksahA/blab \
+  --path-in-repo ph/d/10k-astral-dataset.zip \
+  --local-path ~/phylogeny/STELAR-X/data/10k-astral-dataset.zip
+
+unzip 10k-astral-dataset.zip
+
+cd ..
+
+./run-a10k.sh -m stelar --data-dir data/10k-astral-dataset --tree-type true
+
+./run-a10k.sh -m astral -sr 1 -er 10 --data-dir data/10k-astral-dataset --tree-type true --astral-opts "-T 32"
+
+./run-a10k.sh -m astral -sr 3 -er 10 --data-dir data/10k-astral-dataset --tree-type estimated --astral-opts "-T 32"
+
+
+========================================================================================================================
+
+
+
+
 /home/aaniksahaa/Desktop/a10k/10k-astral-dataset
 
 ./run-a10k.sh -m stelar --data-dir /home/aaniksahaa/Desktop/a10k/10k-astral-dataset --tree-type estimated
@@ -193,6 +223,9 @@ ASTRAL_XMS=8g ASTRAL_XMX=64g ./baselines/ASTRAL/run_astral.sh -i all_gt_bs_roote
 ./run-a10k.sh -m stelar --data-dir /home/aaniksahaa/Desktop/a10k/10k-astral-dataset --tree-type estimated -sr 2 -er 2
 
 ./run-a10k.sh -m astral --data-dir /home/aaniksahaa/Desktop/a10k/10k-astral-dataset --tree-type estimated -sr 2 -er 2
+
+
+
 
 
 ## A10K dataset runner (10k-astral-dataset layout)
