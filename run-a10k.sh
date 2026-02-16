@@ -408,7 +408,7 @@ for REPL in "${REPL_LIST[@]}"; do
       OPTS_MSG="TMC opts: ${TMC_OPTS:-<none>}"
     fi
 
-    NTFY_MSG="✅ ${METHOD} ${REPL} (${TREE_TYPE}) completed
+    NTFY_MSG="✅ ${METHOD} for ASTRAL-10K ${REPL} (${TREE_TYPE}) completed
 
 ⚙️ ${OPTS_MSG}
 
