@@ -132,6 +132,47 @@ ASTER/bin/astral4_int128 -i all_gt_bs_rooted_37.tre -o out-37.tre
 
 
 
+./run-bulk-standard.sh -m "astral" -f "500-taxon;1000-taxon" --fresh
+
+
+
+==============================================================================
+# Standard Dataset Download 
+==============================================================================
+
+~/utils/hf-data-transfer/hf_download.sh \
+  --repo-id imAniksahA/blab \
+  --path-in-repo ph/d/standard/500-taxon.zip \
+  --local-path ~/phylogeny/datasets/standard/500-taxon.zip
+  
+~/utils/hf-data-transfer/hf_download.sh \
+  --repo-id imAniksahA/blab \
+  --path-in-repo ph/d/standard/1000-taxon.zip \
+  --local-path ~/phylogeny/datasets/standard/1000-taxon.zip
+
+
+if needed to move with python:
+
+python3 - <<'PY'
+import os
+src = "1000-taxon.zip"
+dst_dir = os.path.expanduser("~/phylogeny/datasets/standard")
+os.makedirs(dst_dir, exist_ok=True)
+os.rename(src, os.path.join(dst_dir, src))
+print("moved")
+PY
+
+
+cd ~/phylogeny/datasets/standard
+
+unzip 500-taxon.zip
+unzip 1000-taxon.zip
+
+==============================================================================
+
+
+
+
 # Run Bulk Standard 
 ====================
 
