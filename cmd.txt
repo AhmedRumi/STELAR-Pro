@@ -191,6 +191,8 @@ ASTRAL_XMS=8g ASTRAL_XMX=64g ./baselines/ASTRAL/run_astral.sh -i all_gt_bs_roote
 # a10k dataset download 
 ==========================================================================================
 
+rsync -av --exclude='.git/' ~/utils/ vast1:~/
+
 mkdir -p data
 
 cd data 
