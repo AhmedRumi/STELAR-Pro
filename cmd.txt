@@ -66,7 +66,12 @@
 
 
 
+baselines/ASTRID/ASTRID1 -i all_gt_bs_rooted_37.tre -o out-37-as1.tre
+baselines/ASTRID/ASTRID2 -i all_gt_bs_rooted_37.tre -o out-37-as2.tre
 
+baselines/ASTRID/ASTRID2 -i all_gt_bs_rooted_100.tre -o out-100-as2.tre
+
+baselines/ASTRID/ASTRID2 -i all_gt_bs_rooted_200.tre -o out-200-as2.tre
 
 
 
