@@ -78,6 +78,15 @@ else
   echo -e "  ${YELLOW}No CUDA library found — distribution will be CPU-only${NC}"
 fi
 
+# Copy example data
+mkdir -p "$DIST_DIR/examples"
+if [[ -f "all_gt_bs_rooted_37.tre" ]]; then
+  cp "all_gt_bs_rooted_37.tre" "$DIST_DIR/examples/"
+  echo "  Copied examples/all_gt_bs_rooted_37.tre ($(du -h "$DIST_DIR/examples/all_gt_bs_rooted_37.tre" | cut -f1))"
+else
+  echo -e "  ${YELLOW}Warning: all_gt_bs_rooted_37.tre not found — examples/ will be empty${NC}"
+fi
+
 # ── Step 3: Create the standalone launcher ──
 echo -e "${YELLOW}[3/4] Creating launcher scripts...${NC}"
 
@@ -232,19 +241,23 @@ echo -e "${NC}"
 echo -e "  Archive:  ${GREEN}${ARCHIVE}${NC} (${ARCHIVE_SIZE})"
 echo ""
 echo -e "  Contents:"
-echo "    stelar-x/stelar-x              (launcher script)"
-echo "    stelar-x/lib/stelar-x.jar      (Java application)"
+echo "    stelar-x/stelar-x                          (launcher script)"
+echo "    stelar-x/lib/stelar-x.jar                  (Java application)"
 if [[ -f "$DIST_DIR/lib/libweight_calc.so" ]]; then
-  echo "    stelar-x/lib/libweight_calc.so (CUDA GPU library)"
+  echo "    stelar-x/lib/libweight_calc.so             (CUDA GPU library)"
+fi
+if [[ -f "$DIST_DIR/examples/all_gt_bs_rooted_37.tre" ]]; then
+  echo "    stelar-x/examples/all_gt_bs_rooted_37.tre  (example gene trees)"
 fi
 echo ""
 echo -e "${BOLD}For end users — install & run:${NC}"
 echo ""
 echo "  tar xzf ${DIST_NAME}.tar.gz"
-echo "  ./${DIST_NAME}/stelar-x -i gene_trees.tre -o output.tre"
+echo "  cd ${DIST_NAME}"
+echo "  ./stelar-x -i examples/all_gt_bs_rooted_37.tre -o examples/out_37.tre"
 echo ""
 echo -e "${BOLD}Optional — add to PATH:${NC}"
 echo ""
-echo "  sudo ln -sf \$(pwd)/${DIST_NAME}/stelar-x /usr/local/bin/stelar-x"
+echo "  sudo ln -sf \$(pwd)/stelar-x /usr/local/bin/stelar-x"
 echo "  stelar-x -i gene_trees.tre -o output.tre"
 

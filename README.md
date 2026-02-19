@@ -1,151 +1,258 @@
 # STELAR-X: Scaling Coalescent-Based Species Tree Inference to 100,000 Species and Beyond
 
-**STELAR-X** is a highly scalable, statistically consistent summary method for species tree inference that reconstructs species trees from large collections of gene trees under the multispecies coalescent model. It achieves near-input-size O(nk) memory usage through a redesigned computational framework built on compact integer-tuple bipartition encodings, fast precomputation of bipartition weights, and GPU-accelerized parallelism, all integrated into an optimized dynamic programming pipeline. With this combination of algorithmic engineering and parallel computation, STELAR-X delivers unprecedented scalability—analyzing 100,000 taxa × 1,000 genes in about 8.5 hours using 86 GB RAM, and 1,000 taxa × 100,000 genes in 4 minutes using 106 GB RAM. STELAR-X is therefore expected to handle substantially larger datasets (>100,000 taxa) on machines with a few hundred gigabytes of RAM (e.g., 256 GB) and modest multi-day runtimes.
+**STELAR-X** is a highly scalable, statistically consistent summary method for species tree inference that reconstructs species trees from large collections of gene trees under the multispecies coalescent model. It achieves near-input-size O(nk) memory usage through a redesigned computational framework built on compact integer-tuple bipartition encodings, fast precomputation of bipartition weights, and GPU-accelerated parallelism, all integrated into an optimized dynamic programming pipeline.
 
-# Prerequisites
+With this combination of algorithmic engineering and parallel computation, STELAR-X delivers unprecedented scalability—analyzing **100,000 taxa × 1,000 genes in about 8.5 hours using 86 GB RAM**, and **1,000 taxa × 100,000 genes in 4 minutes using 106 GB RAM**. STELAR-X is therefore expected to handle substantially larger datasets (>100,000 taxa) on machines with a few hundred gigabytes of RAM (e.g., 256 GB) and modest multi-day runtimes.
 
-STELAR-X requires the following software:
+---
 
-* **Java 11 or higher** (tested with OpenJDK 17 and 21)
-* **NVIDIA CUDA Toolkit 11.0 or higher**
-* **NVIDIA GPU** with compute capability ≥ 3.5
-* **Maven 3.6 or higher**
+## Quick Start (Precompiled Release)
 
-Before proceeding, please ensure that these dependencies are available on your system.
+The fastest way to use STELAR-X. **No build tools needed — just Java.**
 
-### 1. Install Java (tested with JDK 17, 21)
+**Prerequisite:** Java 11+ (tested with 17 and 21)
 
 ```bash
-sudo apt update
-sudo apt install -y openjdk-21-jdk
-```
+# Install Java if not already installed
+sudo apt update && sudo apt install -y openjdk-17-jdk    # Ubuntu/Debian
+# sudo dnf install -y java-17-openjdk-devel              # Fedora/RHEL
+# brew install openjdk@17                                 # macOS
 
-Verify the installation:
-
-```bash
+# Verify
 java -version
 ```
 
-Sample Output:
+```bash
+# 1. Download and extract the release
+tar xzf stelar-x-1.0.0.tar.gz
+cd stelar-x-1.0.0
 
-```
-openjdk version "21.0.8" 2025-07-15
-OpenJDK Runtime Environment (build 21.0.8+9-Ubuntu-0ubuntu122.04.1)
-OpenJDK 64-Bit Server VM (build 21.0.8+9-Ubuntu-0ubuntu122.04.1, mixed mode, sharing)
+# 2. Run on the included example (37-taxon dataset, 200 gene trees)
+./stelar-x -i examples/all_gt_bs_rooted_37.tre -o examples/out_37.tre
 ```
 
-### 2. Install Maven
+That's it. An example gene trees file is included so you can verify it works immediately. Note that, you can run inference for any gene trees with relative or absolute path. GPU mode is used automatically if an NVIDIA GPU is detected; otherwise it falls back to CPU parallel.
 
 ```bash
-sudo apt install -y maven
+# Force CPU parallel mode
+./stelar-x -i examples/all_gt_bs_rooted_37.tre -o examples/out_37.tre --cpu-parallel
+
+# Run on your own data
+./stelar-x -i gene_trees.tre -o output.tre
+
+# Score a known species tree against gene trees
+./stelar-x -i gene_trees.tre -c species_tree.tre
+
+# See all options
+./stelar-x --help
 ```
 
-Check the version:
+**Optional** — add to PATH for system-wide access:
 
 ```bash
-mvn -version
-```
-
-Sample Output:
-```
-Apache Maven 3.8.7
-Maven home: /usr/share/maven
-Java version: 21.0.8, vendor: Ubuntu, runtime: /usr/lib/jvm/java-21-openjdk-amd64
-Default locale: en_US, platform encoding: UTF-8
-OS name: "linux", version: "6.14.0-35-generic", arch: "amd64", family: "unix"
-```
-
-### 3. Install Dendropy
-
-```bash
-pip install dendropy
-```
-
-### 3. Install `time`
-
-```bash
-sudo apt install -y time
+sudo ln -sf $(pwd)/stelar-x /usr/local/bin/stelar-x
+stelar-x -i gene_trees.tre -o output.tre    # works from anywhere
 ```
 
 ---
 
-# Setting Up the Project
+## Building from Source
 
-### 1. Clone the repository
+For developers who want to edit code, rebuild, or experiment.
+
+### Prerequisites
+
+| Dependency | Required | Version | Notes |
+|------------|----------|---------|-------|
+| **Java (JDK)** | Yes | 11+ | Tested with OpenJDK 17 and 21 |
+| **NVIDIA CUDA Toolkit** | No | 11.0+ | For GPU acceleration; CPU fallback is automatic |
+| **NVIDIA GPU** | No | Compute capability ≥ 7.0 | Required only for GPU mode |
+
+> **Maven is NOT required.** The bundled Maven Wrapper (`mvnw`) handles it automatically.
+
+### Install Java (if not installed)
 
 ```bash
+# Ubuntu/Debian
+sudo apt update && sudo apt install -y openjdk-17-jdk
+
+# Fedora/RHEL
+sudo dnf install -y java-17-openjdk-devel
+
+# macOS
+brew install openjdk@17
+
+# Verify
+java -version
+```
+
+### Build
+
+```bash
+# 1. Clone the repository
 git clone https://github.com/aaniksahaa/STELAR-X.git
 cd STELAR-X
+
+# 2. Build everything (one command)
+./install.sh
 ```
 
-### 2. Grant permission to helper scripts
+`install.sh` will:
+- Check that Java 11+ (JDK) is available
+- Compile the Java project into a fat JAR via the Maven Wrapper (no Maven installation needed)
+- Compile the CUDA kernels if `nvcc` is available (otherwise, uses the pre-built library or skips gracefully)
 
 ```bash
-chmod +x build.sh run.sh run-with-monitor.sh sim.sh test-stelar-simulated.sh
+# Build options
+./install.sh                  # Auto-detects CUDA
+./install.sh --no-cuda        # Skip CUDA compilation (CPU-only)
+./install.sh --force-cuda     # Fail if CUDA compilation fails
+./install.sh --clean          # Clean rebuild from scratch
 ```
 
-### 3. Build the Java project
+### Run
+
+```bash
+./run.sh -i gene_trees.tre -o output.tre
+```
+
+After editing source code, rebuild with:
 
 ```bash
 ./build.sh
 ```
 
-This recompiles the Java sources and regenerates the executable JAR.
+### Build Precompiled Release Archive
 
----
-
-# Running STELAR-X
-
-The recommended way to run the program is through the `run.sh` wrapper:
+To package a standalone distribution (for sharing with others):
 
 ```bash
-./run.sh <input_file> <output_file>
-```
-
-Where:
-
-* `<input_file>` — Newick-formatted gene tree file
-* `<output_file>` — output path for the inferred species tree
-
-Examples:
-
-```bash
-./run.sh all_gt_bs_rooted_37.tre out-37.tre
-```
-```bash
-./run.sh avian-48-gt.tre out-avian-48.tre
-```
-
-To record running time and memory usage, use:
-
-```bash
-./run-with-monitor.sh <input_file> <output_file>
-```
-
-Example:
-
-```bash
-./run-with-monitor.sh all_gt_bs_rooted_37.tre out-37.tre
-```
-```bash
-./run-with-monitor.sh avian-48-gt.tre out-avian-48.tre
+./dist.sh                     # Produces dist/stelar-x-1.0.0.tar.gz (~3.3 MB)
+./dist.sh --skip-build        # Package existing build without rebuilding
 ```
 
 ---
 
-# Testing With Simulated Datasets
+## Usage
 
-We use **SimPhy** to generate simulated datasets for large-scale benchmarking:
-[https://github.com/adamallo/SimPhy](https://github.com/adamallo/SimPhy)
+### Inference Mode (default)
 
-Examples:
+Infer a species tree from a set of gene trees:
 
 ```bash
+./run.sh -i <gene_trees.tre> -o <output.tre> [options]
+```
+
+### Score Mode
+
+Calculate the triplet score of a known species tree against gene trees:
+
+```bash
+./run.sh -i <gene_trees.tre> -c <species_tree.tre> [options]
+```
+
+### With Performance Monitoring
+
+Records running time, peak CPU RAM, and peak GPU VRAM:
+
+```bash
+./run-with-monitor.sh -i <gene_trees.tre> -o <output.tre>
+```
+
+### Examples
+
+```bash
+# GPU mode (auto-detected)
+./run.sh -i all_gt_bs_rooted_37.tre -o out-37.tre
+
+# Explicit CPU parallel
+./run.sh -i all_gt_bs_rooted_37.tre -o out-37.tre --cpu-parallel
+
+# GPU with cross-tree recombination (expansion)
+./run.sh -i all_gt_bs_rooted_37.tre -o out-37.tre --gpu --expansion
+
+# Score-only mode
+./run.sh -i all_gt_bs_rooted_37.tre -c known_species.tre
+
+# Custom Java heap size
+./run.sh -i large_dataset.tre -o out.tre --xms 8g --xmx 256g
+
+# With branch support
+./run.sh -i all_gt_bs_rooted_37.tre -o out-37.tre -s POSTERIOR --lambda 0.5
+
+# Monitored run with stats output
+./run-with-monitor.sh -i all_gt_bs_rooted_48.tre -o out-48.tre
+```
+
+---
+
+## Command-Line Parameters
+
+### Required Parameters
+
+| Flag | Long Form | Description |
+|------|-----------|-------------|
+| `-i` | `--input <file>` | Input gene trees file in Newick format |
+| `-o` | `--output <file>` | Output species tree file (inference mode) |
+
+> In **score mode**, use `-c` instead of `-o`.
+
+### Computation Mode
+
+| Flag | Long Form | Description |
+|------|-----------|-------------|
+| | `--gpu` | GPU parallel mode (**default** if NVIDIA GPU is detected) |
+| | `--cpu-parallel` | CPU multi-threaded mode (default if no GPU) |
+| | `--cpu` | CPU single-threaded mode |
+| `-m` | `--mode <mode>` | Explicit mode: `GPU_PARALLEL`, `CPU_PARALLEL`, `CPU_SINGLE` |
+
+### Optional Parameters
+
+| Flag | Long Form | Description | Default |
+|------|-----------|-------------|---------|
+| `-c` | `--score <file>` | Score-only mode: calculate triplet score for a given species tree | — |
+| `-e` | `--expansion` | Enable cross-tree recombination (mixed bipartitions) | Off |
+| `-s` | `--support <type>` | Branch support annotation type (see below) | None |
+| | `--lambda <value>` | Lambda parameter for branch support | `0.5` |
+| `-v` | `--verbose` | Verbose expansion output | Off |
+| | `--xms <size>` | Java minimum heap size | `4g` |
+| | `--xmx <size>` | Java maximum heap size | `128g` |
+| `-h` | `--help` | Show help message | — |
+
+### Branch Support Types (`-s`)
+
+| Type | Description |
+|------|-------------|
+| `NONE` | No branch support (default) |
+| `POSTERIOR` | Posterior probability only |
+| `LENGTH` | Branch length only |
+| `BOTH` | Posterior probability and branch length |
+| `DETAILED` | Detailed per-branch statistics |
+| `PVALUE` | P-value based support |
+| `ALL` | All annotation types |
+
+### Environment Variables
+
+| Variable | Description | Example |
+|----------|-------------|---------|
+| `STELAR_XMS` | Default minimum Java heap size | `STELAR_XMS=8g ./run.sh ...` |
+| `STELAR_XMX` | Default maximum Java heap size | `STELAR_XMX=256g ./run.sh ...` |
+
+---
+
+## Testing with Simulated Datasets
+
+We use [SimPhy](https://github.com/adamallo/SimPhy) to generate simulated datasets for large-scale benchmarking.
+
+### Generate and test simulated data
+
+```bash
+# Generate simulated dataset (100 taxa, 200 gene trees)
 ./sim.sh -t 100 -g 200 --sb 0.000001 --spmin 100000 --spmax 200000 -rs 1 --fresh
+
+# Run STELAR-X on the simulated data
 ./test-stelar-simulated.sh -t 100 -g 200 --sb 0.000001 --spmin 100000 --spmax 200000 -r R1 --fresh
 ```
-
-`-t` specifies the number of taxa, and `-g` the number of gene trees.
 
 ### Specifying a base directory
 
@@ -163,79 +270,101 @@ Here, `-b` should point to the directory *containing* the STELAR-X folder.
 ./test-stelar-simulated.sh -b $HOME/research --simphy-data-dir /dev/shm/data -t 100 -g 200 --sb 0.000001 --spmin 100000 --spmax 200000 -r R1 --fresh
 ```
 
-**Note**: Currently, the maximum heap size is set to be 128GB. If you need to set a different value, please modify this line of `run.sh`.
+### Optional tools
 
-```
-eval "java -Xms4g -Xmx128g ...
+These are not required for STELAR-X itself, but are useful for evaluation:
+
+```bash
+pip install dendropy        # RF distance calculation
+sudo apt install -y time    # Detailed time/memory monitoring (for run-with-monitor.sh)
 ```
 
 ---
 
-# Building Upon the Codebase
+## Building Upon the Codebase
 
-## Modifying Java Code
+### Modifying Java Code
 
-After editing any Java source files, rebuild using:
+After editing any Java source files in `src/`, rebuild:
 
 ```bash
 ./build.sh
 ```
 
-This recompiles the project and regenerates the JAR.
+This recompiles the project and regenerates the fat JAR with all dependencies bundled. (`build.sh` and `install.sh` are equivalent — use whichever feels right.)
 
-## Modifying the CUDA Kernel
+### Modifying the CUDA Kernel
 
-### 1. Check whether `nvcc` is installed
-
-```bash
-nvcc --version
-```
-
-If missing:
+After editing `cuda/weight_calc.cu`, rebuild:
 
 ```bash
-sudo apt update
-sudo apt-get install nvidia-cuda-toolkit
-```
-
-Confirm installation:
-
-```bash
-nvcc --version
-```
-
-### 2. Rebuild the CUDA kernels
-
-After editing `cuda/*.cu`, rebuild:
-
-```
-# Build CUDA code
-echo -e "\n${YELLOW}Building CUDA code...${NC}"
 cd cuda
-make clean
-make
-if [ $? -ne 0 ]; then
-    echo -e "${RED}CUDA compilation failed!${NC}"
-    exit 1
-fi
+make clean && make
 cd ..
-echo -e "${GREEN}CUDA compilation successful${NC}"
+```
+
+Or simply re-run `./build.sh`, which handles both Java and CUDA compilation.
+
+### Installing the CUDA Toolkit (if not already installed)
+
+```bash
+# Check if nvcc is available
+nvcc --version
+
+# If missing (Ubuntu/Debian):
+sudo apt update
+sudo apt install -y nvidia-cuda-toolkit
+
+# Verify
+nvcc --version
 ```
 
 ---
 
-# Implementation Notes:
-- We use the hash functions addition and bitwise XOR
-- We use $2^{64}$ as the modulus since it arises naturally from the wrap-around behavior of corresponding datatype, and thereby provides more efficiency
+## Implementation Notes
+
+- We use the hash functions **addition** and **bitwise XOR**
+- We use 2^64 as the modulus since it arises naturally from the wrap-around behavior of the corresponding datatype, providing greater efficiency
 - For the single-element hash function, we use a mixing function comprising multiplication and bit-shift operations
+- The CUDA kernel is compiled for GPU architectures `sm_70` through `sm_90`, covering NVIDIA Volta, Turing, Ampere, Ada Lovelace, and Hopper generations
 
 ---
 
-# Troubleshooting
+## Troubleshooting
 
-1. **CUDA errors** may indicate:
+| Problem | Possible Cause | Solution |
+|---------|---------------|----------|
+| `JAR not found` | Project not built | Run `./install.sh` |
+| CUDA library not loaded | Missing GPU or CUDA runtime | Runs in CPU mode automatically; or install CUDA toolkit |
+| `OutOfMemoryError` | Dataset too large for default heap | Increase heap: `--xms 8g --xmx 256g` |
+| GPU out of memory | Dataset too large for GPU VRAM | Use `--cpu-parallel` instead |
+| `nvcc` not found | CUDA toolkit not installed | `sudo apt install -y nvidia-cuda-toolkit` |
+| Slow performance | Running in single-threaded mode | Use `--cpu-parallel` or `--gpu` |
 
-* missing or incompatible NVIDIA GPU
-* incorrect or incomplete CUDA Toolkit installation
-* insufficient GPU memory for the dataset
+---
 
+## Project Structure
+
+```
+STELAR-X/
+├── install.sh              # One-command build (Java + CUDA)
+├── build.sh                # Same as install.sh (convenient alias for rebuilds)
+├── run.sh                  # Main launcher
+├── run-with-monitor.sh     # Launcher with performance monitoring
+├── dist.sh                 # Build standalone release archive
+├── mvnw                    # Maven Wrapper (no Maven installation needed)
+├── pom.xml                 # Maven project configuration
+├── src/                    # Java source code
+│   ├── Main.java
+│   ├── core/               # Inference engine, weight calculators, DP
+│   ├── preprocessing/      # Gene tree parsing
+│   ├── tree/               # Tree and bipartition data structures
+│   ├── taxon/              # Taxon representation
+│   └── utils/              # Configuration, threading, hashing utilities
+├── cuda/
+│   ├── weight_calc.cu      # CUDA GPU kernels
+│   ├── libweight_calc.so   # Pre-built CUDA library
+│   └── Makefile
+└── target/
+    └── stelar-x-*.jar      # Built fat JAR (after install.sh)
+```

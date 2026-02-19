@@ -4,6 +4,7 @@ import java.io.File;
 import java.io.FileNotFoundException;
 import java.io.BufferedReader;
 import java.io.FileReader;
+import java.io.InputStreamReader;
 import java.util.ArrayList;
 import java.util.List;
 import preprocessing.GeneTrees;
@@ -145,6 +146,9 @@ public class Main {
         // Determine mode
         boolean scoreMode = (speciesTreePath != null);
 
+        // ── Print runtime environment summary ──
+        printRuntimeEnvironment(Config.COMPUTATION_MODE);
+
         System.out.println("Input file: " + inputFilePath);
         if (scoreMode) {
             System.out.println("Mode: SCORE (calculate triplet score for given species tree)");
@@ -153,7 +157,6 @@ public class Main {
             System.out.println("Mode: INFERENCE (find optimal species tree)");
             System.out.println("Output file: " + outputFilePath);
         }
-        System.out.println("Computation mode: " + Config.COMPUTATION_MODE);
         if (!scoreMode) {
             System.out.println("Expansion method: " + utils.BipartitionExpansionConfig.EXPANSION_METHOD);
             if (utils.BipartitionExpansionConfig.isDistanceExpansionEnabled()) {
@@ -335,6 +338,103 @@ public class Main {
         System.out.println("Time taken: " + duration + " seconds");
         System.out.println("Program completed successfully!");
         System.out.println("Output written to: " + outputFilePath);
+    }
+
+    /**
+     * Prints a concise runtime environment summary: computation mode, device info,
+     * available threads, and JVM heap memory.
+     */
+    private static void printRuntimeEnvironment(Config.ComputationMode mode) {
+        int cpuCores = Runtime.getRuntime().availableProcessors();
+        long maxHeapBytes = Runtime.getRuntime().maxMemory();
+        String heapStr = formatBytes(maxHeapBytes);
+
+        String deviceLine;
+        switch (mode) {
+            case GPU_PARALLEL:
+                String gpuName = detectGpuName();
+                if (gpuName != null) {
+                    deviceLine = "GPU — " + gpuName;
+                } else {
+                    deviceLine = "GPU (device details unavailable — will attempt CUDA at runtime)";
+                }
+                break;
+            case CPU_PARALLEL:
+                deviceLine = "CPU (" + cpuCores + " cores, multi-threaded)";
+                break;
+            case CPU_SINGLE:
+                deviceLine = "CPU (single-threaded)";
+                break;
+            default:
+                deviceLine = "unknown";
+        }
+
+        // ANSI colors
+        String CYAN   = "\u001B[36m";
+        String BOLD   = "\u001B[1m";
+        String GREEN  = "\u001B[32m";
+        String YELLOW = "\u001B[33m";
+        String RESET  = "\u001B[0m";
+
+        System.out.println();
+        System.out.println(CYAN + "════════════════════════════════════════════════════" + RESET);
+        System.out.println(BOLD + CYAN + "  STELAR-X  Runtime Environment" + RESET);
+        System.out.println(CYAN + "════════════════════════════════════════════════════" + RESET);
+        System.out.println("  Compute:  " + BOLD + GREEN + mode + RESET);
+        System.out.println("  Device:   " + deviceLine);
+        System.out.println("  Threads:  " + cpuCores + " available");
+        System.out.println("  JVM Heap: " + heapStr);
+        System.out.println(CYAN + "════════════════════════════════════════════════════" + RESET);
+        System.out.println();
+    }
+
+    /**
+     * Tries to detect GPU name by running nvidia-smi.
+     * Returns null if GPU cannot be detected.
+     */
+    private static String detectGpuName() {
+        try {
+            Process proc = new ProcessBuilder(
+                    "nvidia-smi", "--query-gpu=name,memory.total", "--format=csv,noheader,nounits")
+                    .redirectErrorStream(true)
+                    .start();
+            try (BufferedReader reader = new BufferedReader(new InputStreamReader(proc.getInputStream()))) {
+                String line = reader.readLine();
+                int exitCode = proc.waitFor();
+                if (exitCode == 0 && line != null && !line.trim().isEmpty()) {
+                    // Output format: "NVIDIA GeForce RTX 4060 Laptop GPU, 8188"
+                    String[] parts = line.split(",");
+                    if (parts.length >= 2) {
+                        String name = parts[0].trim();
+                        String memMB = parts[1].trim();
+                        try {
+                            int mb = Integer.parseInt(memMB);
+                            String memStr = (mb >= 1024) ? String.format("%.0f GB", mb / 1024.0) : (mb + " MB");
+                            return name + " (" + memStr + ")";
+                        } catch (NumberFormatException e) {
+                            return name;
+                        }
+                    }
+                    return line.trim();
+                }
+            }
+        } catch (Exception e) {
+            // nvidia-smi not found or failed — that's fine
+        }
+        return null;
+    }
+
+    /**
+     * Formats byte count to human-readable string.
+     */
+    private static String formatBytes(long bytes) {
+        if (bytes >= 1024L * 1024 * 1024) {
+            return String.format("%.1f GB", bytes / (1024.0 * 1024 * 1024));
+        } else if (bytes >= 1024L * 1024) {
+            return String.format("%.0f MB", bytes / (1024.0 * 1024));
+        } else {
+            return bytes + " bytes";
+        }
     }
 
     /**

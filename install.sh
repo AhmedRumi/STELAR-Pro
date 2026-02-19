@@ -30,6 +30,7 @@ NC='\033[0m'
 # ── Defaults ──
 CUDA_MODE="auto"   # auto | skip | required
 CLEAN=false
+QUICK=false        # skip Java checks (for fast rebuilds via build.sh)
 
 # ── Parse args ──
 for arg in "$@"; do
@@ -37,15 +38,18 @@ for arg in "$@"; do
     --no-cuda)    CUDA_MODE="skip" ;;
     --force-cuda) CUDA_MODE="required" ;;
     --clean)      CLEAN=true ;;
+    --quick)      QUICK=true ;;
     -h|--help)
-      echo "STELAR-X Installer"
+      echo "STELAR-X Installer / Builder"
       echo ""
       echo "Usage: ./install.sh [options]"
+      echo "       ./build.sh [options]     (same thing, skips Java checks by default)"
       echo ""
       echo "Options:"
       echo "  --no-cuda      Skip CUDA compilation (CPU-only mode)"
       echo "  --force-cuda   Fail if CUDA cannot be compiled"
       echo "  --clean        Clean previous build artifacts first"
+      echo "  --quick        Skip Java/JDK checks (fast rebuild)"
       echo "  -h, --help     Show this message"
       echo ""
       echo "Prerequisites:"
@@ -61,48 +65,58 @@ for arg in "$@"; do
   esac
 done
 
-echo -e "${BOLD}${CYAN}"
-echo "╔══════════════════════════════════════╗"
-echo "║        STELAR-X Installer            ║"
-echo "╚══════════════════════════════════════╝"
-echo -e "${NC}"
+if [[ "$QUICK" == true ]]; then
+  echo -e "${BOLD}${CYAN}"
+  echo "╔══════════════════════════════════════╗"
+  echo "║        STELAR-X Build                ║"
+  echo "╚══════════════════════════════════════╝"
+  echo -e "${NC}"
+else
+  echo -e "${BOLD}${CYAN}"
+  echo "╔══════════════════════════════════════╗"
+  echo "║        STELAR-X Installer            ║"
+  echo "╚══════════════════════════════════════╝"
+  echo -e "${NC}"
 
-# ── Step 1: Check Java ──
-echo -e "${YELLOW}[1/3] Checking Java...${NC}"
+  # ── Step 1: Check Java ──
+  echo -e "${YELLOW}[1/3] Checking Java...${NC}"
 
-if ! command -v java &>/dev/null; then
-  echo -e "${RED}Error: Java is not installed.${NC}"
-  echo ""
-  echo "Please install Java 11+ (JDK):"
-  echo "  Ubuntu/Debian:  sudo apt install -y openjdk-17-jdk"
-  echo "  Fedora/RHEL:    sudo dnf install -y java-17-openjdk-devel"
-  echo "  macOS:          brew install openjdk@17"
-  echo "  Arch:           sudo pacman -S jdk17-openjdk"
-  echo ""
-  echo "Then re-run: ./install.sh"
-  exit 1
+  if ! command -v java &>/dev/null; then
+    echo -e "${RED}Error: Java is not installed.${NC}"
+    echo ""
+    echo "Please install Java 11+ (JDK):"
+    echo "  Ubuntu/Debian:  sudo apt install -y openjdk-17-jdk"
+    echo "  Fedora/RHEL:    sudo dnf install -y java-17-openjdk-devel"
+    echo "  macOS:          brew install openjdk@17"
+    echo "  Arch:           sudo pacman -S jdk17-openjdk"
+    echo ""
+    echo "Then re-run: ./install.sh"
+    exit 1
+  fi
+
+  # Check Java version (need 11+)
+  JAVA_VER=$(java -version 2>&1 | head -n1 | sed -E 's/.*"([0-9]+)\..*/\1/' | head -c 10)
+  if [[ "$JAVA_VER" =~ ^[0-9]+$ ]] && (( JAVA_VER < 11 )); then
+    echo -e "${RED}Error: Java $JAVA_VER detected, but Java 11+ is required.${NC}"
+    echo "Please upgrade Java and re-run: ./install.sh"
+    exit 1
+  fi
+
+  # Check for javac (JDK, not just JRE)
+  if ! command -v javac &>/dev/null; then
+    echo -e "${RED}Error: javac not found. You have Java runtime but not the JDK.${NC}"
+    echo "Please install the full JDK (not just JRE)."
+    echo "  Ubuntu/Debian:  sudo apt install -y openjdk-17-jdk"
+    exit 1
+  fi
+
+  echo -e "  ${GREEN}Java $JAVA_VER found${NC}"
 fi
 
-# Check Java version (need 11+)
-JAVA_VER=$(java -version 2>&1 | head -n1 | sed -E 's/.*"([0-9]+)\..*/\1/' | head -c 10)
-if [[ "$JAVA_VER" =~ ^[0-9]+$ ]] && (( JAVA_VER < 11 )); then
-  echo -e "${RED}Error: Java $JAVA_VER detected, but Java 11+ is required.${NC}"
-  echo "Please upgrade Java and re-run: ./install.sh"
-  exit 1
-fi
-
-# Check for javac (JDK, not just JRE)
-if ! command -v javac &>/dev/null; then
-  echo -e "${RED}Error: javac not found. You have Java runtime but not the JDK.${NC}"
-  echo "Please install the full JDK (not just JRE)."
-  echo "  Ubuntu/Debian:  sudo apt install -y openjdk-17-jdk"
-  exit 1
-fi
-
-echo -e "  ${GREEN}Java $JAVA_VER found${NC}"
-
-# ── Step 2: Build Java fat JAR ──
-echo -e "\n${YELLOW}[2/3] Building STELAR-X JAR...${NC}"
+# ── Build Java fat JAR ──
+STEP_PREFIX=""
+if [[ "$QUICK" == false ]]; then STEP_PREFIX="[2/3] "; fi
+echo -e "\n${YELLOW}${STEP_PREFIX}Building STELAR-X JAR...${NC}"
 
 if [[ "$CLEAN" == true ]]; then
   echo "  Cleaning previous build..."
@@ -124,8 +138,10 @@ fi
 JAR_SIZE=$(du -h "$JAR_PATH" | cut -f1)
 echo -e "  ${GREEN}JAR built successfully ($JAR_SIZE)${NC}"
 
-# ── Step 3: Build CUDA library ──
-echo -e "\n${YELLOW}[3/3] Building CUDA library...${NC}"
+# ── Build CUDA library ──
+STEP_PREFIX=""
+if [[ "$QUICK" == false ]]; then STEP_PREFIX="[3/3] "; fi
+echo -e "\n${YELLOW}${STEP_PREFIX}Building CUDA library...${NC}"
 
 CUDA_SO="cuda/libweight_calc.so"
 CUDA_STATUS="skipped"
@@ -178,9 +194,15 @@ fi
 # ── Done! ──
 echo ""
 echo -e "${BOLD}${GREEN}"
-echo "╔══════════════════════════════════════╗"
-echo "║     Installation Complete!           ║"
-echo "╚══════════════════════════════════════╝"
+if [[ "$QUICK" == true ]]; then
+  echo "╔══════════════════════════════════════╗"
+  echo "║        Build Complete!               ║"
+  echo "╚══════════════════════════════════════╝"
+else
+  echo "╔══════════════════════════════════════╗"
+  echo "║     Installation Complete!           ║"
+  echo "╚══════════════════════════════════════╝"
+fi
 echo -e "${NC}"
 
 echo -e "  JAR:   ${GREEN}$JAR_PATH${NC}"
