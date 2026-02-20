@@ -22,8 +22,16 @@ sudo apt update && sudo apt install -y openjdk-17-jdk
 java -version
 ```
 
+### Download
+
+You can download the lightweight, portable `.tar` archive from either source:
+
+* **GitHub Releases:** [https://github.com/aaniksahaa/STELAR-X/releases](https://github.com/aaniksahaa/STELAR-X/releases)
+  Example: v1.0.0 — [https://github.com/aaniksahaa/STELAR-X/releases/tag/v1.0.0](https://github.com/aaniksahaa/STELAR-X/releases/tag/v1.0.0)
+* **Google Drive mirror:** [https://drive.google.com/drive/folders/1iyvmd__u_sCLZG1Z5TmzgOOuB1pVXlec?usp=sharing](https://drive.google.com/drive/folders/1iyvmd__u_sCLZG1Z5TmzgOOuB1pVXlec?usp=sharing)
+
 ```bash
-# 1. Download and extract the release
+# 1. Extract the prebuilt release archive
 tar xzf stelar-x-1.0.0.tar.gz
 cd stelar-x-1.0.0
 
