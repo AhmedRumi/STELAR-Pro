@@ -1,2 +1,0 @@
-algorithm,input_file,output_file,running_time_s,max_cpu_mb,max_gpu_mb,optimal_triplet_score,exit_code
-stelar-x,s_angio.tre,out.tre,3.148,853.176,107.520,2.202300756E9,0
