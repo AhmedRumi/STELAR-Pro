@@ -87,6 +87,7 @@ git clone https://github.com/aaniksahaa/STELAR-X.git
 cd STELAR-X
 
 # 2. Build everything (one command)
+# this install may take time in the first run
 ./install.sh
 ```
 
@@ -106,7 +107,7 @@ cd STELAR-X
 ### Run
 
 ```bash
-./run.sh -i gene_trees.tre -o output.tre
+./run.sh -i all_gt_bs_rooted_37.tre -o out_37.tre
 ```
 
 After editing source code, rebuild with:
