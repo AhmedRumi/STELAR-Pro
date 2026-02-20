@@ -4,19 +4,19 @@
 
 With this combination of algorithmic engineering and parallel computation, STELAR-X delivers unprecedented scalability—analyzing **100,000 taxa × 1,000 genes in about 8.5 hours using 86 GB RAM**, and **1,000 taxa × 100,000 genes in 4 minutes using 106 GB RAM**. STELAR-X is therefore expected to handle substantially larger datasets (>100,000 taxa) on machines with a few hundred gigabytes of RAM (e.g., 256 GB) and modest multi-day runtimes.
 
+> **Platform:** Developed and tested on **Ubuntu Linux**.
+
 ---
 
 ## Quick Start (Precompiled Release)
 
 The fastest way to use STELAR-X. **No build tools needed — just Java.**
 
-**Prerequisite:** Java 11+ (tested with 17 and 21)
+**Prerequisite:** Java 11+ (tested with OpenJDK 17 and 21)
 
 ```bash
-# Install Java if not already installed
-sudo apt update && sudo apt install -y openjdk-17-jdk    # Ubuntu/Debian
-# sudo dnf install -y java-17-openjdk-devel              # Fedora/RHEL
-# brew install openjdk@17                                 # macOS
+# Install Java if not already installed (Ubuntu/Debian)
+sudo apt update && sudo apt install -y openjdk-17-jdk
 
 # Verify
 java -version
@@ -73,14 +73,7 @@ For developers who want to edit code, rebuild, or experiment.
 ### Install Java (if not installed)
 
 ```bash
-# Ubuntu/Debian
 sudo apt update && sudo apt install -y openjdk-17-jdk
-
-# Fedora/RHEL
-sudo dnf install -y java-17-openjdk-devel
-
-# macOS
-brew install openjdk@17
 
 # Verify
 java -version
