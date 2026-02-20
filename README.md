@@ -170,9 +170,6 @@ Records running time, peak CPU RAM, and peak GPU VRAM:
 # Custom Java heap size
 ./run.sh -i large_dataset.tre -o out.tre --xms 8g --xmx 256g
 
-# With branch support
-./run.sh -i all_gt_bs_rooted_37.tre -o out-37.tre -s POSTERIOR --lambda 0.5
-
 # Monitored run with stats output
 ./run-with-monitor.sh -i all_gt_bs_rooted_48.tre -o out-48.tre
 ```
@@ -205,24 +202,10 @@ Records running time, peak CPU RAM, and peak GPU VRAM:
 |------|-----------|-------------|---------|
 | `-c` | `--score <file>` | Score-only mode: calculate triplet score for a given species tree | — |
 | `-e` | `--expansion` | Enable cross-tree recombination (mixed bipartitions) | Off |
-| `-s` | `--support <type>` | Branch support annotation type (see below) | None |
-| | `--lambda <value>` | Lambda parameter for branch support | `0.5` |
 | `-v` | `--verbose` | Verbose expansion output | Off |
 | | `--xms <size>` | Java minimum heap size | `4g` |
 | | `--xmx <size>` | Java maximum heap size | `128g` |
 | `-h` | `--help` | Show help message | — |
-
-### Branch Support Types (`-s`)
-
-| Type | Description |
-|------|-------------|
-| `NONE` | No branch support (default) |
-| `POSTERIOR` | Posterior probability only |
-| `LENGTH` | Branch length only |
-| `BOTH` | Posterior probability and branch length |
-| `DETAILED` | Detailed per-branch statistics |
-| `PVALUE` | P-value based support |
-| `ALL` | All annotation types |
 
 ### Environment Variables
 
