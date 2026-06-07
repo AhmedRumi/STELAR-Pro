@@ -5,6 +5,9 @@ import java.io.FileNotFoundException;
 import java.io.BufferedReader;
 import java.io.FileReader;
 import java.io.InputStreamReader;
+import java.nio.file.Files;
+import java.nio.file.Path;
+import java.nio.file.Paths;
 import java.util.ArrayList;
 import java.util.List;
 import preprocessing.GeneTrees;
@@ -38,6 +41,7 @@ public class Main {
         double lambda = 0.5;
         boolean useMixedBipartitions = false; // Cross-tree recombination flag (default: OFF)
         String speciesTreePath = null; // For score-only mode
+        boolean tagOnlyMode = false;
 
         // Parse command line arguments
         for (int i = 0; i < args.length; i++) {
@@ -85,16 +89,21 @@ public class Main {
                 System.err.println(
                         "Error: Mixed bipartitions are enabled only with --expansion. Remove deprecated mixed flags.");
                 System.exit(-1);
+            } else if (args[i].equals("-T")) {
+                tagOnlyMode = true;
             }
         }
 
         // Validate required arguments
         // Score-only mode: -i gene_trees.tre -c species_tree.tre (no -o needed)
         // Inference mode: -i gene_trees.tre -o output.tre
-        if (inputFilePath == null || (outputFilePath == null && speciesTreePath == null)) {
+        if (inputFilePath == null ||
+                (!tagOnlyMode && outputFilePath == null && speciesTreePath == null) ||
+                (tagOnlyMode && outputFilePath == null)) {
             System.out.println("Usage:");
             System.out.println("  Inference mode: java Main -i <gene_trees> -o <output_file> [options]");
             System.out.println("  Score mode:     java Main -i <gene_trees> -c <species_tree> [options]");
+            System.out.println("  Tag mode:       java Main -i <gene_trees> -o <tagged_gene_trees> -T");
             System.out.println("");
             System.out.println("Options:");
             System.out.println(
@@ -109,6 +118,7 @@ public class Main {
             System.out.println(
                     "  -s, --support <type>  Branch support: NONE, POSTERIOR, DETAILED, LENGTH, BOTH, PVALUE, ALL");
             System.out.println("  --lambda <val>        Lambda parameter for branch support (default: 0.5)");
+            System.out.println("  -T                    Root/tag gene trees with ASTRAL-Pro and exit");
             System.out.println("  -v, --verbose         Verbose expansion output");
             System.out.println("  (Mixed bipartitions are enabled when --expansion is set)");
             System.exit(-1);
@@ -120,6 +130,22 @@ public class Main {
             System.err.println("Error: Input file '" + inputFilePath + "' does not exist.");
             System.exit(-1);
         }
+
+        if (tagOnlyMode) {
+            if (outputFilePath == null) {
+                System.err.println("Error: -T requires -o <tagged_gene_trees>.");
+                System.exit(-1);
+            }
+            System.out.println("\nSTELAR-Pro tag mode");
+            System.out.println("Rooting and tagging gene trees...");
+            rootAndTagInputGeneTrees(inputFilePath, outputFilePath, true);
+            System.out.println("Tagged gene trees written to: " + outputFilePath);
+            System.out.println("STELAR-Pro tag mode completed successfully.");
+            return;
+        }
+
+        inputFilePath = rootAndTagInputGeneTrees(inputFilePath, null, false);
+        inputFile = new File(inputFilePath);
 
         // Set computation mode if specified
         if (computationMode != null) {
@@ -150,6 +176,8 @@ public class Main {
         printRuntimeEnvironment(Config.COMPUTATION_MODE);
 
         System.out.println("Input file: " + inputFilePath);
+        System.out.println("Root/tag preprocessing: ENABLED");
+        System.out.println("Tagged gene trees: " + inputFilePath);
         if (scoreMode) {
             System.out.println("Mode: SCORE (calculate triplet score for given species tree)");
             System.out.println("Species tree: " + speciesTreePath);
@@ -435,6 +463,91 @@ public class Main {
         } else {
             return bytes + " bytes";
         }
+    }
+
+    private static String rootAndTagInputGeneTrees(String inputFilePath, String taggedGeneTreesPath,
+            boolean quietExternalOutput) throws IOException {
+        Path taggedPath;
+        if (taggedGeneTreesPath != null) {
+            taggedPath = Paths.get(taggedGeneTreesPath);
+        } else {
+            taggedPath = Files.createTempFile("stelar-pro-tagged-", ".tre");
+        }
+
+        Path parent = taggedPath.toAbsolutePath().getParent();
+        if (parent != null) {
+            Files.createDirectories(parent);
+        }
+
+        String astralProPath = resolveAstralProPath();
+        File astralPro = new File(astralProPath);
+        if (!astralPro.exists()) {
+            throw new IOException("ASTRAL-Pro executable not found: " + astralProPath);
+        }
+        if (!astralPro.canExecute()) {
+            throw new IOException("ASTRAL-Pro executable is not executable: " + astralProPath);
+        }
+
+        if (!quietExternalOutput) {
+            System.out.println("\nRooting and tagging gene trees with ASTRAL-Pro...");
+            System.out.println("Command: " + astralProPath + " -T -o " + taggedPath + " " + inputFilePath);
+        }
+
+        ProcessBuilder builder = new ProcessBuilder(
+                astralProPath,
+                "-T",
+                "-o",
+                taggedPath.toString(),
+                inputFilePath);
+        if (quietExternalOutput) {
+            builder.redirectErrorStream(true);
+        } else {
+            builder.redirectError(ProcessBuilder.Redirect.INHERIT);
+            builder.redirectOutput(ProcessBuilder.Redirect.INHERIT);
+        }
+
+        try {
+            Process process = builder.start();
+            String externalOutput = "";
+            if (quietExternalOutput) {
+                StringBuilder outputBuffer = new StringBuilder();
+                try (BufferedReader reader = new BufferedReader(new InputStreamReader(process.getInputStream()))) {
+                    String line;
+                    while ((line = reader.readLine()) != null) {
+                        outputBuffer.append(line).append(System.lineSeparator());
+                    }
+                }
+                externalOutput = outputBuffer.toString();
+            }
+            int exitCode = process.waitFor();
+            if (exitCode != 0) {
+                String message = "ASTRAL-Pro root/tag preprocessing failed with exit code " + exitCode;
+                if (!externalOutput.isEmpty()) {
+                    message += System.lineSeparator() + externalOutput;
+                }
+                throw new IOException(message);
+            }
+        } catch (InterruptedException e) {
+            Thread.currentThread().interrupt();
+            throw new IOException("ASTRAL-Pro root/tag preprocessing was interrupted", e);
+        }
+
+        if (!Files.exists(taggedPath) || Files.size(taggedPath) == 0) {
+            throw new IOException("ASTRAL-Pro did not produce a non-empty tagged gene tree file: " + taggedPath);
+        }
+
+        if (!quietExternalOutput) {
+            System.out.println("Root/tag preprocessing completed: " + taggedPath);
+        }
+        return taggedPath.toString();
+    }
+
+    private static String resolveAstralProPath() {
+        String stelarRoot = System.getProperty("stelar.root");
+        if (stelarRoot != null && !stelarRoot.isEmpty()) {
+            return Paths.get(stelarRoot, "baselines", "ASTER", "bin", "astral-pro3").toString();
+        }
+        return Paths.get("baselines", "ASTER", "bin", "astral-pro3").toString();
     }
 
     /**

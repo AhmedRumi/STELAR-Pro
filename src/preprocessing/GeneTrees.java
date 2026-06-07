@@ -79,9 +79,8 @@ public class GeneTrees {
                 i++;
             }
             else if(curr == ')'){
-                // End of internal node - skip any support values or branch lengths
                 i++;
-                i = skipBranchInfo(newickLine, i);
+                i = skipInternalNodeInfo(newickLine, i);
             }
             else if(curr == ',' || curr == ';'){
                 // Separators - skip
@@ -128,6 +127,21 @@ public class GeneTrees {
         }
         
         return i;
+    }
+
+    private int skipInternalNodeInfo(String newickLine, int startIndex) {
+        int i = startIndex;
+        int n = newickLine.length();
+
+        while (i < n) {
+            char c = newickLine.charAt(i);
+            if (c == ':' || c == ',' || c == ')' || c == ';') {
+                break;
+            }
+            i++;
+        }
+
+        return skipBranchInfo(newickLine, i);
     }
     
 
@@ -477,5 +491,4 @@ public class GeneTrees {
     
     // Removed addValidBipartition method - no longer used with memory-efficient approach
 } 
-
 

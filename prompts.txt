@@ -1,0 +1,24 @@
+Now, I will share the main ideas. First, we need to root and tage the gene trees. 
+Each internal node in the gene tree is tagged as speciation and duplication. In the triplet 
+based paralogy model I have developed, only the triplets whose roots are tagged speciation in 
+the gene trees are considered and called speciation-driven triplets. Triplets with roots tagged
+duplication are ignored. Morever, speciation-driven triplets with same roots in the gene trees
+are counted as one as they are considered equivalent in the model. Now, to implement this 
+properly without losing scalability, we can follow these steps. 
+
+1. First, we have to root and tag the gene trees. we can use ASTRAL-Pro exe file with the command
+   bin/astral-pro3 -T -o OUTPUT_FILE INPUT_FILE
+   In the newick format, internal nodes tagged as duplication will be tagged with 'D', no tag for speciation nodes.
+2. Then, we will only consider subtree bipartitions rooted at speciation nodes when traversing the gene trees
+    and adding candidate bipartitions.
+3. We have to change the hashing mechanism a little bit. The sum and xor operations will now be duplication
+    invariant. For subarrays, duplicates will be counted only once. For hashing all the hipartitions, we will
+    traverse the gene trees in top-down manner.
+4. There are index maps which are used for precomputing weights. Check the paper. Now, in the map, for Each
+    gene tree and each taxon, we have to maintain a vector/array (previously it was one number) because
+    there can be duplications. 
+5. In the DP framework, when considering candidate bipartitions for species tree from the set of gene tree
+    bipartitions, the subtree bipartitions must consider duplicate taxa once.  
+
+We will move forward step by step. Comment on the steps relating the codebase and then, let's start
+implementing the first step.

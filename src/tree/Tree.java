@@ -57,9 +57,8 @@ public class Tree {
                 
                 TreeNode internalNode = addInternalNode(children);
                 
-                // Skip any support values or branch lengths after ')'
                 i++;
-                i = skipBranchInfo(newickLine, i);
+                i = parseInternalNodeInfo(newickLine, i, internalNode);
                 
                 nodeStack.push(internalNode);
             } else if (curr == ',' || curr == ';') {
@@ -104,6 +103,32 @@ public class Tree {
         filterLeaves();
     }
     
+    private int parseInternalNodeInfo(String newickLine, int startIndex, TreeNode node) {
+        int i = startIndex;
+        int n = newickLine.length();
+
+        StringBuilder annotation = new StringBuilder();
+        while (i < n) {
+            char c = newickLine.charAt(i);
+            if (c == ':' || c == ',' || c == ')' || c == ';') {
+                break;
+            }
+            annotation.append(c);
+            i++;
+        }
+
+        if (annotation.length() > 0) {
+            String value = annotation.toString();
+            if ("D".equals(value)) {
+                node.isDuplicationNode = true;
+            } else {
+                node.supportValue = value;
+            }
+        }
+
+        return skipBranchInfo(newickLine, i);
+    }
+
     private int skipBranchInfo(String newickLine, int startIndex) {
         int i = startIndex;
         int n = newickLine.length();

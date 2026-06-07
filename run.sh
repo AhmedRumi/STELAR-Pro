@@ -13,6 +13,7 @@
 #   --gpu                  GPU parallel mode (default)
 #   -m, --mode <mode>      CPU_SINGLE, CPU_PARALLEL, GPU_PARALLEL
 #   -e, --expansion        Enable mixed bipartitions
+#   -T                    Root/tag gene trees and exit; -o is tagged output
 #   -s, --support <type>   Branch support: NONE, POSTERIOR, DETAILED, LENGTH, BOTH, PVALUE, ALL
 #   --lambda <val>         Lambda parameter for branch support (default: 0.5)
 #   -v, --verbose          Verbose expansion output
@@ -44,6 +45,7 @@ EXPANSION_ENABLED="false"
 XMS="${STELAR_XMS:-4g}"
 XMX="${STELAR_XMX:-128g}"
 EXTRA_JAVA_ARGS=()
+TAG_ONLY="false"
 
 # ── Help ──
 if [[ "${1:-}" == "-h" || "${1:-}" == "--help" ]]; then
@@ -63,6 +65,7 @@ while [[ $# -gt 0 ]]; do
     --gpu|--gpu-parallel) COMPUTATION_MODE="GPU_PARALLEL"; JAVA_PROGRAM_ARGS+=("--gpu"); shift ;;
     -m|--mode)        COMPUTATION_MODE="$2"; JAVA_PROGRAM_ARGS+=("-m" "$2"); shift 2 ;;
     -e|--expansion)   EXPANSION_ENABLED="true"; JAVA_PROGRAM_ARGS+=("--expansion"); shift ;;
+    -T)              TAG_ONLY="true"; JAVA_PROGRAM_ARGS+=("-T"); shift ;;
     -v|--verbose)     VERBOSE_EXPANSION="true"; JAVA_PROGRAM_ARGS+=("--verbose"); shift ;;
     -s|--support|--branch-support) JAVA_PROGRAM_ARGS+=("-s" "$2"); shift 2 ;;
     --lambda)         JAVA_PROGRAM_ARGS+=("--lambda" "$2"); shift 2 ;;
@@ -131,12 +134,14 @@ echo "Input:       $INPUT_FILE"
 [[ -n "$OUTPUT_FILE" ]] && echo "Output:      $OUTPUT_FILE"
 echo "Mode:        $COMPUTATION_MODE"
 echo "Expansion:   $EXPANSION_ENABLED"
+echo "Tag only:    $TAG_ONLY"
 echo "Java heap:   -Xms${XMS} -Xmx${XMX}"
 echo
 
 # ── Run ──
 exec java \
   -Xms"${XMS}" -Xmx"${XMX}" \
+  -Dstelar.root="$STELAR_ROOT" \
   -Djava.library.path="$CUDA_LIB_DIR" \
   -Djna.platform.library.path="$CUDA_LIB_DIR" \
   -cp "$JAR" \
