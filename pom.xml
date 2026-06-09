@@ -5,7 +5,7 @@
     <modelVersion>4.0.0</modelVersion>
 
     <groupId>com.stelar</groupId>
-    <artifactId>stelar-x</artifactId>
+    <artifactId>stelar-pro</artifactId>
     <version>1.0.0-SNAPSHOT</version>
 
     <properties>

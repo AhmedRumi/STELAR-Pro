@@ -1,6 +1,6 @@
 #!/bin/bash
 #
-# STELAR-X Runner
+# STELAR-Pro Runner
 # ================
 # Usage: ./run.sh -i <gene_trees> -o <output> [options]
 #
@@ -42,8 +42,8 @@ OUTPUT_FILE=""
 COMPUTATION_MODE=""
 VERBOSE_EXPANSION="false"
 EXPANSION_ENABLED="false"
-XMS="${STELAR_XMS:-4g}"
-XMX="${STELAR_XMX:-128g}"
+XMS="${STELAR_PRO_XMS:-${STELAR_XMS:-4g}}"
+XMX="${STELAR_PRO_XMX:-${STELAR_XMX:-128g}}"
 EXTRA_JAVA_ARGS=()
 TAG_ONLY="false"
 
@@ -90,10 +90,10 @@ if [[ ! -f "$INPUT_FILE" ]]; then
 fi
 
 # ── Find JAR ──
-JAR="$STELAR_ROOT/target/stelar-x-1.0.0-SNAPSHOT.jar"
+JAR="$STELAR_ROOT/target/stelar-pro-1.0.0-SNAPSHOT.jar"
 if [[ ! -f "$JAR" ]]; then
   echo -e "${RED}Error: JAR not found at $JAR${NC}"
-  echo -e "Run ${YELLOW}./install.sh${NC} first to build STELAR-X."
+  echo -e "Run ${YELLOW}./install.sh${NC} first to build STELAR-Pro."
   exit 1
 fi
 
@@ -129,7 +129,7 @@ if [[ -n "$OUTPUT_FILE" ]]; then
 fi
 
 # ── Print summary ──
-echo "=== STELAR-X ==="
+echo "=== STELAR-Pro ==="
 echo "Input:       $INPUT_FILE"
 [[ -n "$OUTPUT_FILE" ]] && echo "Output:      $OUTPUT_FILE"
 echo "Mode:        $COMPUTATION_MODE"

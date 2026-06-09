@@ -13,7 +13,7 @@ set -uo pipefail
 # =============================================================================
 BASE_DIR="$HOME/phylogeny"  # default; can be overridden with --base-dir or -b
 DATASET_DIR=""                        # dataset directory; will be set to BASE_DIR/datasets if not specified
-STELAR_X_ROOT=""                      # STELAR-X root (this project); derived from script location
+STELAR_X_ROOT=""                      # STELAR-Pro root (this project); derived from script location
 ASTER_ROOT=""                         # ASTER root; derived from STELAR_X_ROOT if not set
 ASTRAL_ROOT=""                        # derived from BASE_DIR if not set explicitly
 TREEQMC_ROOT=""                       # derived from BASE_DIR if not set explicitly
@@ -45,7 +45,7 @@ ALGORITHMS=("stelar")
 
 
 # Algorithm-specific options
-STELAR_OPTS=""  # STELAR-X uses --cpu flag if GPU not needed
+STELAR_OPTS=""  # STELAR-Pro uses --cpu flag if GPU not needed
 ASTER_OPTS="-t 16"  # ASTER thread count
 ASTRAL_OPTS=""  # ASTRAL doesn't need special options for basic runs
 TREEQMC_OPTS=""  # TreeQMC doesn't need special options for basic runs
@@ -189,7 +189,7 @@ validate_base_dir() {
 normalize_algorithm_name() {
     local name="${1,,}"
     case "$name" in
-      stelar|stelar-x) echo "stelar" ;;
+      stelar|stelar-pro) echo "stelar" ;;
       aster) echo "aster" ;;
       astral) echo "astral" ;;
       treeqmc|tree-qmc) echo "treeqmc" ;;
@@ -572,7 +572,7 @@ while [[ $# -gt 0 ]]; do
       DATASET_DIR="$2"
       shift 2
       ;;
-    --stelar-x-root)
+    --stelar-pro-root)
       STELAR_X_ROOT="$2"
       shift 2
       ;;
@@ -656,7 +656,7 @@ Multi-algorithm dataset runner supporting STELAR, ASTER, ASTRAL, TreeQMC, wQFMtr
 
 --base-dir, -b      Base directory containing RF/ and external tools (overrides default)
 --dataset-dir, -d   Dataset directory (overrides default BASE_DIR/datasets)
---stelar-x-root     STELAR-X root directory (overrides auto-detection from script location)
+--stelar-pro-root     STELAR-Pro root directory (overrides auto-detection from script location)
 --method, -m        Optional semicolon-separated methods (e.g. "stelar;astral;aster")
 --folder, -f        Optional semicolon-separated folders (e.g. "37-taxon;48-taxon")
 --stelar-opts       Override default STELAR_OPTS
@@ -672,7 +672,7 @@ Multi-algorithm dataset runner supporting STELAR, ASTER, ASTRAL, TreeQMC, wQFMtr
 
 Algorithms available: stelar, aster, astral, treeqmc, wqfmtree, supertriplets, stp-nni, tmc
 Algorithm root directories:
-  STELAR-X:       Auto-detected from script location
+  STELAR-Pro:       Auto-detected from script location
   ASTER:          \${STELAR_X_ROOT}/baselines/ASTER
   ASTRAL:         \${STELAR_X_ROOT}/baselines/ASTRAL
   TreeQMC:        \${STELAR_X_ROOT}/baselines/TREE-QMC

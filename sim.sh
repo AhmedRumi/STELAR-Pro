@@ -77,7 +77,7 @@ fi
 
 # derive SIMPHY_DIR
 if [[ "$SIMPHY_DIR_SET" = false ]]; then
-  SIMPHY_DIR="${BASE_DIR%/}/STELAR-X/simphy"
+  SIMPHY_DIR="${BASE_DIR%/}/STELAR-Pro/simphy"
   # SIMPHY_DIR="./simphy"
 fi
 

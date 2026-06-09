@@ -13,7 +13,7 @@ set -uo pipefail
 # =============================================================================
 BASE_DIR="$HOME/research"  # default; can be overridden with --base-dir or -b
 DATASET_DIR=""                        # dataset directory; will be set to BASE_DIR/datasets if not specified
-STELAR_X_ROOT=""                      # STELAR-X root (this project); derived from script location
+STELAR_X_ROOT=""                      # STELAR-Pro root (this project); derived from script location
 ASTER_ROOT=""                         # ASTER root; derived from STELAR_X_ROOT if not set
 ASTRAL_ROOT=""                        # derived from BASE_DIR if not set explicitly
 TREEQMC_ROOT=""                       # derived from BASE_DIR if not set explicitly
@@ -38,7 +38,7 @@ ALGORITHMS=("tmc")
 
 
 # Algorithm-specific options
-STELAR_OPTS=""  # STELAR-X uses --cpu flag if GPU not needed
+STELAR_OPTS=""  # STELAR-Pro uses --cpu flag if GPU not needed
 ASTER_OPTS="-t 16"  # ASTER thread count
 ASTRAL_OPTS=""  # ASTRAL doesn't need special options for basic runs
 TREEQMC_OPTS=""  # TreeQMC doesn't need special options for basic runs
@@ -273,7 +273,7 @@ run_algorithm_and_write_stats() {
           cd "$STELAR_X_ROOT"
           # Ensure output directory exists
           mkdir -p "$(dirname "$OUT_FILE")"
-          # STELAR-X uses -i and -o flags (new interface)
+          # STELAR-Pro uses -i and -o flags (new interface)
           /usr/bin/time -v ./run.sh -i "$ALL_GT_FILE" -o "$OUT_FILE" $STELAR_OPTS
           ;;
         "aster")
@@ -475,7 +475,7 @@ while [[ $# -gt 0 ]]; do
       DATASET_DIR="$2"
       shift 2
       ;;
-    --stelar-x-root)
+    --stelar-pro-root)
       STELAR_X_ROOT="$2"
       shift 2
       ;;
@@ -491,13 +491,13 @@ Multi-algorithm dataset runner supporting STELAR, ASTER, ASTRAL, TreeQMC, wQFMtr
 
 --base-dir, -b      Base directory containing RF/ and external tools (overrides default)
 --dataset-dir, -d   Dataset directory (overrides default BASE_DIR/datasets)
---stelar-x-root     STELAR-X root directory (overrides auto-detection from script location)
+--stelar-pro-root     STELAR-Pro root directory (overrides auto-detection from script location)
 --fresh             Force rerun even if stat-<alg>.csv exists
 --help, -h          Show this help
 
 Algorithms available: stelar, aster, astral, treeqmc, wqfmtree, supertriplets, tmc
 Algorithm root directories:
-  STELAR-X:       Auto-detected from script location
+  STELAR-Pro:       Auto-detected from script location
   ASTER:          \${STELAR_X_ROOT}/ASTER
   ASTRAL:         \${BASE_DIR}/ASTRAL
   TreeQMC:        \${BASE_DIR}/TREE-QMC

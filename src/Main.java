@@ -406,7 +406,7 @@ public class Main {
 
         System.out.println();
         System.out.println(CYAN + "════════════════════════════════════════════════════" + RESET);
-        System.out.println(BOLD + CYAN + "  STELAR-X  Runtime Environment" + RESET);
+        System.out.println(BOLD + CYAN + "  STELAR-Pro  Runtime Environment" + RESET);
         System.out.println(CYAN + "════════════════════════════════════════════════════" + RESET);
         System.out.println("  Compute:  " + BOLD + GREEN + mode + RESET);
         System.out.println("  Device:   " + deviceLine);

@@ -1,8 +1,8 @@
 #!/bin/bash
 #
-# STELAR-X Installer
+# STELAR-Pro Installer
 # ===================
-# One-command build for STELAR-X.
+# One-command build for STELAR-Pro.
 #
 # Prerequisites: Java 11+ (JDK)
 # Optional:      CUDA toolkit (nvcc) for GPU acceleration
@@ -40,7 +40,7 @@ for arg in "$@"; do
     --clean)      CLEAN=true ;;
     --quick)      QUICK=true ;;
     -h|--help)
-      echo "STELAR-X Installer / Builder"
+      echo "STELAR-Pro Installer / Builder"
       echo ""
       echo "Usage: ./install.sh [options]"
       echo "       ./build.sh [options]     (same thing, skips Java checks by default)"
@@ -68,13 +68,13 @@ done
 if [[ "$QUICK" == true ]]; then
   echo -e "${BOLD}${CYAN}"
   echo "╔══════════════════════════════════════╗"
-  echo "║        STELAR-X Build                ║"
+  echo "║        STELAR-Pro Build                ║"
   echo "╚══════════════════════════════════════╝"
   echo -e "${NC}"
 else
   echo -e "${BOLD}${CYAN}"
   echo "╔══════════════════════════════════════╗"
-  echo "║        STELAR-X Installer            ║"
+  echo "║        STELAR-Pro Installer            ║"
   echo "╚══════════════════════════════════════╝"
   echo -e "${NC}"
 
@@ -116,7 +116,7 @@ fi
 # ── Build Java fat JAR ──
 STEP_PREFIX=""
 if [[ "$QUICK" == false ]]; then STEP_PREFIX="[2/3] "; fi
-echo -e "\n${YELLOW}${STEP_PREFIX}Building STELAR-X JAR...${NC}"
+echo -e "\n${YELLOW}${STEP_PREFIX}Building STELAR-Pro JAR...${NC}"
 
 if [[ "$CLEAN" == true ]]; then
   echo "  Cleaning previous build..."
@@ -128,7 +128,7 @@ echo "  Compiling with Maven Wrapper (no Maven installation needed)..."
 ./mvnw -q package -DskipTests 2>&1 | grep -v "^\[INFO\]" | grep -v "^Progress" || true
 
 # Verify JAR was built
-JAR_PATH="target/stelar-x-1.0.0-SNAPSHOT.jar"
+JAR_PATH="target/stelar-pro-1.0.0-SNAPSHOT.jar"
 if [[ ! -f "$JAR_PATH" ]]; then
   echo -e "${RED}Error: JAR build failed. $JAR_PATH not found.${NC}"
   echo "Try running: ./mvnw package  (for detailed output)"

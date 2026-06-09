@@ -1,6 +1,6 @@
 #!/bin/bash
 
-# STELAR-X Triplet Score Calculator
+# STELAR-Pro Triplet Score Calculator
 # Usage: ./get_triplet_score_stelar.sh -i <gene_trees_file> -st <species_tree_file> [computation_mode_flags]
 
 # Colors for output
@@ -16,7 +16,7 @@ COMPUTATION_MODE="GPU_PARALLEL"
 
 # Function to display usage
 usage() {
-    echo "STELAR-X Triplet Score Calculator"
+    echo "STELAR-Pro Triplet Score Calculator"
     echo ""
     echo "Calculates the triplet score between gene trees and a given species tree."
     echo ""
@@ -83,12 +83,12 @@ if [[ ! -f "$SPECIES_TREE_FILE" ]]; then
 fi
 
 # Check if binaries exist
-if [[ ! -f "target/stelar-x-1.0.0-SNAPSHOT.jar" ]]; then
+if [[ ! -f "target/stelar-pro-1.0.0-SNAPSHOT.jar" ]]; then
     echo -e "${RED}Error: JAR file not found. Please run build.sh first.${NC}"
     exit 1
 fi
 
-echo "=== STELAR-X Triplet Score Calculator ==="
+echo "=== STELAR-Pro Triplet Score Calculator ==="
 echo "Gene trees file:   $GENE_TREES_FILE"
 echo "Species tree file: $SPECIES_TREE_FILE"
 echo "Computation mode:  $COMPUTATION_MODE"
@@ -102,7 +102,7 @@ java -Xms4g -Xmx128g \
     -Djava.library.path="$(pwd)/cuda" \
     -Djna.debug_load=false \
     -Djna.platform.library.path="$(pwd)/cuda" \
-    -cp target/stelar-x-1.0.0-SNAPSHOT.jar \
+    -cp target/stelar-pro-1.0.0-SNAPSHOT.jar \
     Main -i "$GENE_TREES_FILE" -c "$SPECIES_TREE_FILE" -m "$COMPUTATION_MODE"
 
 EXIT_CODE=$?

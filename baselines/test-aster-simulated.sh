@@ -55,7 +55,7 @@ Optional:
   --base-dir, -b     Base directory (default: ${BASE_DIR})
   --simphy-dir       Path to simphy dir (overrides --base-dir)
   --simphy-data-dir  Custom directory for simphy data storage (overrides simphy-dir/data)
-  --stelar-root      Path to STELAR-X root (overrides --base-dir)
+  --stelar-root      Path to STELAR-Pro root (overrides --base-dir)
   --aster-opts       Raw options to pass to ASTER (e.g. --aster-opts="-t 32 -u 2")
   --aster-bin        Path to ASTER binary relative to STELAR_ROOT (default: ASTER/bin/astral4)
   --sb               Substitution/birthrate parameter (default: ${SB})
@@ -106,10 +106,10 @@ fi
 
 # Derive SIMPHY_DIR/STELAR_ROOT from BASE_DIR if not explicitly set
 if [[ "$SIMPHY_DIR_SET" = false ]]; then
-  SIMPHY_DIR="${BASE_DIR%/}/STELAR-X/simphy"
+  SIMPHY_DIR="${BASE_DIR%/}/STELAR-Pro/simphy"
 fi
 if [[ "$STELAR_ROOT_SET" = false ]]; then
-  STELAR_ROOT="${BASE_DIR%/}/STELAR-X"
+  STELAR_ROOT="${BASE_DIR%/}/STELAR-Pro"
 fi
 
 PAIR="${TAXA_NUM}_${GENE_TREES}"

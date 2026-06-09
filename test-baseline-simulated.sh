@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # test-baseline-simulated.sh
-# Unified simulated-data runner for baseline methods (not STELAR-X).
+# Unified simulated-data runner for baseline methods (not STELAR-Pro).
 # Uses run-baseline-with-monitor.sh and writes stat-<method>.csv per replicate.
 #
 # Usage:
@@ -61,7 +61,7 @@ Optional:
   --base-dir, -b        Base directory (default: ${BASE_DIR})
   --simphy-dir          Path to simphy dir (overrides --base-dir)
   --simphy-data-dir     Custom directory for simphy data storage
-  --stelar-root         Path to STELAR-X root (overrides --base-dir)
+  --stelar-root         Path to STELAR-Pro root (overrides --base-dir)
   --sb                  Substitution/birthrate parameter (default: ${SB})
   --spmin               Population size minimum (default: ${SPMIN})
   --spmax               Population size maximum (default: ${SPMAX})
@@ -151,10 +151,10 @@ fi
 
 # Derive SIMPHY_DIR/STELAR_ROOT from BASE_DIR if not explicitly set
 if [[ "$SIMPHY_DIR_SET" = false ]]; then
-  SIMPHY_DIR="${BASE_DIR%/}/STELAR-X/simphy"
+  SIMPHY_DIR="${BASE_DIR%/}/STELAR-Pro/simphy"
 fi
 if [[ "$STELAR_ROOT_SET" = false ]]; then
-  STELAR_ROOT="${BASE_DIR%/}/STELAR-X"
+  STELAR_ROOT="${BASE_DIR%/}/STELAR-Pro"
 fi
 
 PAIR="${TAXA_NUM}_${GENE_TREES}"

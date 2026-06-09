@@ -1,8 +1,8 @@
 #!/bin/bash
 #
-# STELAR-X Build Script
+# STELAR-Pro Build Script
 # ======================
-# Quick rebuild of STELAR-X (Java + CUDA).
+# Quick rebuild of STELAR-Pro (Java + CUDA).
 # Skips Java/JDK checks for fast iteration during development.
 #
 # Usage:

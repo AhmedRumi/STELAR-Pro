@@ -54,8 +54,8 @@ Optional:
   --start-rep, -sr     Start replicate number (1-20). Requires --end-rep.
   --end-rep, -er       End replicate number (1-20). Requires --start-rep.
   --fresh              Force rerun even if stat file exists
-  --base-dir, -b       Base dir (assumes STELAR-X at BASE_DIR/STELAR-X)
-  --stelar-root        Path to STELAR-X root (overrides --base-dir)
+  --base-dir, -b       Base dir (assumes STELAR-Pro at BASE_DIR/STELAR-Pro)
+  --stelar-root        Path to STELAR-Pro root (overrides --base-dir)
   --baselines-dir      Path to baselines directory (overrides --stelar-root)
   --no-time-monitor    Disable time-monitoring
   --no-gpu-monitor     Disable GPU-monitoring
@@ -74,7 +74,7 @@ Method Options:
   --wqfm-opts "..."          Extra options for wQFM-TREE
   --supertriplets-opts "..." Extra options for SuperTriplets wrapper
   --tmc-opts "..."           Extra options for TMC wrapper
-  --stelar-opts "..."        Extra options for STELAR-X (passed to run-with-monitor.sh)
+  --stelar-opts "..."        Extra options for STELAR-Pro (passed to run-with-monitor.sh)
 EOF
 }
 
@@ -163,7 +163,7 @@ fi
 
 if [[ "$STELAR_ROOT_SET" = false ]]; then
   if [[ "$BASE_DIR_SET" = true ]]; then
-    STELAR_ROOT="${BASE_DIR%/}/STELAR-X"
+    STELAR_ROOT="${BASE_DIR%/}/STELAR-Pro"
   else
     STELAR_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
   fi

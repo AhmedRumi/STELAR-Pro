@@ -1,8 +1,8 @@
-# STELAR-X: Scaling Coalescent-Based Species Tree Inference to 100,000 Species and Beyond
+# STELAR-Pro: Scaling Coalescent-Based Species Tree Inference to 100,000 Species and Beyond
 
-**STELAR-X** is a highly scalable, statistically consistent summary method for species tree inference that reconstructs species trees from large collections of gene trees under the multispecies coalescent model. It achieves near-input-size O(nk) memory usage through a redesigned computational framework built on compact integer-tuple bipartition encodings, fast precomputation of bipartition weights, and GPU-accelerated parallelism, all integrated into an optimized dynamic programming pipeline.
+**STELAR-Pro** is a highly scalable, statistically consistent summary method for species tree inference that reconstructs species trees from large collections of gene trees under the multispecies coalescent model. It achieves near-input-size O(nk) memory usage through a redesigned computational framework built on compact integer-tuple bipartition encodings, fast precomputation of bipartition weights, and GPU-accelerated parallelism, all integrated into an optimized dynamic programming pipeline.
 
-With this combination of algorithmic engineering and parallel computation, STELAR-X delivers unprecedented scalability—analyzing **100,000 taxa × 1,000 genes in about 8.5 hours using 86 GB RAM**, and **1,000 taxa × 100,000 genes in 4 minutes using 106 GB RAM**. STELAR-X is therefore expected to handle substantially larger datasets (>100,000 taxa) on machines with a few hundred gigabytes of RAM (e.g., 256 GB) and modest multi-day runtimes.
+With this combination of algorithmic engineering and parallel computation, STELAR-Pro delivers unprecedented scalability—analyzing **100,000 taxa × 1,000 genes in about 8.5 hours using 86 GB RAM**, and **1,000 taxa × 100,000 genes in 4 minutes using 106 GB RAM**. STELAR-Pro is therefore expected to handle substantially larger datasets (>100,000 taxa) on machines with a few hundred gigabytes of RAM (e.g., 256 GB) and modest multi-day runtimes.
 
 > **Platform:** Developed and tested on **Ubuntu Linux**.
 
@@ -10,7 +10,7 @@ With this combination of algorithmic engineering and parallel computation, STELA
 
 ## Quick Start (Precompiled Release)
 
-The fastest way to use STELAR-X. **No build tools needed — just Java.**
+The fastest way to use STELAR-Pro. **No build tools needed — just Java.**
 
 **Prerequisite:** Java 11+ (tested with OpenJDK 17 and 21)
 
@@ -26,42 +26,42 @@ java -version
 
 You can download the lightweight, portable `.tar` archive from either source:
 
-* **GitHub Releases:** [https://github.com/aaniksahaa/STELAR-X/releases](https://github.com/aaniksahaa/STELAR-X/releases)
+* **GitHub Releases:** [https://github.com/aaniksahaa/STELAR-Pro/releases](https://github.com/aaniksahaa/STELAR-Pro/releases)
   
-  Example: v1.0.0 — [https://github.com/aaniksahaa/STELAR-X/releases/tag/v1.0.0](https://github.com/aaniksahaa/STELAR-X/releases/tag/v1.0.0)
+  Example: v1.0.0 — [https://github.com/aaniksahaa/STELAR-Pro/releases/tag/v1.0.0](https://github.com/aaniksahaa/STELAR-Pro/releases/tag/v1.0.0)
   
 * **Google Drive mirror:** [https://drive.google.com/drive/folders/1iyvmd__u_sCLZG1Z5TmzgOOuB1pVXlec?usp=sharing](https://drive.google.com/drive/folders/1iyvmd__u_sCLZG1Z5TmzgOOuB1pVXlec?usp=sharing)
 
 ```bash
 # 1. Extract the prebuilt release archive
-tar xzf stelar-x-1.0.0.tar.gz
-cd stelar-x-1.0.0
+tar xzf stelar-pro-1.0.0.tar.gz
+cd stelar-pro-1.0.0
 
 # 2. Run on the included example (37-taxon dataset, 200 gene trees)
-./stelar-x -i examples/all_gt_bs_rooted_37.tre -o examples/out_37.tre
+./stelar-pro -i examples/all_gt_bs_rooted_37.tre -o examples/out_37.tre
 ```
 
 That's it. An example gene trees file is included so you can verify it works immediately. Note that, you can run inference for any gene trees with relative or absolute path. GPU mode is used automatically if an NVIDIA GPU is detected; otherwise it falls back to CPU parallel.
 
 ```bash
 # Force CPU parallel mode
-./stelar-x -i examples/all_gt_bs_rooted_37.tre -o examples/out_37.tre --cpu-parallel
+./stelar-pro -i examples/all_gt_bs_rooted_37.tre -o examples/out_37.tre --cpu-parallel
 
 # Run on your own data
-./stelar-x -i gene_trees.tre -o output.tre
+./stelar-pro -i gene_trees.tre -o output.tre
 
 # Score a known species tree against gene trees
-./stelar-x -i gene_trees.tre -c species_tree.tre
+./stelar-pro -i gene_trees.tre -c species_tree.tre
 
 # See all options
-./stelar-x --help
+./stelar-pro --help
 ```
 
 **Optional** — add to PATH for system-wide access:
 
 ```bash
-sudo ln -sf $(pwd)/stelar-x /usr/local/bin/stelar-x
-stelar-x -i gene_trees.tre -o output.tre    # works from anywhere
+sudo ln -sf $(pwd)/stelar-pro /usr/local/bin/stelar-pro
+stelar-pro -i gene_trees.tre -o output.tre    # works from anywhere
 ```
 
 ---
@@ -93,8 +93,8 @@ java -version
 
 ```bash
 # 1. Clone the repository
-git clone https://github.com/aaniksahaa/STELAR-X.git
-cd STELAR-X
+git clone https://github.com/aaniksahaa/STELAR-Pro.git
+cd STELAR-Pro
 
 # 2. Build everything (one command)
 # this install may take time in the first run
@@ -131,7 +131,7 @@ After editing source code, rebuild with:
 To package a standalone distribution (for sharing with others):
 
 ```bash
-./dist.sh                     # Produces dist/stelar-x-1.0.0.tar.gz (~3.3 MB)
+./dist.sh                     # Produces dist/stelar-pro-1.0.0.tar.gz (~3.3 MB)
 ./dist.sh --skip-build        # Package existing build without rebuilding
 ```
 
@@ -222,8 +222,8 @@ Records running time, peak CPU RAM, and peak GPU VRAM:
 
 | Variable | Description | Example |
 |----------|-------------|---------|
-| `STELAR_XMS` | Default minimum Java heap size | `STELAR_XMS=8g ./run.sh ...` |
-| `STELAR_XMX` | Default maximum Java heap size | `STELAR_XMX=256g ./run.sh ...` |
+| `STELAR_PRO_XMS` | Default minimum Java heap size | `STELAR_PRO_XMS=8g ./run.sh ...` |
+| `STELAR_PRO_XMX` | Default maximum Java heap size | `STELAR_PRO_XMX=256g ./run.sh ...` |
 
 ---
 
@@ -237,7 +237,7 @@ We use [SimPhy](https://github.com/adamallo/SimPhy) to generate simulated datase
 # Generate simulated dataset (100 taxa, 200 gene trees)
 ./sim.sh -t 100 -g 200 --sb 0.000001 --spmin 100000 --spmax 200000 -rs 1 --fresh
 
-# Run STELAR-X on the simulated data
+# Run STELAR-Pro on the simulated data
 ./test-stelar-simulated.sh -t 100 -g 200 --sb 0.000001 --spmin 100000 --spmax 200000 -r R1 --fresh
 ```
 
@@ -248,7 +248,7 @@ We use [SimPhy](https://github.com/adamallo/SimPhy) to generate simulated datase
 ./test-stelar-simulated.sh -b $HOME/research -t 100 -g 200 --sb 0.000001 --spmin 100000 --spmax 200000 -r R1 --fresh
 ```
 
-Here, `-b` should point to the directory *containing* the STELAR-X folder.
+Here, `-b` should point to the directory *containing* the STELAR-Pro folder.
 
 ### Custom SimPhy data directory
 
@@ -259,7 +259,7 @@ Here, `-b` should point to the directory *containing* the STELAR-X folder.
 
 ### Optional tools
 
-These are not required for STELAR-X itself, but are useful for evaluation:
+These are not required for STELAR-Pro itself, but are useful for evaluation:
 
 ```bash
 pip install dendropy        # RF distance calculation
@@ -333,7 +333,7 @@ nvcc --version
 ## Project Structure
 
 ```
-STELAR-X/
+STELAR-Pro/
 ├── install.sh              # One-command build (Java + CUDA)
 ├── build.sh                # Same as install.sh (convenient alias for rebuilds)
 ├── run.sh                  # Main launcher
@@ -353,5 +353,5 @@ STELAR-X/
 │   ├── libweight_calc.so   # Pre-built CUDA library
 │   └── Makefile
 └── target/
-    └── stelar-x-*.jar      # Built fat JAR (after install.sh)
+    └── stelar-pro-*.jar      # Built fat JAR (after install.sh)
 ```

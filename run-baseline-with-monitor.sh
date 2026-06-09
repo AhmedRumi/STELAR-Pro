@@ -55,8 +55,8 @@ Required:
   -o, --output FILE       Path to output species tree file
 
 Path Options:
-  --base-dir, -b DIR      Base directory (assumes STELAR-X is in DIR/STELAR-X)
-  --stelar-root DIR       Path to STELAR-X root (overrides --base-dir)
+  --base-dir, -b DIR      Base directory (assumes STELAR-Pro is in DIR/STELAR-Pro)
+  --stelar-root DIR       Path to STELAR-Pro root (overrides --base-dir)
   --baselines-dir DIR     Path to baselines directory (overrides --stelar-root)
 
 Method Options:
@@ -150,7 +150,7 @@ fi
 # Derive STELAR_ROOT
 if [[ "$STELAR_ROOT_SET" = false ]]; then
   if [[ "$BASE_DIR_SET" = true ]]; then
-    STELAR_ROOT="${BASE_DIR%/}/STELAR-X"
+    STELAR_ROOT="${BASE_DIR%/}/STELAR-Pro"
   else
     STELAR_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
   fi

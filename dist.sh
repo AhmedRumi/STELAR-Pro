@@ -1,15 +1,15 @@
 #!/bin/bash
 #
-# STELAR-X Distribution Builder
+# STELAR-Pro Distribution Builder
 # ===============================
-# Packages STELAR-X into a standalone, ready-to-run archive.
+# Packages STELAR-Pro into a standalone, ready-to-run archive.
 # The output archive requires ONLY Java 11+ to run — no Maven, no source code, no compilation.
 #
 # Usage:
 #   ./dist.sh                  # Build distribution (runs install.sh first if needed)
 #   ./dist.sh --skip-build     # Package existing build without rebuilding
 #
-# Output: dist/stelar-x-<version>.tar.gz
+# Output: dist/stelar-pro-<version>.tar.gz
 #
 set -euo pipefail
 
@@ -25,7 +25,7 @@ BOLD='\033[1m'
 NC='\033[0m'
 
 VERSION="1.0.0"
-DIST_NAME="stelar-x-${VERSION}"
+DIST_NAME="stelar-pro-${VERSION}"
 DIST_DIR="dist/${DIST_NAME}"
 SKIP_BUILD=false
 
@@ -42,15 +42,15 @@ done
 
 echo -e "${BOLD}${CYAN}"
 echo "╔══════════════════════════════════════╗"
-echo "║    STELAR-X Distribution Builder     ║"
+echo "║    STELAR-Pro Distribution Builder     ║"
 echo "╚══════════════════════════════════════╝"
 echo -e "${NC}"
 
 # ── Step 1: Ensure build exists ──
-JAR_PATH="target/stelar-x-1.0.0-SNAPSHOT.jar"
+JAR_PATH="target/stelar-pro-1.0.0-SNAPSHOT.jar"
 
 if [[ "$SKIP_BUILD" == false ]]; then
-  echo -e "${YELLOW}[1/4] Building STELAR-X...${NC}"
+  echo -e "${YELLOW}[1/4] Building STELAR-Pro...${NC}"
   ./install.sh --clean
   echo ""
 elif [[ ! -f "$JAR_PATH" ]]; then
@@ -67,8 +67,8 @@ rm -rf "$DIST_DIR"
 mkdir -p "$DIST_DIR/lib"
 
 # Copy the fat JAR (rename to clean name)
-cp "$JAR_PATH" "$DIST_DIR/lib/stelar-x.jar"
-echo "  Copied stelar-x.jar ($(du -h "$DIST_DIR/lib/stelar-x.jar" | cut -f1))"
+cp "$JAR_PATH" "$DIST_DIR/lib/stelar-pro.jar"
+echo "  Copied stelar-pro.jar ($(du -h "$DIST_DIR/lib/stelar-pro.jar" | cut -f1))"
 
 # Copy CUDA library if available
 if [[ -f "cuda/libweight_calc.so" ]]; then
@@ -90,14 +90,14 @@ fi
 # ── Step 3: Create the standalone launcher ──
 echo -e "${YELLOW}[3/4] Creating launcher scripts...${NC}"
 
-cat > "$DIST_DIR/stelar-x" << 'LAUNCHER_EOF'
+cat > "$DIST_DIR/stelar-pro" << 'LAUNCHER_EOF'
 #!/bin/bash
 #
-# STELAR-X — Species Tree Estimation using Triplet Frequencies
+# STELAR-Pro — Species Tree Estimation using Triplet Frequencies
 # ==============================================================
 #
 # Usage:
-#   stelar-x -i <gene_trees> -o <output> [options]
+#   stelar-pro -i <gene_trees> -o <output> [options]
 #
 # Options:
 #   -i, --input <file>     Gene trees file (required)
@@ -116,10 +116,10 @@ cat > "$DIST_DIR/stelar-x" << 'LAUNCHER_EOF'
 #   -h, --help             Show this message
 #
 # Examples:
-#   stelar-x -i genes.tre -o species.tre
-#   stelar-x -i genes.tre -o species.tre --cpu-parallel
-#   stelar-x -i genes.tre -o species.tre --gpu --expansion
-#   stelar-x -i genes.tre -c known_species.tre
+#   stelar-pro -i genes.tre -o species.tre
+#   stelar-pro -i genes.tre -o species.tre --cpu-parallel
+#   stelar-pro -i genes.tre -o species.tre --gpu --expansion
+#   stelar-pro -i genes.tre -c known_species.tre
 
 # ── Resolve install location (works via symlink too) ──
 SOURCE="${BASH_SOURCE[0]}"
@@ -131,11 +131,11 @@ done
 STELAR_HOME="$(cd "$(dirname "$SOURCE")" && pwd)"
 
 # ── Paths ──
-JAR="$STELAR_HOME/lib/stelar-x.jar"
+JAR="$STELAR_HOME/lib/stelar-pro.jar"
 LIB_DIR="$STELAR_HOME/lib"
 
 if [[ ! -f "$JAR" ]]; then
-  echo "Error: stelar-x.jar not found at $JAR"
+  echo "Error: stelar-pro.jar not found at $JAR"
   echo "The installation appears to be incomplete."
   exit 1
 fi
@@ -153,8 +153,8 @@ if [[ "${1:-}" == "-h" || "${1:-}" == "--help" ]]; then
 fi
 
 # ── Defaults ──
-XMS="${STELAR_XMS:-4g}"
-XMX="${STELAR_XMX:-128g}"
+XMS="${STELAR_PRO_XMS:-${STELAR_XMS:-4g}}"
+XMX="${STELAR_PRO_XMX:-${STELAR_XMX:-128g}}"
 HAS_CUDA_LIB=false
 [[ -f "$LIB_DIR/libweight_calc.so" ]] && HAS_CUDA_LIB=true
 
@@ -180,7 +180,7 @@ while [[ $# -gt 0 ]]; do
     --xms|--Xms)      XMS="$2"; shift 2 ;;
     --xmx|--Xmx)      XMX="$2"; shift 2 ;;
     *)
-      echo -e "${RED}Error: Unknown option '$1'. Run stelar-x --help for usage.${NC}"
+      echo -e "${RED}Error: Unknown option '$1'. Run stelar-pro --help for usage.${NC}"
       exit 1
       ;;
   esac
@@ -188,7 +188,7 @@ done
 
 # ── Validate ──
 if [[ -z "$INPUT_FILE" ]]; then
-  echo -e "${RED}Error: --input is required. Run stelar-x --help for usage.${NC}"
+  echo -e "${RED}Error: --input is required. Run stelar-pro --help for usage.${NC}"
   exit 1
 fi
 
@@ -220,8 +220,8 @@ exec java \
   Main "${JAVA_PROGRAM_ARGS[@]}"
 LAUNCHER_EOF
 
-chmod +x "$DIST_DIR/stelar-x"
-echo "  Created stelar-x launcher"
+chmod +x "$DIST_DIR/stelar-pro"
+echo "  Created stelar-pro launcher"
 
 # ── Step 4: Package ──
 echo -e "${YELLOW}[4/4] Creating archive...${NC}"
@@ -241,23 +241,22 @@ echo -e "${NC}"
 echo -e "  Archive:  ${GREEN}${ARCHIVE}${NC} (${ARCHIVE_SIZE})"
 echo ""
 echo -e "  Contents:"
-echo "    stelar-x/stelar-x                          (launcher script)"
-echo "    stelar-x/lib/stelar-x.jar                  (Java application)"
+echo "    stelar-pro/stelar-pro                          (launcher script)"
+echo "    stelar-pro/lib/stelar-pro.jar                  (Java application)"
 if [[ -f "$DIST_DIR/lib/libweight_calc.so" ]]; then
-  echo "    stelar-x/lib/libweight_calc.so             (CUDA GPU library)"
+  echo "    stelar-pro/lib/libweight_calc.so             (CUDA GPU library)"
 fi
 if [[ -f "$DIST_DIR/examples/all_gt_bs_rooted_37.tre" ]]; then
-  echo "    stelar-x/examples/all_gt_bs_rooted_37.tre  (example gene trees)"
+  echo "    stelar-pro/examples/all_gt_bs_rooted_37.tre  (example gene trees)"
 fi
 echo ""
 echo -e "${BOLD}For end users — install & run:${NC}"
 echo ""
 echo "  tar xzf ${DIST_NAME}.tar.gz"
 echo "  cd ${DIST_NAME}"
-echo "  ./stelar-x -i examples/all_gt_bs_rooted_37.tre -o examples/out_37.tre"
+echo "  ./stelar-pro -i examples/all_gt_bs_rooted_37.tre -o examples/out_37.tre"
 echo ""
 echo -e "${BOLD}Optional — add to PATH:${NC}"
 echo ""
-echo "  sudo ln -sf \$(pwd)/stelar-x /usr/local/bin/stelar-x"
-echo "  stelar-x -i gene_trees.tre -o output.tre"
-
+echo "  sudo ln -sf \$(pwd)/stelar-pro /usr/local/bin/stelar-pro"
+echo "  stelar-pro -i gene_trees.tre -o output.tre"

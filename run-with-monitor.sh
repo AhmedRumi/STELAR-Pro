@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # run-with-monitor.sh
-# Simple wrapper for STELAR-X that monitors time, memory, and GPU usage
+# Simple wrapper for STELAR-Pro that monitors time, memory, and GPU usage
 # Usage examples:
 #   ./run-with-monitor.sh --input input.tre --output output.tre
 #   ./run-with-monitor.sh --input input.tre --output output.tre --no-time-monitor --no-gpu-monitor
@@ -22,7 +22,7 @@ STELAR_ARGS=()
 
 print_help() {
   cat <<EOF
-run-with-monitor.sh - STELAR-X wrapper with performance monitoring
+run-with-monitor.sh - STELAR-Pro wrapper with performance monitoring
 
 Usage: $0 --input <input_file> --output <output_file> [options]
 
@@ -31,7 +31,7 @@ Required:
   --output, -o       Path to output species tree file
 
 Optional:
-  --stelar-root      Path to STELAR-X root directory (default: current directory)
+  --stelar-root      Path to STELAR-Pro root directory (default: current directory)
   --stelar-opts      Extra STELAR options passed to run.sh (default: empty)
   --expansion, -e    Enable mixed bipartitions (default: OFF)
   --no-time-monitor  Disable time-monitoring (overrides default ON)
@@ -102,7 +102,7 @@ if [[ "${DEBUG:-0}" = "1" ]]; then
   set -x
 fi
 
-echo "=== STELAR-X Monitor Wrapper ==="
+echo "=== STELAR-Pro Monitor Wrapper ==="
 echo "Input file:     $INPUT_FILE"
 echo "Output file:    $OUTPUT_FILE"
 echo "STELAR root:    $STELAR_ROOT"
@@ -130,7 +130,7 @@ if [[ ! -f "$STELAR_ROOT/run.sh" ]]; then
   exit 1
 fi
 
-if [[ ! -f "$STELAR_ROOT/target/stelar-x-1.0.0-SNAPSHOT.jar" ]]; then
+if [[ ! -f "$STELAR_ROOT/target/stelar-pro-1.0.0-SNAPSHOT.jar" ]]; then
   echo -e "${RED}Error: JAR not found. Please run ./install.sh first.${NC}"
   exit 1
 fi
@@ -222,7 +222,7 @@ else
 fi
 
 STELAR_PID=""
-echo -e "${YELLOW}Running STELAR-X...${NC}"
+echo -e "${YELLOW}Running STELAR-Pro...${NC}"
 echo -e "${YELLOW}Command: cd $STELAR_ROOT && ./run.sh --input \"$INPUT_FILE\" --output \"$OUTPUT_FILE\" ${STELAR_ARGS[*]}${NC}"
 echo
 
@@ -350,7 +350,7 @@ if [[ "$TIME_MONITOR" = false && "$MAX_CPU_MB" == "NA" ]]; then
 fi
 
 echo
-echo -e "${GREEN}=== STELAR-X Execution Summary ===${NC}"
+echo -e "${GREEN}=== STELAR-Pro Execution Summary ===${NC}"
 echo "Status:         $(if [[ $STELAR_EXIT_CODE -eq 0 ]]; then echo -e "${GREEN}SUCCESS${NC}"; else echo -e "${RED}FAILED (exit code $STELAR_EXIT_CODE)${NC}"; fi)"
 echo "Running time:   ${RUNNING_TIME}s"
 echo "Max CPU RAM:    ${MAX_CPU_MB} MB"
@@ -369,7 +369,7 @@ fi
 # Create a simple stats file next to the output
 STATS_FILE="${OUTPUT_FILE%.tre}_stats.csv"
 echo "algorithm,input_file,output_file,running_time_s,max_cpu_mb,max_gpu_mb,optimal_triplet_score,normalized_triplet_score,exit_code" > "$STATS_FILE"
-echo "stelar-x,$(basename "$INPUT_FILE"),$(basename "$OUTPUT_FILE"),${RUNNING_TIME},${MAX_CPU_MB},${MAX_GPU_MB},${OPTIMAL_TRIPLET_SCORE},${NORMALIZED_SCORE},${STELAR_EXIT_CODE}" >> "$STATS_FILE"
+echo "stelar-pro,$(basename "$INPUT_FILE"),$(basename "$OUTPUT_FILE"),${RUNNING_TIME},${MAX_CPU_MB},${MAX_GPU_MB},${OPTIMAL_TRIPLET_SCORE},${NORMALIZED_SCORE},${STELAR_EXIT_CODE}" >> "$STATS_FILE"
 echo "Stats saved to: $STATS_FILE"
 
 # Send notification (ntfy) if enabled and curl available
@@ -377,7 +377,7 @@ if [[ "$NO_NOTIFY" = false ]] && command -v curl >/dev/null 2>&1; then
   STATUS_EMOJI=$(if [[ $STELAR_EXIT_CODE -eq 0 ]]; then echo "🎉"; else echo "❌"; fi)
   STATUS_TEXT=$(if [[ $STELAR_EXIT_CODE -eq 0 ]]; then echo "completed successfully"; else echo "failed (exit $STELAR_EXIT_CODE)"; fi)
   
-  curl -s -d "${STATUS_EMOJI} STELAR-X ${STATUS_TEXT}!
+  curl -s -d "${STATUS_EMOJI} STELAR-Pro ${STATUS_TEXT}!
 
 📊 Performance:
 • Running time: ${RUNNING_TIME}s
