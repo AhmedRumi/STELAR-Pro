@@ -531,35 +531,39 @@ public class MemoryOptimizedWeightCalculator {
             // Prepare result array
             double[] weights = new double[numCandidates];
             
-            // Flatten inverse index and ordering arrays for GPU
-            Memory inverseIndexMemory = flattenInverseIndex();
-            Memory orderingMemory = flattenOrderings();
+            // Flatten the STELAR-Pro occurrence-aware index for GPU.
+            // This replaces the old one-position inverse index with offset
+            // tables, so duplicated taxa remain visible to the CUDA kernel.
+            GpuRangeIndexData gpuIndexData = buildGpuRangeIndexData();
             
             // Launch mixed bipartition GPU kernel
             System.out.println("Launching mixed bipartition GPU kernel...");
             System.out.flush(); // Flush to ensure we see logs before native call
             
             try {
-                WeightCalcLib.INSTANCE.launchMixedWeightCalculation(
+                WeightCalcLib.INSTANCE.launchMixedWeightCalculationPro(
                     mixedArray,
                     geneTreeArray,
                     frequencyArray,
                     weights,
-                    inverseIndexMemory,
-                    orderingMemory,
+                    gpuIndexData.positionOffsetsMemory,
+                    gpuIndexData.positionsMemory,
+                    gpuIndexData.orderingMemory,
+                    gpuIndexData.orderingOffsetsMemory,
                     numCandidates,
                     numGeneTreeBips,
                     numTrees,
                     numTaxa
                 );
             } catch (UnsatisfiedLinkError e) {
-                System.err.println("ERROR: launchMixedWeightCalculation not found in CUDA library!");
-                System.err.println("The CUDA library needs to be rebuilt with the new mixed bipartition kernel.");
+                System.err.println("ERROR: launchMixedWeightCalculationPro not found in CUDA library!");
+                System.err.println("The CUDA library needs to be rebuilt with the STELAR-Pro mixed bipartition kernel.");
                 System.err.println("Run: ./build.sh to rebuild the CUDA library");
                 System.err.println("JNA Error: " + e.getMessage());
-                throw e;
+                System.out.println("Falling back to CPU calculation for mixed bipartitions...");
+                return calculateMixedWeightsMultiThread(candidates);
             } catch (Exception e) {
-                System.err.println("ERROR calling launchMixedWeightCalculation: " + e.getMessage());
+                System.err.println("ERROR calling launchMixedWeightCalculationPro: " + e.getMessage());
                 e.printStackTrace();
                 throw e;
             }
@@ -709,28 +713,39 @@ public class MemoryOptimizedWeightCalculator {
             // Prepare result array
             double[] weights = new double[numCandidates];
             
-            // Flatten inverse index and ordering arrays for GPU
-            Memory inverseIndexMemory = flattenInverseIndex();
-            Memory orderingMemory = flattenOrderings();
+            // Flatten the same duplication-aware range index used by the CPU.
+            // CUDA receives occurrence vectors and ordering offsets instead of
+            // assuming one position per taxon and numTaxa leaves per tree.
+            GpuRangeIndexData gpuIndexData = buildGpuRangeIndexData();
             
             // Launch compact GPU kernel
-            System.out.println("Launching pure range-based GPU kernel with inverse index arrays...");
-            System.out.println("IMPORTANT: GPU kernel must handle -1 sentinel values in inverse index");
-            System.out.println("  - inverseIndex[tree][taxon] == -1 means taxon not present in tree");
-            System.out.println("  - Only count intersections for taxa present in both trees");
+            System.out.println("Launching STELAR-Pro range-based GPU kernel with occurrence vectors...");
+            System.out.println("  - positionOffsets/positions encode all copies of each taxon");
+            System.out.println("  - orderingOffsets/orderings encode variable-length leaf occurrence orderings");
             
-            WeightCalcLib.INSTANCE.launchCompactWeightCalculation(
-                candidateArray,
-                geneTreeArray,
-                frequencyArray,
-                weights,
-                inverseIndexMemory,
-                orderingMemory,
-                numCandidates,
-                numGeneTreeBips,
-                numTrees,
-                numTaxa
-            );
+            try {
+                WeightCalcLib.INSTANCE.launchCompactWeightCalculationPro(
+                    candidateArray,
+                    geneTreeArray,
+                    frequencyArray,
+                    weights,
+                    gpuIndexData.positionOffsetsMemory,
+                    gpuIndexData.positionsMemory,
+                    gpuIndexData.orderingMemory,
+                    gpuIndexData.orderingOffsetsMemory,
+                    numCandidates,
+                    numGeneTreeBips,
+                    numTrees,
+                    numTaxa
+                );
+            } catch (UnsatisfiedLinkError e) {
+                System.err.println("ERROR: launchCompactWeightCalculationPro not found in CUDA library!");
+                System.err.println("The CUDA library needs to be rebuilt with the STELAR-Pro compact kernel.");
+                System.err.println("Run: ./build.sh on a machine with nvcc to rebuild cuda/libweight_calc.so");
+                System.err.println("JNA Error: " + e.getMessage());
+                System.out.println("Falling back to CPU calculation...");
+                return calculateWeightsMultiThread(candidates);
+            }
             
             System.out.println("==== PURE RANGE-BASED GPU KERNEL COMPLETED ====");
             
@@ -751,6 +766,119 @@ public class MemoryOptimizedWeightCalculator {
     }
     
     
+    /**
+     * JNA memory bundle for the STELAR-Pro GPU range index.
+     *
+     * The Memory objects must stay strongly reachable until the native call has
+     * copied them to device memory, so they are carried together in one object.
+     */
+    private static class GpuRangeIndexData {
+        Memory positionOffsetsMemory;
+        Memory positionsMemory;
+        Memory orderingMemory;
+        Memory orderingOffsetsMemory;
+        int totalPositionEntries;
+        int totalOrderingEntries;
+    }
+
+    /**
+     * Flatten the CPU STELAR-Pro index into CUDA-friendly arrays.
+     *
+     * Data format sent to CUDA:
+     *   positionOffsets has numTrees * numTaxa + 1 entries. For a pair
+     *   (tree, taxon), offset i and i+1 delimit that taxon's occurrence
+     *   positions in the flat positions array.
+     *
+     *   orderingOffsets has numTrees + 1 entries. orderingOffsets[tree] and
+     *   orderingOffsets[tree + 1] delimit the full left-to-right leaf occurrence
+     *   ordering for that tree in the flat orderings array.
+     *
+     * This is the GPU equivalent of InverseIndexManager.getRangeIntersectionSize:
+     * a CUDA thread scans one occurrence range, suppresses duplicate taxa inside
+     * that range, and binary-searches positions[] to test membership in the
+     * other range.
+     */
+    @SuppressWarnings("resource") // Memory is managed by JNA for the duration of the native call
+    private GpuRangeIndexData buildGpuRangeIndexData() {
+        int[][][] positionsByTree = inverseIndexManager.getTaxonPositionsByTree();
+        int[][] orderings = inverseIndexManager.getGeneTreeOrderings();
+        int numTrees = inverseIndexManager.getNumTrees();
+        int numTaxa = inverseIndexManager.getNumTaxa();
+
+        System.out.println("==== BUILDING STELAR-PRO GPU RANGE INDEX ====");
+        System.out.println("Trees: " + numTrees + ", taxa: " + numTaxa);
+
+        int totalPositionEntries = 0;
+        for (int tree = 0; tree < numTrees; tree++) {
+            for (int taxon = 0; taxon < numTaxa; taxon++) {
+                int[] positions = positionsByTree[tree][taxon];
+                if (positions != null) {
+                    totalPositionEntries += positions.length;
+                }
+            }
+        }
+
+        int totalOrderingEntries = 0;
+        int minOrderingLength = Integer.MAX_VALUE;
+        int maxOrderingLength = 0;
+        for (int tree = 0; tree < numTrees; tree++) {
+            if (orderings[tree] == null) {
+                throw new RuntimeException("Null ordering array for tree " + tree);
+            }
+            int length = orderings[tree].length;
+            totalOrderingEntries += length;
+            minOrderingLength = Math.min(minOrderingLength, length);
+            maxOrderingLength = Math.max(maxOrderingLength, length);
+        }
+
+        GpuRangeIndexData data = new GpuRangeIndexData();
+        data.totalPositionEntries = totalPositionEntries;
+        data.totalOrderingEntries = totalOrderingEntries;
+
+        int taxonEntryCount = numTrees * numTaxa;
+        data.positionOffsetsMemory = new Memory((long) (taxonEntryCount + 1) * Integer.BYTES);
+        data.positionsMemory = new Memory((long) Math.max(1, totalPositionEntries) * Integer.BYTES);
+        data.orderingOffsetsMemory = new Memory((long) (numTrees + 1) * Integer.BYTES);
+        data.orderingMemory = new Memory((long) Math.max(1, totalOrderingEntries) * Integer.BYTES);
+
+        int positionCursor = 0;
+        for (int tree = 0; tree < numTrees; tree++) {
+            for (int taxon = 0; taxon < numTaxa; taxon++) {
+                int entryIndex = tree * numTaxa + taxon;
+                data.positionOffsetsMemory.setInt((long) entryIndex * Integer.BYTES, positionCursor);
+
+                int[] positions = positionsByTree[tree][taxon];
+                if (positions != null) {
+                    for (int position : positions) {
+                        data.positionsMemory.setInt((long) positionCursor * Integer.BYTES, position);
+                        positionCursor++;
+                    }
+                }
+            }
+        }
+        data.positionOffsetsMemory.setInt((long) taxonEntryCount * Integer.BYTES, positionCursor);
+
+        int orderingCursor = 0;
+        for (int tree = 0; tree < numTrees; tree++) {
+            data.orderingOffsetsMemory.setInt((long) tree * Integer.BYTES, orderingCursor);
+            for (int taxonId : orderings[tree]) {
+                data.orderingMemory.setInt((long) orderingCursor * Integer.BYTES, taxonId);
+                orderingCursor++;
+            }
+        }
+        data.orderingOffsetsMemory.setInt((long) numTrees * Integer.BYTES, orderingCursor);
+
+        System.out.println("GPU range index entries:");
+        System.out.println("  Taxon occurrence positions: " + totalPositionEntries);
+        System.out.println("  Leaf ordering entries: " + totalOrderingEntries);
+        System.out.println("  Min leaves per tree: " + (minOrderingLength == Integer.MAX_VALUE ? 0 : minOrderingLength));
+        System.out.println("  Max leaves per tree: " + maxOrderingLength);
+        System.out.println("  Average leaves per tree: " + (totalOrderingEntries / (double) numTrees));
+        System.out.println("==== STELAR-PRO GPU RANGE INDEX READY ====");
+
+        return data;
+    }
+
     /**
      * Flatten inverse index array for GPU transfer.
      * 

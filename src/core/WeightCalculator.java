@@ -120,6 +120,54 @@ public class WeightCalculator {
             int numTrees,
             int numTaxa
         );
+
+        /*
+         * STELAR-Pro compact kernels.
+         *
+         * The legacy compact kernels above receive one inverse-index position
+         * per (tree, taxon). That is not enough when a gene tree has paralogous
+         * copies from the same species. The Pro kernels receive a sparse,
+         * flattened occurrence-vector format instead:
+         *
+         *   positionOffsets[tree * numTaxa + taxon] and the next offset delimit
+         *   that taxon's sorted occurrence positions inside positions[].
+         *
+         *   orderingOffsets[tree] and the next offset delimit that tree's full
+         *   left-to-right leaf occurrence ordering inside orderings[].
+         *
+         * CUDA then matches the CPU STELAR-Pro logic: scan a range of leaf
+         * occurrences, count each taxon once, and binary-search the other
+         * range's occurrence vector to test membership.
+         */
+        void launchCompactWeightCalculationPro(
+            CompactBipartition[] candidates,
+            CompactBipartition[] geneTreeBips,
+            int[] frequencies,
+            double[] weights,
+            Pointer positionOffsetsPtr,
+            Pointer positionsPtr,
+            Pointer orderingPtr,
+            Pointer orderingOffsetsPtr,
+            int numCandidates,
+            int numGeneTreeBips,
+            int numTrees,
+            int numTaxa
+        );
+
+        void launchMixedWeightCalculationPro(
+            MixedCompactBipartition[] mixedCandidates,
+            CompactBipartition[] geneTreeBips,
+            int[] frequencies,
+            double[] weights,
+            Pointer positionOffsetsPtr,
+            Pointer positionsPtr,
+            Pointer orderingPtr,
+            Pointer orderingOffsetsPtr,
+            int numCandidates,
+            int numGeneTreeBips,
+            int numTrees,
+            int numTaxa
+        );
     }
     
     public WeightCalculator(GeneTrees geneTrees) {

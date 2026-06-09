@@ -442,6 +442,21 @@ public class InverseIndexManager {
     public int[][] getInverseIndex() { 
         return inverseIndex; 
     }
+
+    /**
+     * Return the STELAR-Pro occurrence-position index.
+     *
+     * GPU callers flatten this 3D structure into two arrays:
+     *   positionOffsets[tree * numTaxa + taxon] -> start in positions[]
+     *   positions[start:end]                    -> every leaf position
+     *
+     * That format preserves the CPU semantics: a taxon/species can have zero,
+     * one, or many gene-tree leaf positions, and membership in a range is tested
+     * by binary search over that sorted position slice.
+     */
+    public int[][][] getTaxonPositionsByTree() {
+        return taxonPositionsByTree;
+    }
     
     public int[][] getGeneTreeOrderings() { 
         return geneTreeOrderings; 

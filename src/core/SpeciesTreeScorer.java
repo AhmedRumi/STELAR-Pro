@@ -31,9 +31,15 @@ public class SpeciesTreeScorer {
     private final int numGeneTrees;
     private final int numTaxa;
     
-    // Extended inverse index: includes gene trees + species tree
-    // Species tree is at index = numGeneTrees
+    // Extended inverse index: includes gene trees + species tree.
+    // Species tree is at index = numGeneTrees.
+    //
+    // extendedInverseIndex is a legacy first-position view used only for simple
+    // species-tree leaf range extraction. STELAR-Pro scoring uses
+    // extendedTaxonPositions so duplicated gene-tree taxa are not collapsed to
+    // one arbitrary occurrence.
     private int[][] extendedInverseIndex;
+    private int[][][] extendedTaxonPositions;
     private int[][] extendedOrderings;
     
     // Species tree bipartitions as RangeBipartitions
@@ -214,50 +220,38 @@ public class SpeciesTreeScorer {
             }
             System.out.println("Gene tree bipartitions array prepared (contiguous memory)");
             
-            // Flatten extended inverse index and orderings for GPU
-            // GPU expects flat arrays: [tree0_taxa..., tree1_taxa..., ..., speciesTree_taxa...]
-            long memSize = (long) totalTrees * numTaxa * 4;
-            System.out.println("Allocating GPU memory: " + (memSize * 2 / (1024 * 1024)) + " MB for indices");
-            
-            Memory inverseIndexMem = new Memory(memSize);
-            Memory orderingMem = new Memory(memSize);
-            
-            for (int t = 0; t < totalTrees; t++) {
-                for (int taxon = 0; taxon < numTaxa; taxon++) {
-                    long offset = ((long) t * numTaxa + taxon) * 4;
-                    inverseIndexMem.setInt(offset, extendedInverseIndex[t][taxon]);
-                }
-                
-                int[] ordering = extendedOrderings[t];
-                for (int pos = 0; pos < numTaxa; pos++) {
-                    long offset = ((long) t * numTaxa + pos) * 4;
-                    if (ordering != null && pos < ordering.length) {
-                        orderingMem.setInt(offset, ordering[pos]);
-                    } else {
-                        orderingMem.setInt(offset, -1);  // Sentinel for unused positions
-                    }
-                }
-            }
-            System.out.println("Inverse index and orderings flattened");
+            // Flatten the occurrence-aware STELAR-Pro index for CUDA. The old
+            // dense inverse index stored one position per taxon and therefore
+            // could not represent paralogs correctly.
+            GpuRangeIndexData gpuIndexData = buildGpuRangeIndexData();
             
             // Output array for weights
             double[] weights = new double[numSpeciesBips];
             
             System.out.println("Launching GPU kernel...");
             
-            // Call the existing compact weight calculation kernel
-            WeightCalcLib.INSTANCE.launchCompactWeightCalculation(
-                speciesBipsArray,
-                geneTreeBipsArray,
-                frequencies,
-                weights,
-                inverseIndexMem,
-                orderingMem,
-                numSpeciesBips,
-                numGeneTreeBips,
-                totalTrees,
-                numTaxa
-            );
+            // Call the STELAR-Pro compact weight calculation kernel.
+            try {
+                WeightCalcLib.INSTANCE.launchCompactWeightCalculationPro(
+                    speciesBipsArray,
+                    geneTreeBipsArray,
+                    frequencies,
+                    weights,
+                    gpuIndexData.positionOffsetsMemory,
+                    gpuIndexData.positionsMemory,
+                    gpuIndexData.orderingMemory,
+                    gpuIndexData.orderingOffsetsMemory,
+                    numSpeciesBips,
+                    numGeneTreeBips,
+                    totalTrees,
+                    numTaxa
+                );
+            } catch (UnsatisfiedLinkError e) {
+                System.err.println("STELAR-Pro GPU scorer kernel is not available: " + e.getMessage());
+                System.err.println("Rebuild cuda/libweight_calc.so with nvcc to enable GPU scoring.");
+                System.err.println("Falling back to CPU_PARALLEL mode...");
+                return calculateScoreCPUParallel();
+            }
             
             // Sum up weights to get total score
             double totalScore = 0.0;
@@ -283,6 +277,7 @@ public class SpeciesTreeScorer {
     private void buildExtendedInverseIndex(Tree speciesTree) {
         int totalTrees = numGeneTrees + 1;
         extendedInverseIndex = new int[totalTrees][numTaxa];
+        extendedTaxonPositions = new int[totalTrees][numTaxa][];
         extendedOrderings = new int[totalTrees][];
         
         // Copy gene tree inverse indices from existing InverseIndexManager
@@ -294,16 +289,7 @@ public class SpeciesTreeScorer {
             
             extendedOrderings[t] = ordering.stream().mapToInt(Integer::intValue).toArray();
             
-            // Initialize with -1 (sentinel for missing taxa)
-            Arrays.fill(extendedInverseIndex[t], -1);
-            
-            // Fill in actual positions
-            for (int pos = 0; pos < extendedOrderings[t].length; pos++) {
-                int taxonId = extendedOrderings[t][pos];
-                if (taxonId >= 0 && taxonId < numTaxa) {
-                    extendedInverseIndex[t][taxonId] = pos;
-                }
-            }
+            buildTreePositionIndex(t);
         }
         
         // Add species tree at index numGeneTrees
@@ -312,16 +298,42 @@ public class SpeciesTreeScorer {
         collectLeavesInOrder(speciesTree.root, speciesOrdering);
         
         extendedOrderings[speciesIdx] = speciesOrdering.stream().mapToInt(Integer::intValue).toArray();
-        
-        Arrays.fill(extendedInverseIndex[speciesIdx], -1);
-        for (int pos = 0; pos < extendedOrderings[speciesIdx].length; pos++) {
-            int taxonId = extendedOrderings[speciesIdx][pos];
-            if (taxonId >= 0 && taxonId < numTaxa) {
-                extendedInverseIndex[speciesIdx][taxonId] = pos;
-            }
-        }
+        buildTreePositionIndex(speciesIdx);
         
         System.out.println("Extended inverse index built for " + totalTrees + " trees");
+    }
+
+    /**
+     * Build both the legacy first-position view and the STELAR-Pro occurrence
+     * vectors for one tree in the extended scorer index.
+     */
+    private void buildTreePositionIndex(int treeIdx) {
+        Arrays.fill(extendedInverseIndex[treeIdx], -1);
+
+        @SuppressWarnings("unchecked")
+        List<Integer>[] positionsByTaxon = new ArrayList[numTaxa];
+        for (int taxonId = 0; taxonId < numTaxa; taxonId++) {
+            positionsByTaxon[taxonId] = new ArrayList<>();
+        }
+
+        for (int pos = 0; pos < extendedOrderings[treeIdx].length; pos++) {
+            int taxonId = extendedOrderings[treeIdx][pos];
+            if (taxonId >= 0 && taxonId < numTaxa) {
+                positionsByTaxon[taxonId].add(pos);
+                if (extendedInverseIndex[treeIdx][taxonId] == -1) {
+                    extendedInverseIndex[treeIdx][taxonId] = pos;
+                }
+            }
+        }
+
+        for (int taxonId = 0; taxonId < numTaxa; taxonId++) {
+            List<Integer> positions = positionsByTaxon[taxonId];
+            int[] compact = new int[positions.size()];
+            for (int i = 0; i < positions.size(); i++) {
+                compact[i] = positions.get(i);
+            }
+            extendedTaxonPositions[treeIdx][taxonId] = compact;
+        }
     }
     
     /**
@@ -505,21 +517,105 @@ public class SpeciesTreeScorer {
         if (smallOrdering == null) return 0;
         
         int maxPos = Math.min(smallEnd, smallOrdering.length);
+        Set<Integer> seenInSmallRange = new HashSet<>();
         
         for (int pos = smallStart; pos < maxPos; pos++) {
             int taxonId = smallOrdering[pos];
             
             if (taxonId < 0 || taxonId >= numTaxa) continue;
-            
-            int posInLargeTree = extendedInverseIndex[largeTree][taxonId];
-            
-            // Check if taxon exists in large tree and falls within range
-            if (posInLargeTree >= 0 && posInLargeTree >= largeStart && posInLargeTree < largeEnd) {
+
+            // STELAR-Pro scores species-set intersections. Multiple copies of
+            // the same taxon in the scanned range count once, and membership in
+            // the other range is tested against all occurrence positions.
+            if (!seenInSmallRange.add(taxonId)) {
+                continue;
+            }
+
+            if (hasPositionInRange(largeTree, taxonId, largeStart, largeEnd)) {
                 count++;
             }
         }
         
         return count;
     }
-}
 
+    private boolean hasPositionInRange(int treeIdx, int taxonId, int start, int end) {
+        int[] positions = extendedTaxonPositions[treeIdx][taxonId];
+        if (positions == null || positions.length == 0) {
+            return false;
+        }
+
+        int idx = Arrays.binarySearch(positions, start);
+        if (idx < 0) {
+            idx = -idx - 1;
+        }
+        return idx < positions.length && positions[idx] < end;
+    }
+
+    /**
+     * JNA memory bundle for the occurrence-aware GPU scorer index.
+     */
+    private static class GpuRangeIndexData {
+        Memory positionOffsetsMemory;
+        Memory positionsMemory;
+        Memory orderingMemory;
+        Memory orderingOffsetsMemory;
+    }
+
+    /**
+     * Flatten extendedTaxonPositions and extendedOrderings into the same Pro GPU
+     * data format used by MemoryOptimizedWeightCalculator.
+     */
+    @SuppressWarnings("resource")
+    private GpuRangeIndexData buildGpuRangeIndexData() {
+        int totalTrees = numGeneTrees + 1;
+        int taxonEntryCount = totalTrees * numTaxa;
+
+        int totalPositionEntries = 0;
+        for (int tree = 0; tree < totalTrees; tree++) {
+            for (int taxon = 0; taxon < numTaxa; taxon++) {
+                totalPositionEntries += extendedTaxonPositions[tree][taxon].length;
+            }
+        }
+
+        int totalOrderingEntries = 0;
+        for (int tree = 0; tree < totalTrees; tree++) {
+            totalOrderingEntries += extendedOrderings[tree].length;
+        }
+
+        GpuRangeIndexData data = new GpuRangeIndexData();
+        data.positionOffsetsMemory = new Memory((long) (taxonEntryCount + 1) * Integer.BYTES);
+        data.positionsMemory = new Memory((long) Math.max(1, totalPositionEntries) * Integer.BYTES);
+        data.orderingOffsetsMemory = new Memory((long) (totalTrees + 1) * Integer.BYTES);
+        data.orderingMemory = new Memory((long) Math.max(1, totalOrderingEntries) * Integer.BYTES);
+
+        int positionCursor = 0;
+        for (int tree = 0; tree < totalTrees; tree++) {
+            for (int taxon = 0; taxon < numTaxa; taxon++) {
+                int entryIndex = tree * numTaxa + taxon;
+                data.positionOffsetsMemory.setInt((long) entryIndex * Integer.BYTES, positionCursor);
+                for (int position : extendedTaxonPositions[tree][taxon]) {
+                    data.positionsMemory.setInt((long) positionCursor * Integer.BYTES, position);
+                    positionCursor++;
+                }
+            }
+        }
+        data.positionOffsetsMemory.setInt((long) taxonEntryCount * Integer.BYTES, positionCursor);
+
+        int orderingCursor = 0;
+        for (int tree = 0; tree < totalTrees; tree++) {
+            data.orderingOffsetsMemory.setInt((long) tree * Integer.BYTES, orderingCursor);
+            for (int taxonId : extendedOrderings[tree]) {
+                data.orderingMemory.setInt((long) orderingCursor * Integer.BYTES, taxonId);
+                orderingCursor++;
+            }
+        }
+        data.orderingOffsetsMemory.setInt((long) totalTrees * Integer.BYTES, orderingCursor);
+
+        System.out.println("STELAR-Pro GPU scorer index flattened:");
+        System.out.println("  Taxon occurrence positions: " + totalPositionEntries);
+        System.out.println("  Leaf ordering entries: " + totalOrderingEntries);
+
+        return data;
+    }
+}

@@ -183,6 +183,194 @@ __device__ double calculateMixedCompactScore(
     return score1 + score2;
 }
 
+// Return true when taxonId has at least one occurrence in [start, end) of tree.
+//
+// STELAR-Pro sends the GPU the same logical structure used by the CPU:
+// positionOffsets[tree * numTaxa + taxon] and the next offset delimit a sorted
+// slice of positions[]. A lower-bound binary search over that slice is enough to
+// test whether one copy of the species occurs inside the target range.
+__device__ bool hasPositionInRangePro(
+    int tree, int taxonId, int start, int end,
+    int* positionOffsets,
+    int* positions,
+    int numTaxa
+) {
+    int entryIndex = tree * numTaxa + taxonId;
+    int lo = positionOffsets[entryIndex];
+    int hi = positionOffsets[entryIndex + 1];
+
+    int left = lo;
+    int right = hi;
+    while (left < right) {
+        int mid = left + (right - left) / 2;
+        if (positions[mid] < start) {
+            left = mid + 1;
+        } else {
+            right = mid;
+        }
+    }
+
+    return left < hi && positions[left] < end;
+}
+
+// Naive duplicate suppression for one intersection calculation.
+//
+// A CUDA thread processes one candidate against many gene-tree bipartitions.
+// Allocating a per-thread hash set would be expensive and awkward, so for now
+// we preserve correctness with an earlier-occurrence scan inside the smaller
+// range. If the same species appeared earlier in the scanned range, this copy is
+// skipped. That makes the count species-set based, matching STELAR-Pro, at the
+// cost of O(range^2) behavior in very duplication-heavy ranges.
+__device__ bool alreadySeenInSmallRangePro(
+    int smallTree,
+    int smallStart,
+    int pos,
+    int taxonId,
+    int* orderings,
+    int* orderingOffsets
+) {
+    int orderingBase = orderingOffsets[smallTree];
+    for (int prev = smallStart; prev < pos; prev++) {
+        if (orderings[orderingBase + prev] == taxonId) {
+            return true;
+        }
+    }
+    return false;
+}
+
+// STELAR-Pro range intersection for duplicated taxa.
+//
+// Ranges are still leaf-occurrence intervals, but the returned cardinality is a
+// species-set intersection size: each taxon is counted at most once even if the
+// scanned range contains several paralogous copies.
+__device__ int compactRangeIntersectionPro(
+    int tree1, int start1, int end1,
+    int tree2, int start2, int end2,
+    int* positionOffsets,
+    int* positions,
+    int* orderings,
+    int* orderingOffsets,
+    int numTaxa
+) {
+    int size1 = end1 - start1;
+    int size2 = end2 - start2;
+
+    int smallTree, smallStart, smallEnd, largeTree, largeStart, largeEnd;
+    if (size1 <= size2) {
+        smallTree = tree1; smallStart = start1; smallEnd = end1;
+        largeTree = tree2; largeStart = start2; largeEnd = end2;
+    } else {
+        smallTree = tree2; smallStart = start2; smallEnd = end2;
+        largeTree = tree1; largeStart = start1; largeEnd = end1;
+    }
+
+    int smallLength = orderingOffsets[smallTree + 1] - orderingOffsets[smallTree];
+    if (smallStart < 0) smallStart = 0;
+    if (smallEnd > smallLength) smallEnd = smallLength;
+    if (smallStart >= smallEnd) return 0;
+
+    int count = 0;
+    int orderingBase = orderingOffsets[smallTree];
+    for (int pos = smallStart; pos < smallEnd; pos++) {
+        int taxonId = orderings[orderingBase + pos];
+        if (taxonId < 0 || taxonId >= numTaxa) {
+            continue;
+        }
+
+        if (alreadySeenInSmallRangePro(smallTree, smallStart, pos, taxonId, orderings, orderingOffsets)) {
+            continue;
+        }
+
+        if (hasPositionInRangePro(largeTree, taxonId, largeStart, largeEnd, positionOffsets, positions, numTaxa)) {
+            count++;
+        }
+    }
+
+    return count;
+}
+
+__device__ double calculateCompactScorePro(
+    CompactBipartition bip1, CompactBipartition bip2,
+    int* positionOffsets,
+    int* positions,
+    int* orderings,
+    int* orderingOffsets,
+    int numTaxa
+) {
+    int aa = compactRangeIntersectionPro(
+        bip1.geneTreeIndex, bip1.leftStart, bip1.leftEnd,
+        bip2.geneTreeIndex, bip2.leftStart, bip2.leftEnd,
+        positionOffsets, positions, orderings, orderingOffsets, numTaxa);
+
+    int bb = compactRangeIntersectionPro(
+        bip1.geneTreeIndex, bip1.rightStart, bip1.rightEnd,
+        bip2.geneTreeIndex, bip2.rightStart, bip2.rightEnd,
+        positionOffsets, positions, orderings, orderingOffsets, numTaxa);
+
+    int ab = compactRangeIntersectionPro(
+        bip1.geneTreeIndex, bip1.leftStart, bip1.leftEnd,
+        bip2.geneTreeIndex, bip2.rightStart, bip2.rightEnd,
+        positionOffsets, positions, orderings, orderingOffsets, numTaxa);
+
+    int ba = compactRangeIntersectionPro(
+        bip1.geneTreeIndex, bip1.rightStart, bip1.rightEnd,
+        bip2.geneTreeIndex, bip2.leftStart, bip2.leftEnd,
+        positionOffsets, positions, orderings, orderingOffsets, numTaxa);
+
+    double score1 = 0.0;
+    if (aa + bb >= 2) {
+        score1 = aa * bb * (aa + bb - 2) / 2.0;
+    }
+
+    double score2 = 0.0;
+    if (ab + ba >= 2) {
+        score2 = ab * ba * (ab + ba - 2) / 2.0;
+    }
+
+    return score1 + score2;
+}
+
+__device__ double calculateMixedCompactScorePro(
+    MixedCompactBipartition mixed, CompactBipartition geneTree,
+    int* positionOffsets,
+    int* positions,
+    int* orderings,
+    int* orderingOffsets,
+    int numTaxa
+) {
+    int aa = compactRangeIntersectionPro(
+        mixed.leftTreeIndex, mixed.leftStart, mixed.leftEnd,
+        geneTree.geneTreeIndex, geneTree.leftStart, geneTree.leftEnd,
+        positionOffsets, positions, orderings, orderingOffsets, numTaxa);
+
+    int bb = compactRangeIntersectionPro(
+        mixed.rightTreeIndex, mixed.rightStart, mixed.rightEnd,
+        geneTree.geneTreeIndex, geneTree.rightStart, geneTree.rightEnd,
+        positionOffsets, positions, orderings, orderingOffsets, numTaxa);
+
+    int ab = compactRangeIntersectionPro(
+        mixed.leftTreeIndex, mixed.leftStart, mixed.leftEnd,
+        geneTree.geneTreeIndex, geneTree.rightStart, geneTree.rightEnd,
+        positionOffsets, positions, orderings, orderingOffsets, numTaxa);
+
+    int ba = compactRangeIntersectionPro(
+        mixed.rightTreeIndex, mixed.rightStart, mixed.rightEnd,
+        geneTree.geneTreeIndex, geneTree.leftStart, geneTree.leftEnd,
+        positionOffsets, positions, orderings, orderingOffsets, numTaxa);
+
+    double score1 = 0.0;
+    if (aa + bb >= 2) {
+        score1 = aa * bb * (aa + bb - 2) / 2.0;
+    }
+
+    double score2 = 0.0;
+    if (ab + ba >= 2) {
+        score2 = ab * ba * (ab + ba - 2) / 2.0;
+    }
+
+    return score1 + score2;
+}
+
 // Kernel to calculate weights for all candidate bipartitions
 __global__ void calculateWeightsKernel(
     Bipartition* candidates,           // Array of candidate bipartitions
@@ -412,6 +600,149 @@ extern "C" {
         
         printf("==== COMPACT GPU KERNEL COMPLETED SUCCESSFULLY ====\n");
     }
+
+    // STELAR-Pro compact kernel. This uses occurrence-vector data instead of
+    // the legacy one-position inverse index, so duplicated taxa are handled with
+    // the same species-set semantics as the CPU implementation.
+    __global__ void calculateCompactWeightsKernelPro(
+        CompactBipartition* candidates,
+        CompactBipartition* geneTreeBips,
+        int* frequencies,
+        double* weights,
+        int* positionOffsets,
+        int* positions,
+        int* orderings,
+        int* orderingOffsets,
+        int numCandidates,
+        int numGeneTreeBips,
+        int numTaxa
+    ) {
+        int candidateIdx = blockIdx.x * blockDim.x + threadIdx.x;
+        if (candidateIdx >= numCandidates) return;
+
+        double totalScore = 0.0;
+        CompactBipartition candidate = candidates[candidateIdx];
+
+        for (int i = 0; i < numGeneTreeBips; i++) {
+            double score = calculateCompactScorePro(
+                candidate,
+                geneTreeBips[i],
+                positionOffsets,
+                positions,
+                orderings,
+                orderingOffsets,
+                numTaxa);
+            totalScore += score * frequencies[i];
+        }
+
+        weights[candidateIdx] = totalScore;
+    }
+
+    void launchCompactWeightCalculationPro(
+        CompactBipartition* hCandidates,
+        CompactBipartition* hGeneTreeBips,
+        int* hFrequencies,
+        double* hWeights,
+        int* hPositionOffsets,
+        int* hPositions,
+        int* hOrderings,
+        int* hOrderingOffsets,
+        int numCandidates,
+        int numGeneTreeBips,
+        int numTrees,
+        int numTaxa
+    ) {
+        printf("==== LAUNCHING STELAR-PRO COMPACT GPU KERNEL ====\n");
+        printf("Candidates: %d, Gene tree bips: %d, Trees: %d, Taxa: %d\n",
+               numCandidates, numGeneTreeBips, numTrees, numTaxa);
+
+        int taxonEntryCount = numTrees * numTaxa;
+        int totalPositionEntries = hPositionOffsets[taxonEntryCount];
+        int totalOrderingEntries = hOrderingOffsets[numTrees];
+
+        CompactBipartition *dCandidates, *dGeneTreeBips;
+        int *dFrequencies, *dPositionOffsets, *dPositions, *dOrderings, *dOrderingOffsets;
+        double *dWeights;
+
+        size_t candidateSize = numCandidates * sizeof(CompactBipartition);
+        size_t geneTreeSize = numGeneTreeBips * sizeof(CompactBipartition);
+        size_t frequencySize = numGeneTreeBips * sizeof(int);
+        size_t weightsSize = numCandidates * sizeof(double);
+        size_t positionOffsetSize = (size_t)(taxonEntryCount + 1) * sizeof(int);
+        size_t positionSize = (size_t)(totalPositionEntries > 0 ? totalPositionEntries : 1) * sizeof(int);
+        size_t orderingOffsetSize = (size_t)(numTrees + 1) * sizeof(int);
+        size_t orderingSize = (size_t)(totalOrderingEntries > 0 ? totalOrderingEntries : 1) * sizeof(int);
+
+        printf("Memory allocations:\n");
+        printf("  Candidates: %zu KB\n", candidateSize / 1024);
+        printf("  Gene trees: %zu KB\n", geneTreeSize / 1024);
+        printf("  Position offsets: %zu KB\n", positionOffsetSize / 1024);
+        printf("  Taxon occurrence positions: %zu KB\n", positionSize / 1024);
+        printf("  Ordering offsets: %zu KB\n", orderingOffsetSize / 1024);
+        printf("  Leaf occurrence orderings: %zu KB\n", orderingSize / 1024);
+
+        cudaMalloc(&dCandidates, candidateSize);
+        cudaMalloc(&dGeneTreeBips, geneTreeSize);
+        cudaMalloc(&dFrequencies, frequencySize);
+        cudaMalloc(&dWeights, weightsSize);
+        cudaMalloc(&dPositionOffsets, positionOffsetSize);
+        cudaMalloc(&dPositions, positionSize);
+        cudaMalloc(&dOrderings, orderingSize);
+        cudaMalloc(&dOrderingOffsets, orderingOffsetSize);
+
+        printf("Copying STELAR-Pro range index to GPU...\n");
+        cudaMemcpy(dCandidates, hCandidates, candidateSize, cudaMemcpyHostToDevice);
+        cudaMemcpy(dGeneTreeBips, hGeneTreeBips, geneTreeSize, cudaMemcpyHostToDevice);
+        cudaMemcpy(dFrequencies, hFrequencies, frequencySize, cudaMemcpyHostToDevice);
+        cudaMemcpy(dPositionOffsets, hPositionOffsets, positionOffsetSize, cudaMemcpyHostToDevice);
+        cudaMemcpy(dPositions, hPositions, positionSize, cudaMemcpyHostToDevice);
+        cudaMemcpy(dOrderings, hOrderings, orderingSize, cudaMemcpyHostToDevice);
+        cudaMemcpy(dOrderingOffsets, hOrderingOffsets, orderingOffsetSize, cudaMemcpyHostToDevice);
+
+        int blockSize = 256;
+        int gridSize = (numCandidates + blockSize - 1) / blockSize;
+
+        calculateCompactWeightsKernelPro<<<gridSize, blockSize>>>(
+            dCandidates,
+            dGeneTreeBips,
+            dFrequencies,
+            dWeights,
+            dPositionOffsets,
+            dPositions,
+            dOrderings,
+            dOrderingOffsets,
+            numCandidates,
+            numGeneTreeBips,
+            numTaxa
+        );
+
+        cudaError_t kernelError = cudaGetLastError();
+        if (kernelError != cudaSuccess) {
+            printf("CUDA kernel launch error: %s\n", cudaGetErrorString(kernelError));
+            return;
+        }
+
+        cudaDeviceSynchronize();
+
+        cudaError_t syncError = cudaGetLastError();
+        if (syncError != cudaSuccess) {
+            printf("CUDA kernel execution error: %s\n", cudaGetErrorString(syncError));
+            return;
+        }
+
+        cudaMemcpy(hWeights, dWeights, weightsSize, cudaMemcpyDeviceToHost);
+
+        cudaFree(dCandidates);
+        cudaFree(dGeneTreeBips);
+        cudaFree(dFrequencies);
+        cudaFree(dWeights);
+        cudaFree(dPositionOffsets);
+        cudaFree(dPositions);
+        cudaFree(dOrderings);
+        cudaFree(dOrderingOffsets);
+
+        printf("==== STELAR-PRO COMPACT GPU KERNEL COMPLETED SUCCESSFULLY ====\n");
+    }
     
     // Mixed bipartition kernel for cross-tree recombination
     __global__ void calculateMixedCompactWeightsKernel(
@@ -538,5 +869,149 @@ extern "C" {
         cudaFree(dOrderings);
         
         printf("==== MIXED BIPARTITION GPU KERNEL COMPLETED SUCCESSFULLY ====\n");
+    }
+
+    // STELAR-Pro mixed bipartition kernel. Mixed candidates can take their left
+    // and right sides from different gene-tree occurrence orderings, so the same
+    // offset-based index is required here too.
+    __global__ void calculateMixedCompactWeightsKernelPro(
+        MixedCompactBipartition* mixedCandidates,
+        CompactBipartition* geneTreeBips,
+        int* frequencies,
+        double* weights,
+        int* positionOffsets,
+        int* positions,
+        int* orderings,
+        int* orderingOffsets,
+        int numCandidates,
+        int numGeneTreeBips,
+        int numTaxa
+    ) {
+        int candidateIdx = blockIdx.x * blockDim.x + threadIdx.x;
+        if (candidateIdx >= numCandidates) return;
+
+        double totalScore = 0.0;
+        MixedCompactBipartition candidate = mixedCandidates[candidateIdx];
+
+        for (int i = 0; i < numGeneTreeBips; i++) {
+            double score = calculateMixedCompactScorePro(
+                candidate,
+                geneTreeBips[i],
+                positionOffsets,
+                positions,
+                orderings,
+                orderingOffsets,
+                numTaxa);
+            totalScore += score * frequencies[i];
+        }
+
+        weights[candidateIdx] = totalScore;
+    }
+
+    void launchMixedWeightCalculationPro(
+        MixedCompactBipartition* hMixedCandidates,
+        CompactBipartition* hGeneTreeBips,
+        int* hFrequencies,
+        double* hWeights,
+        int* hPositionOffsets,
+        int* hPositions,
+        int* hOrderings,
+        int* hOrderingOffsets,
+        int numCandidates,
+        int numGeneTreeBips,
+        int numTrees,
+        int numTaxa
+    ) {
+        printf("==== LAUNCHING STELAR-PRO MIXED BIPARTITION GPU KERNEL ====\n");
+        printf("Mixed candidates: %d, Gene tree bips: %d, Trees: %d, Taxa: %d\n",
+               numCandidates, numGeneTreeBips, numTrees, numTaxa);
+
+        int taxonEntryCount = numTrees * numTaxa;
+        int totalPositionEntries = hPositionOffsets[taxonEntryCount];
+        int totalOrderingEntries = hOrderingOffsets[numTrees];
+
+        MixedCompactBipartition *dMixedCandidates;
+        CompactBipartition *dGeneTreeBips;
+        int *dFrequencies, *dPositionOffsets, *dPositions, *dOrderings, *dOrderingOffsets;
+        double *dWeights;
+
+        size_t mixedCandidateSize = numCandidates * sizeof(MixedCompactBipartition);
+        size_t geneTreeSize = numGeneTreeBips * sizeof(CompactBipartition);
+        size_t frequencySize = numGeneTreeBips * sizeof(int);
+        size_t weightsSize = numCandidates * sizeof(double);
+        size_t positionOffsetSize = (size_t)(taxonEntryCount + 1) * sizeof(int);
+        size_t positionSize = (size_t)(totalPositionEntries > 0 ? totalPositionEntries : 1) * sizeof(int);
+        size_t orderingOffsetSize = (size_t)(numTrees + 1) * sizeof(int);
+        size_t orderingSize = (size_t)(totalOrderingEntries > 0 ? totalOrderingEntries : 1) * sizeof(int);
+
+        printf("Memory allocations:\n");
+        printf("  Mixed candidates: %zu KB\n", mixedCandidateSize / 1024);
+        printf("  Gene trees: %zu KB\n", geneTreeSize / 1024);
+        printf("  Position offsets: %zu KB\n", positionOffsetSize / 1024);
+        printf("  Taxon occurrence positions: %zu KB\n", positionSize / 1024);
+        printf("  Ordering offsets: %zu KB\n", orderingOffsetSize / 1024);
+        printf("  Leaf occurrence orderings: %zu KB\n", orderingSize / 1024);
+
+        cudaMalloc(&dMixedCandidates, mixedCandidateSize);
+        cudaMalloc(&dGeneTreeBips, geneTreeSize);
+        cudaMalloc(&dFrequencies, frequencySize);
+        cudaMalloc(&dWeights, weightsSize);
+        cudaMalloc(&dPositionOffsets, positionOffsetSize);
+        cudaMalloc(&dPositions, positionSize);
+        cudaMalloc(&dOrderings, orderingSize);
+        cudaMalloc(&dOrderingOffsets, orderingOffsetSize);
+
+        printf("Copying STELAR-Pro mixed range index to GPU...\n");
+        cudaMemcpy(dMixedCandidates, hMixedCandidates, mixedCandidateSize, cudaMemcpyHostToDevice);
+        cudaMemcpy(dGeneTreeBips, hGeneTreeBips, geneTreeSize, cudaMemcpyHostToDevice);
+        cudaMemcpy(dFrequencies, hFrequencies, frequencySize, cudaMemcpyHostToDevice);
+        cudaMemcpy(dPositionOffsets, hPositionOffsets, positionOffsetSize, cudaMemcpyHostToDevice);
+        cudaMemcpy(dPositions, hPositions, positionSize, cudaMemcpyHostToDevice);
+        cudaMemcpy(dOrderings, hOrderings, orderingSize, cudaMemcpyHostToDevice);
+        cudaMemcpy(dOrderingOffsets, hOrderingOffsets, orderingOffsetSize, cudaMemcpyHostToDevice);
+
+        int blockSize = 256;
+        int gridSize = (numCandidates + blockSize - 1) / blockSize;
+
+        calculateMixedCompactWeightsKernelPro<<<gridSize, blockSize>>>(
+            dMixedCandidates,
+            dGeneTreeBips,
+            dFrequencies,
+            dWeights,
+            dPositionOffsets,
+            dPositions,
+            dOrderings,
+            dOrderingOffsets,
+            numCandidates,
+            numGeneTreeBips,
+            numTaxa
+        );
+
+        cudaError_t kernelError = cudaGetLastError();
+        if (kernelError != cudaSuccess) {
+            printf("CUDA kernel launch error: %s\n", cudaGetErrorString(kernelError));
+            return;
+        }
+
+        cudaDeviceSynchronize();
+
+        cudaError_t syncError = cudaGetLastError();
+        if (syncError != cudaSuccess) {
+            printf("CUDA kernel execution error: %s\n", cudaGetErrorString(syncError));
+            return;
+        }
+
+        cudaMemcpy(hWeights, dWeights, weightsSize, cudaMemcpyDeviceToHost);
+
+        cudaFree(dMixedCandidates);
+        cudaFree(dGeneTreeBips);
+        cudaFree(dFrequencies);
+        cudaFree(dWeights);
+        cudaFree(dPositionOffsets);
+        cudaFree(dPositions);
+        cudaFree(dOrderings);
+        cudaFree(dOrderingOffsets);
+
+        printf("==== STELAR-PRO MIXED BIPARTITION GPU KERNEL COMPLETED SUCCESSFULLY ====\n");
     }
 } 
