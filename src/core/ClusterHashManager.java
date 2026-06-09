@@ -25,20 +25,23 @@ public class ClusterHashManager {
         public final int geneTreeIndex;
         public final int start;
         public final int end;
+        public final int uniqueTaxonCount;
         
-        public ClusterRange(int geneTreeIndex, int start, int end) {
+        public ClusterRange(int geneTreeIndex, int start, int end, int uniqueTaxonCount) {
             this.geneTreeIndex = geneTreeIndex;
             this.start = start;
             this.end = end;
+            this.uniqueTaxonCount = uniqueTaxonCount;
         }
         
         public int size() {
-            return end - start;
+            return uniqueTaxonCount;
         }
         
         @Override
         public String toString() {
-            return "ClusterRange[tree=" + geneTreeIndex + ", range=[" + start + "," + end + ")]";
+            return "ClusterRange[tree=" + geneTreeIndex + ", range=[" + start + "," + end + "), uniqueTaxa="
+                + uniqueTaxonCount + "]";
         }
     }
     
@@ -79,11 +82,13 @@ public class ClusterHashManager {
     public ClusterHashPair getClusterHash(int geneTreeIndex, int start, int end) {
         hashComputations++;
         
-        ClusterHashPair hash = HashUtils.computeClusterHash(geneTreeIndex, start, end,
-                                                           geneTreeOrderings, prefixSums, prefixXORs);
+        Set<Integer> taxonSet = getRangeTaxonSet(geneTreeIndex, start, end);
+        ClusterHashPair hash = HashUtils.computeClusterHashFromTaxonSet(taxonSet);
         
-        // Store lightweight range mapping for O(1) size queries and on-demand taxon derivation
-        hashToRange.put(hash, new ClusterRange(geneTreeIndex, start, end));
+        // Store a compact range plus the species-set size used by the DP. The
+        // range can contain duplicate gene copies, but uniqueTaxonCount counts
+        // each species once so DP base cases operate on species-tree clusters.
+        hashToRange.put(hash, new ClusterRange(geneTreeIndex, start, end, taxonSet.size()));
         
         return hash;
     }
@@ -109,7 +114,7 @@ public class ClusterHashManager {
         
         // Store a dummy range for fallback hashes (we can't derive range info from them)
         // This is mainly for compatibility - ideally all clusters should be range-based
-        hashToRange.put(fallbackHash, new ClusterRange(-1, 0, taxonSet.size()));
+        hashToRange.put(fallbackHash, new ClusterRange(-1, 0, taxonSet.size(), taxonSet.size()));
         
         return fallbackHash;
     }
@@ -153,12 +158,12 @@ public class ClusterHashManager {
         
         // Contiguous ranges - union is simply [leftStart, rightEnd]
         hashComputations++;
-        ClusterHashPair unionHash = HashUtils.computeClusterHash(bip.geneTreeIndex, 
-                                                                bip.leftStart, bip.rightEnd,
-                                                                geneTreeOrderings, prefixSums, prefixXORs);
+        Set<Integer> unionTaxa = getRangeTaxonSet(bip.geneTreeIndex, bip.leftStart, bip.rightEnd);
+        ClusterHashPair unionHash = HashUtils.computeClusterHashFromTaxonSet(unionTaxa);
         
-        // Store the range mapping for the union cluster
-        hashToRange.put(unionHash, new ClusterRange(bip.geneTreeIndex, bip.leftStart, bip.rightEnd));
+        // Store the range mapping for the union cluster. The range may include
+        // repeated gene copies, but the DP state size is the unique species count.
+        hashToRange.put(unionHash, new ClusterRange(bip.geneTreeIndex, bip.leftStart, bip.rightEnd, unionTaxa.size()));
         
         return unionHash;
     }
@@ -380,15 +385,17 @@ public class ClusterHashManager {
         System.out.println("==== COMPUTING ALL TAXA CLUSTER HASH ====");
         System.out.println("Real taxa count (dataset): " + realTaxaCount);
         
-        // Find a gene tree that contains ALL taxa (complete tree)
+        // Find a gene tree that contains ALL species. The raw ordering length
+        // counts gene copies, so STELAR-Pro must compare the number of unique
+        // species in each tree against the dataset species count.
         int completeTreeIndex = -1;
         
         for (int treeIdx = 0; treeIdx < geneTreeOrderings.length; treeIdx++) {
-            int taxaInThisTree = geneTreeOrderings[treeIdx].length;
+            int taxaInThisTree = getUniqueTaxonCount(treeIdx);
             
             // Log first few trees for debugging
             if (treeIdx < 5) {
-                System.out.println("Tree " + treeIdx + " has " + taxaInThisTree + " taxa");
+                System.out.println("Tree " + treeIdx + " has " + taxaInThisTree + " unique taxa");
             }
             
             // Check if this tree contains all taxa
@@ -403,7 +410,7 @@ public class ClusterHashManager {
             // Fallback: find the tree with the most taxa
             int maxTaxaInTree = 0;
             for (int treeIdx = 0; treeIdx < geneTreeOrderings.length; treeIdx++) {
-                int taxaInThisTree = geneTreeOrderings[treeIdx].length;
+                int taxaInThisTree = getUniqueTaxonCount(treeIdx);
                 if (taxaInThisTree > maxTaxaInTree) {
                     maxTaxaInTree = taxaInThisTree;
                     completeTreeIndex = treeIdx;
@@ -420,9 +427,25 @@ public class ClusterHashManager {
         ClusterHashPair result = getClusterHash(completeTreeIndex, 0, numTaxaInCompleteTree);
         
         System.out.println("All taxa cluster hash from tree " + completeTreeIndex + ": " + result.toDebugString());
-        System.out.println("Cluster size: " + numTaxaInCompleteTree + " taxa");
+        System.out.println("Cluster size: " + getClusterSize(result) + " unique taxa");
         System.out.println("==== ALL TAXA CLUSTER HASH COMPUTED ====");
         
         return result;
+    }
+
+    private int getUniqueTaxonCount(int treeIndex) {
+        if (geneTreeOrderings == null || treeIndex < 0 || treeIndex >= geneTreeOrderings.length) {
+            return 0;
+        }
+        int[] ordering = geneTreeOrderings[treeIndex];
+        if (ordering == null) {
+            return 0;
+        }
+
+        Set<Integer> uniqueTaxa = new HashSet<>();
+        for (int taxonId : ordering) {
+            uniqueTaxa.add(taxonId);
+        }
+        return uniqueTaxa.size();
     }
 }

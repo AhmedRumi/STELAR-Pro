@@ -31,14 +31,20 @@ public class HashUtils {
     public static ClusterHashPair computeClusterHash(
             int geneTreeIndex, int start, int end,
             int[][] orderings, long[][] prefixSums, long[][] prefixXORs) {
-        
-        // Compute sum hash (similar to RangeBipartition.SumHashFunction)
-        long sumHash = computeSumHash(geneTreeIndex, start, end, prefixSums);
-        
-        // Compute XOR hash (similar to RangeBipartition.XORHashFunction)  
-        long xorHash = computeXORHash(geneTreeIndex, start, end, prefixXORs);
-        
-        return new ClusterHashPair(sumHash, xorHash);
+        if (orderings != null && geneTreeIndex >= 0 && geneTreeIndex < orderings.length) {
+            int[] ordering = orderings[geneTreeIndex];
+            if (ordering != null) {
+                java.util.Set<Integer> uniqueTaxa = new java.util.HashSet<>();
+                for (int i = Math.max(0, start); i < end && i < ordering.length; i++) {
+                    uniqueTaxa.add(ordering[i]);
+                }
+                return computeClusterHashFromTaxonSet(uniqueTaxa);
+            }
+        }
+
+        return new ClusterHashPair(
+            computeSumHash(geneTreeIndex, start, end, prefixSums),
+            computeXORHash(geneTreeIndex, start, end, prefixXORs));
     }
     
     /**
@@ -170,6 +176,20 @@ public class HashUtils {
      * Used as fallback when range-based hashing is not available.
      */
     public static ClusterHashPair computeFallbackClusterHash(java.util.Set<Integer> taxonSet) {
+        return computeClusterHashFromTaxonSet(taxonSet);
+    }
+
+    /**
+     * Compute a duplicate-invariant cluster hash from a species/taxon set.
+     *
+     * STELAR-X used gene-tree ranges as clusters because every taxon appeared
+     * once per gene tree. STELAR-Pro gene family trees can contain several
+     * copies of the same species. DP states are species-tree clusters, so copy
+     * multiplicity must not change the cluster identity. Callers therefore pass
+     * a Set<Integer>; if species 20 appears three times in a range, it contributes
+     * exactly once to the hash and once to the cluster size used by the DP.
+     */
+    public static ClusterHashPair computeClusterHashFromTaxonSet(java.util.Set<Integer> taxonSet) {
         long sumHash = 0;
         long xorHash = 0;
         

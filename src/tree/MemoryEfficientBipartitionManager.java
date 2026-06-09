@@ -5,6 +5,7 @@ import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.atomic.AtomicInteger;
 
+import utils.HashUtils;
 import utils.Threading;
 
 /**
@@ -55,7 +56,14 @@ public class MemoryEfficientBipartitionManager {
     }
     
     /**
-     * Initialize the left-to-right ordering for each gene tree (inorder traversal of leaves).
+     * Initialize the left-to-right ordering for each gene tree.
+     *
+     * The ordering stores leaf occurrences, not only species IDs. This distinction
+     * matters for STELAR-Pro because a rooted/tagged gene family tree can contain
+     * several leaves with the same species label. The integer in the ordering is
+     * still the species/taxon ID, but each leaf node also receives its occurrence
+     * position through TreeNode.traversalIndex. Later range construction uses that
+     * occurrence position so duplicate leaves remain in their true tree locations.
      */
     private void initializeGeneTreeOrderings() {
         System.out.println("Initializing gene tree taxa orderings...");
@@ -72,10 +80,11 @@ public class MemoryEfficientBipartitionManager {
     }
     
     /**
-     * Collect leaves in left-to-right order (inorder traversal).
+     * Collect leaves in left-to-right order and remember each leaf occurrence.
      */
     private void collectLeavesInOrder(TreeNode node, List<Integer> ordering) {
         if (node.isLeaf()) {
+            node.traversalIndex = ordering.size();
             ordering.add(node.taxon.id);
             return;
         }
@@ -230,7 +239,9 @@ public class MemoryEfficientBipartitionManager {
             return;
         }
         
-        if (node.childs != null && node.childs.size() == 2) {
+        // STELAR-Pro only uses speciation-driven triplets. Therefore, a
+        // subtree bipartition is added only when its root is a speciation node.
+        if (node.childs != null && node.childs.size() == 2 && !node.isDuplicationNode) {
             // Calculate ranges for both left and right subtrees
             int[] leftRange = calculateSubtreeRange(node.childs.get(0), treeIndex);
             int[] rightRange = calculateSubtreeRange(node.childs.get(1), treeIndex);
@@ -243,13 +254,14 @@ public class MemoryEfficientBipartitionManager {
                     leftRange[0], leftRange[1] + 1,     // left range (exclusive end)
                     rightRange[0], rightRange[1] + 1);  // right range (exclusive end)
                 
-                Object hash = DEFAULT_HASH_FUNCTION.calculateHash(rangeBip, prefixSums, prefixXORs);
+                Object hash = calculateSpeciesBipartitionHash(rangeBip);
                 
                 localHashMap.computeIfAbsent(hash, k -> new ArrayList<>()).add(rangeBip);
             }
         }
         
-        // Recursively process children
+        // We still recurse below duplication nodes because their descendants may
+        // include speciation nodes that root valid speciation-driven triplets.
         if (node.childs != null) {
             for (TreeNode child : node.childs) {
                 extractRangeBipartitions(child, treeIndex, localHashMap);
@@ -263,14 +275,10 @@ public class MemoryEfficientBipartitionManager {
      */
     private int[] calculateSubtreeRange(TreeNode node, int treeIndex) {
         if (node.isLeaf()) {
-            // Find position of this taxon in the ordering
-            int[] ordering = geneTreeTaxaOrdering[treeIndex];
-            for (int i = 0; i < ordering.length; i++) {
-                if (ordering[i] == node.taxon.id) {
-                    return new int[]{i, i};
-                }
+            if (node.traversalIndex >= 0) {
+                return new int[]{node.traversalIndex, node.traversalIndex};
             }
-            return null; // Taxon not found
+            return null;
         }
         
         int minPos = Integer.MAX_VALUE;
@@ -291,6 +299,93 @@ public class MemoryEfficientBipartitionManager {
         }
         
         return new int[]{minPos, maxPos};
+    }
+
+    /**
+     * Compute the candidate-bipartition identity after collapsing duplicated
+     * species within each side.
+     *
+     * A RangeBipartition still points to occurrence ranges in a gene tree, e.g.
+     * left=[10,15) and right=[15,20). Those ranges may contain repeated species
+     * IDs when a gene family has paralogs. The species tree, however, can contain
+     * each species only once. Therefore the candidate identity must be based on:
+     *
+     *   unique species set on left side | unique species set on right side
+     *
+     * rather than on raw leaf occurrences. This makes (20,20)|(...), (20)|(...),
+     * and any other copy multiplicity of species 20 represent the same species
+     * side for the DP candidate set.
+     *
+     * The two sides are canonicalized before combining their hashes so A|B and
+     * B|A share the same identity, matching the existing subtree-bipartition
+     * equivalence rule.
+     */
+    private Object calculateSpeciesBipartitionHash(RangeBipartition rangeBip) {
+        Set<Integer> leftSpecies = getSpeciesSetForRange(
+            rangeBip.geneTreeIndex, rangeBip.leftStart, rangeBip.leftEnd);
+        Set<Integer> rightSpecies = getSpeciesSetForRange(
+            rangeBip.geneTreeIndex, rangeBip.rightStart, rangeBip.rightEnd);
+
+        ClusterHashPair leftHash = HashUtils.computeClusterHashFromTaxonSet(leftSpecies);
+        ClusterHashPair rightHash = HashUtils.computeClusterHashFromTaxonSet(rightSpecies);
+
+        ClusterHashPair first = leftHash;
+        ClusterHashPair second = rightHash;
+        int firstSize = leftSpecies.size();
+        int secondSize = rightSpecies.size();
+
+        if (shouldSwapCanonicalSides(leftHash, leftSpecies.size(), rightHash, rightSpecies.size())) {
+            first = rightHash;
+            second = leftHash;
+            firstSize = rightSpecies.size();
+            secondSize = leftSpecies.size();
+        }
+
+        long sumComponent = first.sumHash * 0x9e3779b97f4a7c15L
+            ^ second.sumHash * 0xc2b2ae3d27d4eb4fL
+            ^ ((long) firstSize << 32)
+            ^ secondSize;
+        long xorComponent = first.xorHash
+            ^ Long.rotateLeft(second.xorHash, 29)
+            ^ ((long) (firstSize + secondSize) << 17);
+
+        return new RangeBipartition.HashPair(
+            Long.rotateLeft(sumComponent, 27) ^ (sumComponent >>> 33),
+            splitMix64(xorComponent));
+    }
+
+    private boolean shouldSwapCanonicalSides(ClusterHashPair leftHash, int leftSize,
+                                             ClusterHashPair rightHash, int rightSize) {
+        if (leftSize != rightSize) {
+            return leftSize > rightSize;
+        }
+        if (leftHash.sumHash != rightHash.sumHash) {
+            return Long.compareUnsigned(leftHash.sumHash, rightHash.sumHash) > 0;
+        }
+        return Long.compareUnsigned(leftHash.xorHash, rightHash.xorHash) > 0;
+    }
+
+    /**
+     * Return the unique species IDs in an occurrence range.
+     */
+    private Set<Integer> getSpeciesSetForRange(int geneTreeIndex, int start, int end) {
+        Set<Integer> speciesSet = new HashSet<>();
+        if (geneTreeIndex < 0 || geneTreeIndex >= geneTreeTaxaOrdering.length) {
+            return speciesSet;
+        }
+
+        int[] ordering = geneTreeTaxaOrdering[geneTreeIndex];
+        for (int i = Math.max(0, start); i < end && i < ordering.length; i++) {
+            speciesSet.add(ordering[i]);
+        }
+        return speciesSet;
+    }
+
+    private long splitMix64(long z) {
+        z += 0x9e3779b97f4a7c15L;
+        z = (z ^ (z >>> 30)) * 0xbf58476d1ce4e5b9L;
+        z = (z ^ (z >>> 27)) * 0x94d049bb133111ebL;
+        return z ^ (z >>> 31);
     }
     
     /**
@@ -491,4 +586,3 @@ public class MemoryEfficientBipartitionManager {
         return prefixXORs;
     }
 }
-
