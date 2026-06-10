@@ -1,0 +1,48 @@
+STELAR-Pro 12-taxon / 2-gene-tree duplicate test
+=================================================
+
+Input:
+  test_gene_trees_12taxa_2trees_dup_no_loss.tre
+
+Taxa:
+  {1,2,3,4,5,6,7,8,9,10,11,12}
+
+Design:
+  There are 2 identical untagged gene trees.
+
+  Every taxon appears in every gene tree, so there is no loss.
+
+  Duplications are represented by repeated species subtrees:
+    ((1,2),(1,2))
+    ((3,4),(3,4))
+    ((5,6),(5,6))
+    ((7,8),(7,8))
+    ((9,10),(9,10))
+    ((11,12),(11,12))
+
+Collapsed species topology:
+  ((((1,2),(3,4)),((5,6),(7,8))),((9,10),(11,12)));
+
+Observed STELAR-Pro inferred species tree:
+  (((((11,12),(9,10)),((3,4),(1,2))),(5,6)),(7,8));
+
+Score-only cross-check for the inferred tree:
+  TRIPLET_SCORE = 312.0
+  NORMALIZED_TRIPLET_SCORE = 312 / (2 * C(12,3)) = 312 / 440
+                           = 0.7090909090909091
+
+Independent per-gene-tree score breakdown:
+  Tree 1 = 92
+  Tree 2 = 220
+  Total  = 312
+
+Important scoring note:
+  2 * C(12,3) = 440 is the maximum possible total rooted triplet count across
+  two fully resolved 12-taxon gene trees. STELAR-Pro's score here is lower
+  because ASTRAL-Pro roots/tags the two duplicated gene trees into different
+  speciation-rooted bipartition structures. STELAR-Pro then scores only those
+  speciation-driven bipartitions, with duplicated taxa collapsed once.
+
+Note:
+  STELAR-Pro optimizes triplet score. This file is for triplet-score
+  cross-checking, not quartet-score validation.

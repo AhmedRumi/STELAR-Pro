@@ -1,0 +1,181 @@
+STELAR-Pro manual test case: 5 gene trees, 7 taxa, duplications, no loss
+========================================================================
+
+Input file:
+  test_gene_trees_7taxa_dup_no_loss.tre
+
+Important:
+  The input file is intentionally untagged. STELAR-Pro will root/tag it during
+  normal execution. The retained/skipped bipartitions below are the manual
+  expectation for the tagged structure shown in this solution file.
+
+Taxa:
+  {1, 2, 3, 4, 5, 6, 7}
+
+Tag convention:
+  - After STELAR-Pro preprocessing, internal node label D = duplication node.
+  - Unlabeled internal node = speciation node.
+  - STELAR-Pro keeps only subtree bipartitions rooted at speciation nodes.
+  - Duplicated taxa inside a subtree are collapsed to one species/taxon when
+    forming a candidate bipartition or computing intersections.
+
+No-loss check:
+  Every gene tree contains all taxa from 1 to 7 at least once.
+
+Leaf occurrence counts:
+  Tree 1: 11 leaves, 7 unique taxa, duplicated taxa = {1, 2, 5, 6}
+  Tree 2: 11 leaves, 7 unique taxa, duplicated taxa = {1, 3, 4, 5}
+  Tree 3: 11 leaves, 7 unique taxa, duplicated taxa = {2, 3, 4, 5}
+  Tree 4: 11 leaves, 7 unique taxa, duplicated taxa = {1, 4, 5, 7}
+  Tree 5: 11 leaves, 7 unique taxa, duplicated taxa = {3, 4, 6, 7}
+
+Expected processing rule
+------------------------
+
+For each internal node:
+  1. If the node is tagged D, skip that node's own subtree bipartition.
+  2. Still traverse below it, because speciation descendants of a duplication
+     node can contribute speciation-driven candidate bipartitions.
+  3. When recording a side of a bipartition, collapse repeated taxa:
+       occurrence side [1, 2, 1, 2] becomes species set {1, 2}.
+
+Per-tree candidate bipartitions retained from speciation nodes
+-------------------------------------------------------------
+
+Tree 1:
+  Expected tagged Newick:
+    ((((1,2),(1,2))D,(3,4)),(((5,6),(5,6))D,7));
+
+  Retained speciation-rooted bipartitions:
+    T1.S1  {1,2,3,4} | {5,6,7}
+    T1.S2  {1,2}     | {3,4}
+    T1.S3  {1}       | {2}
+    T1.S4  {3}       | {4}
+    T1.S5  {5,6}     | {7}
+    T1.S6  {5}       | {6}
+
+  Skipped duplication-rooted bipartitions:
+    T1.D1  {1,2} | {1,2}
+    T1.D2  {5,6} | {5,6}
+
+Tree 2:
+  Expected tagged Newick:
+    ((((1,3),(1,3))D,2),(((4,5),(4,5))D,(6,7)));
+
+  Retained speciation-rooted bipartitions:
+    T2.S1  {1,2,3}   | {4,5,6,7}
+    T2.S2  {1,3}     | {2}
+    T2.S3  {1}       | {3}
+    T2.S4  {4,5}     | {6,7}
+    T2.S5  {4}       | {5}
+    T2.S6  {6}       | {7}
+
+  Skipped duplication-rooted bipartitions:
+    T2.D1  {1,3} | {1,3}
+    T2.D2  {4,5} | {4,5}
+
+Tree 3:
+  Expected tagged Newick:
+    (((1,((4,5),(4,5))D),7),(((2,3),(2,3))D,6));
+
+  Retained speciation-rooted bipartitions:
+    T3.S1  {1,4,5,7} | {2,3,6}
+    T3.S2  {1,4,5}   | {7}
+    T3.S3  {1}       | {4,5}
+    T3.S4  {4}       | {5}
+    T3.S5  {2,3}     | {6}
+    T3.S6  {2}       | {3}
+
+  Skipped duplication-rooted bipartitions:
+    T3.D1  {4,5} | {4,5}
+    T3.D2  {2,3} | {2,3}
+
+Tree 4:
+  Expected tagged Newick:
+    ((((1,7),(1,7))D,(2,6)),(3,((4,5),(4,5))D));
+
+  Retained speciation-rooted bipartitions:
+    T4.S1  {1,2,6,7} | {3,4,5}
+    T4.S2  {1,7}     | {2,6}
+    T4.S3  {1}       | {7}
+    T4.S4  {2}       | {6}
+    T4.S5  {3}       | {4,5}
+    T4.S6  {4}       | {5}
+
+  Skipped duplication-rooted bipartitions:
+    T4.D1  {1,7} | {1,7}
+    T4.D2  {4,5} | {4,5}
+
+Tree 5:
+  Expected tagged Newick:
+    (((1,2),((3,7),(3,7))D),(((4,6),(4,6))D,5));
+
+  Retained speciation-rooted bipartitions:
+    T5.S1  {1,2,3,7} | {4,5,6}
+    T5.S2  {1,2}     | {3,7}
+    T5.S3  {1}       | {2}
+    T5.S4  {3}       | {7}
+    T5.S5  {4,6}     | {5}
+    T5.S6  {4}       | {6}
+
+  Skipped duplication-rooted bipartitions:
+    T5.D1  {3,7} | {3,7}
+    T5.D2  {4,6} | {4,6}
+
+Unique candidate bipartitions expected after duplicate-invariant grouping
+-------------------------------------------------------------------------
+
+The following list removes exact duplicate candidate identities across trees.
+These are the candidate species-tree bipartitions expected from the five gene
+trees before DP scoring.
+
+  01. {1,2,3,4} | {5,6,7}
+  02. {1,2}     | {3,4}
+  03. {1}       | {2}
+  04. {3}       | {4}
+  05. {5,6}     | {7}
+  06. {5}       | {6}
+  07. {1,2,3}   | {4,5,6,7}
+  08. {1,3}     | {2}
+  09. {1}       | {3}
+  10. {4,5}     | {6,7}
+  11. {4}       | {5}
+  12. {6}       | {7}
+  13. {1,4,5,7} | {2,3,6}
+  14. {1,4,5}   | {7}
+  15. {1}       | {4,5}
+  16. {2,3}     | {6}
+  17. {2}       | {3}
+  18. {1,2,6,7} | {3,4,5}
+  19. {1,7}     | {2,6}
+  20. {1}       | {7}
+  21. {2}       | {6}
+  22. {3}       | {4,5}
+  23. {1,2,3,7} | {4,5,6}
+  24. {1,2}     | {3,7}
+  25. {3}       | {7}
+  26. {4,6}     | {5}
+  27. {4}       | {6}
+
+Expected candidate counts:
+  Raw retained speciation-rooted bipartitions:
+    5 trees * 6 retained speciation nodes per tree = 30
+
+  Exact duplicate retained candidates:
+    {1}|{2} appears in Tree 1 and Tree 5.
+    {4}|{5} appears in Tree 2, Tree 3, and Tree 4.
+
+  Unique retained candidate bipartitions:
+    27
+
+Notes for later code testing
+----------------------------
+
+If STELAR-Pro is implemented correctly for this case:
+  - No leaf taxon should be lost from any tree.
+  - D-rooted bipartitions listed above should not enter the candidate set.
+  - The child speciation nodes below D roots should still be traversed and kept.
+  - Hashing should treat duplicated ranges as species sets. For example, both
+    children of T1.D1 have occurrence cluster [1,2], not [1,2,1,2].
+  - Range intersections should count species once. For example, the intersection
+    between occurrence range [1,2,1,2] and a range containing {1,2,3} is 2, not 4.
