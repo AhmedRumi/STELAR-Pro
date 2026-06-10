@@ -2,6 +2,7 @@ package core;
 
 import java.util.*;
 import tree.ClusterHashPair;
+import tree.MemoryEfficientBipartitionManager;
 import tree.RangeBipartition;
 import utils.BitSet;
 import utils.HashUtils;
@@ -51,6 +52,8 @@ public class ClusterHashManager {
     private final int[][] geneTreeOrderings;
     private final long[][] prefixSums;
     private final long[][] prefixXORs;
+    private final Map<MemoryEfficientBipartitionManager.RangeKey,
+                      MemoryEfficientBipartitionManager.RangeClusterInfo> precomputedRangeInfo;
     private final int realTaxaCount;
     
     // Statistics for monitoring
@@ -61,15 +64,26 @@ public class ClusterHashManager {
     
     public ClusterHashManager(int[][] geneTreeOrderings, long[][] prefixSums, 
                              long[][] prefixXORs, int realTaxaCount) {
+        this(geneTreeOrderings, prefixSums, prefixXORs, realTaxaCount, Collections.emptyMap());
+    }
+
+    public ClusterHashManager(
+            int[][] geneTreeOrderings,
+            long[][] prefixSums,
+            long[][] prefixXORs,
+            int realTaxaCount,
+            Map<MemoryEfficientBipartitionManager.RangeKey,
+                MemoryEfficientBipartitionManager.RangeClusterInfo> precomputedRangeInfo) {
         System.out.println("==== INITIALIZING CLUSTER HASH MANAGER ====");
         System.out.println("Real taxa count: " + realTaxaCount);
         System.out.println("Gene trees: " + (geneTreeOrderings != null ? geneTreeOrderings.length : 0));
-        System.out.println("Storage mode: Lightweight range mapping (3 integers per cluster)");
+        System.out.println("Storage mode: Lightweight range mapping with precomputed STELAR-Pro subtree hashes");
         
         this.hashToRange = new HashMap<>();
         this.geneTreeOrderings = geneTreeOrderings;
         this.prefixSums = prefixSums;
         this.prefixXORs = prefixXORs;
+        this.precomputedRangeInfo = precomputedRangeInfo != null ? precomputedRangeInfo : Collections.emptyMap();
         this.realTaxaCount = realTaxaCount;
         
         System.out.println("Cluster hash manager initialized (lightweight range mode)");
@@ -81,15 +95,24 @@ public class ClusterHashManager {
      */
     public ClusterHashPair getClusterHash(int geneTreeIndex, int start, int end) {
         hashComputations++;
-        
+
+        MemoryEfficientBipartitionManager.RangeClusterInfo info =
+            precomputedRangeInfo.get(new MemoryEfficientBipartitionManager.RangeKey(geneTreeIndex, start, end));
+
+        if (info != null) {
+            cacheHits++;
+            hashToRange.put(info.hash, new ClusterRange(
+                info.geneTreeIndex, info.start, info.end, info.uniqueTaxonCount));
+            return info.hash;
+        }
+
+        // Compatibility fallback for callers that ask about a range that was
+        // not an actual stored subtree. The observed STELAR-Pro candidate path
+        // should not reach this branch; it exists for legacy utilities and tree
+        // reconstruction/debugging paths.
         Set<Integer> taxonSet = getRangeTaxonSet(geneTreeIndex, start, end);
         ClusterHashPair hash = HashUtils.computeClusterHashFromTaxonSet(taxonSet);
-        
-        // Store a compact range plus the species-set size used by the DP. The
-        // range can contain duplicate gene copies, but uniqueTaxonCount counts
-        // each species once so DP base cases operate on species-tree clusters.
         hashToRange.put(hash, new ClusterRange(geneTreeIndex, start, end, taxonSet.size()));
-        
         return hash;
     }
     
@@ -103,13 +126,9 @@ public class ClusterHashManager {
         // Convert BitSet to taxon set
         Set<Integer> taxonSet = bitSetToTaxonSet(cluster);
         
-        // Try to find a range representation for this cluster
-        ClusterHashPair rangeHash = findRangeBasedHash(taxonSet);
-        if (rangeHash != null) {
-            return rangeHash;
-        }
-        
-        // Fallback to deterministic hash based on taxon set content
+        // Fallback to deterministic hash based on taxon set content. This gives
+        // the same cluster identity as a duplicate-collapsed subtree hash, but
+        // it has no representative gene-tree range for later reconstruction.
         ClusterHashPair fallbackHash = HashUtils.computeFallbackClusterHash(taxonSet);
         
         // Store a dummy range for fallback hashes (we can't derive range info from them)
@@ -156,16 +175,10 @@ public class ClusterHashManager {
             );
         }
         
-        // Contiguous ranges - union is simply [leftStart, rightEnd]
-        hashComputations++;
-        Set<Integer> unionTaxa = getRangeTaxonSet(bip.geneTreeIndex, bip.leftStart, bip.rightEnd);
-        ClusterHashPair unionHash = HashUtils.computeClusterHashFromTaxonSet(unionTaxa);
-        
-        // Store the range mapping for the union cluster. The range may include
-        // repeated gene copies, but the DP state size is the unique species count.
-        hashToRange.put(unionHash, new ClusterRange(bip.geneTreeIndex, bip.leftStart, bip.rightEnd, unionTaxa.size()));
-        
-        return unionHash;
+        // Contiguous ranges: the union is exactly the subtree rooted at the
+        // candidate node, so its duplicate-invariant hash was already computed
+        // by MemoryEfficientBipartitionManager's small-to-large traversal.
+        return getClusterHash(bip.geneTreeIndex, bip.leftStart, bip.rightEnd);
     }
     
     /**
@@ -184,7 +197,7 @@ public class ClusterHashManager {
     public int getClusterSize(ClusterHashPair clusterHash) {
         ClusterRange range = hashToRange.get(clusterHash);
         if (range != null) {
-            return range.size(); // O(1) calculation: end - start
+            return range.size(); // O(1): duplicate-collapsed species count
         }
         
         System.err.println("Warning: Cluster size not available for hash " + clusterHash.toDebugString());
@@ -205,48 +218,12 @@ public class ClusterHashManager {
         return new HashSet<>();
     }
     
-    // Removed findRangeBasedHashOptimized - not needed for contiguous subtree bipartitions
-    
-    /**
-     * Try to find a range-based hash for the given taxon set.
-     * This attempts to find a gene tree range that matches the taxon set.
-     */
-    private ClusterHashPair findRangeBasedHash(Set<Integer> taxonSet) {
-        // This is an expensive operation - search through gene tree orderings
-        // to find a range that matches the taxon set
-        System.out.println("WARNING: Using expensive O(n³) findRangeBasedHash for taxon set: " + taxonSet);
-        
-        if (geneTreeOrderings == null) {
-            return null;
-        }
-        
-        for (int treeIdx = 0; treeIdx < geneTreeOrderings.length; treeIdx++) {
-            int[] ordering = geneTreeOrderings[treeIdx];
-            if (ordering == null) continue;
-            
-            // Try to find a contiguous range that matches the taxon set
-            for (int start = 0; start < ordering.length; start++) {
-                for (int end = start + 1; end <= ordering.length; end++) {
-                    Set<Integer> rangeSet = getRangeTaxonSet(treeIdx, start, end);
-                    if (rangeSet.equals(taxonSet)) {
-                        // Found a matching range - compute its hash
-                        return HashUtils.computeClusterHash(treeIdx, start, end,
-                                                           geneTreeOrderings, prefixSums, prefixXORs);
-                    }
-                    
-                    // Early termination if range is already larger than target
-                    if (rangeSet.size() > taxonSet.size()) {
-                        break;
-                    }
-                }
-            }
-        }
-        
-        return null; // No range representation found
-    }
-    
     /**
      * Get taxon set for a range in a gene tree.
+     *
+     * This method is intentionally outside the hot hashing path. It is still
+     * used for tree reconstruction/debugging and for compatibility fallback
+     * ranges that were not emitted as rooted subtree clusters.
      */
     private Set<Integer> getRangeTaxonSet(int geneTreeIndex, int start, int end) {
         Set<Integer> taxonSet = new HashSet<>();
@@ -343,12 +320,12 @@ public class ClusterHashManager {
         
         if (hashComputations > 0) {
             sb.append("  Cache hit rate: ").append(String.format("%.2f%%", 
-                100.0 * cacheHits / (hashComputations + cacheHits))).append("\n");
+                100.0 * cacheHits / hashComputations)).append("\n");
         }
         sb.append("  Collision rate: 0.000000% (trusting hash completely)\n");
         
         // Calculate memory usage
-        long memoryBytes = hashToRange.size() * (64 + 12); // Rough estimate: hash object + 3 ints
+        long memoryBytes = hashToRange.size() * (64 + 16); // Rough estimate: hash object + 4 ints
         sb.append("  Estimated memory usage: ").append(memoryBytes / 1024).append(" KB for range mappings\n");
         
         return sb.toString();
@@ -440,6 +417,12 @@ public class ClusterHashManager {
         int[] ordering = geneTreeOrderings[treeIndex];
         if (ordering == null) {
             return 0;
+        }
+
+        MemoryEfficientBipartitionManager.RangeClusterInfo rootInfo =
+            precomputedRangeInfo.get(new MemoryEfficientBipartitionManager.RangeKey(treeIndex, 0, ordering.length));
+        if (rootInfo != null) {
+            return rootInfo.uniqueTaxonCount;
         }
 
         Set<Integer> uniqueTaxa = new HashSet<>();

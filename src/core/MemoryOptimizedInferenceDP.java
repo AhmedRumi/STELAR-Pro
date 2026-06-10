@@ -61,7 +61,8 @@ public class MemoryOptimizedInferenceDP {
             bipartitionManager.getGeneTreeTaxaOrdering(),
             bipartitionManager.getPrefixSums(),
             bipartitionManager.getPrefixXORs(),
-            geneTrees.realTaxaCount);
+            geneTrees.realTaxaCount,
+            bipartitionManager.getRangeClusterInfoByRange());
         
         // Precompute cluster hashes for better performance
         System.out.println("Precomputing cluster hashes...");

@@ -7,8 +7,10 @@ import tree.ClusterHashPair;
  * Provides cluster-specific hash computation using the same double-hashing scheme
  * as RangeBipartition but isolated for cluster use cases.
  * 
- * Uses sum and XOR hash functions for collision resistance, operating on
- * prefix arrays of hashed taxon IDs for better distribution.
+ * Uses sum and XOR hash functions for collision resistance. The STELAR-Pro
+ * hot path computes the raw duplicate-collapsed sum/XOR while traversing a
+ * gene tree, then calls computeClusterHashFromRaw. Range/prefix based methods
+ * are kept only for older compatibility code.
  */
 public class HashUtils {
     
@@ -180,6 +182,20 @@ public class HashUtils {
     }
 
     /**
+     * Finish a cluster hash from raw duplicate-invariant accumulators.
+     *
+     * Callers maintain rawSum/rawXor by adding each species' hashed ID only the
+     * first time that species appears in the subtree. This method applies the
+     * same final mixing used by computeClusterHashFromTaxonSet without needing
+     * to rebuild or rescan a Set<Integer>.
+     */
+    public static ClusterHashPair computeClusterHashFromRaw(long rawSum, long rawXor, int uniqueTaxonCount) {
+        long sumHash = Long.rotateLeft(rawSum * MIX_CONST1, 27);
+        long xorHash = splitMix64(rawXor ^ ((long) uniqueTaxonCount << 16));
+        return new ClusterHashPair(sumHash, xorHash);
+    }
+
+    /**
      * Compute a duplicate-invariant cluster hash from a species/taxon set.
      *
      * STELAR-X used gene-tree ranges as clusters because every taxon appeared
@@ -190,23 +206,17 @@ public class HashUtils {
      * exactly once to the hash and once to the cluster size used by the DP.
      */
     public static ClusterHashPair computeClusterHashFromTaxonSet(java.util.Set<Integer> taxonSet) {
-        long sumHash = 0;
-        long xorHash = 0;
-        
-        // Process taxon IDs in sorted order for deterministic results
-        java.util.List<Integer> sortedTaxa = new java.util.ArrayList<>(taxonSet);
-        java.util.Collections.sort(sortedTaxa);
-        
-        for (int taxonId : sortedTaxa) {
+        long rawSum = 0;
+        long rawXor = 0;
+
+        // Sum and XOR are commutative, so no sorting is needed. Each species
+        // appears at most once in taxonSet, which is the STELAR-Pro invariant.
+        for (int taxonId : taxonSet) {
             long hashedTaxon = hashSingleTaxon(taxonId);
-            sumHash += hashedTaxon;
-            xorHash ^= hashedTaxon;
+            rawSum += hashedTaxon;
+            rawXor ^= hashedTaxon;
         }
-        
-        // Apply final mixing
-        sumHash = Long.rotateLeft(sumHash * MIX_CONST1, 27);
-        xorHash = splitMix64(xorHash ^ (taxonSet.size() << 16));
-        
-        return new ClusterHashPair(sumHash, xorHash);
+
+        return computeClusterHashFromRaw(rawSum, rawXor, taxonSet.size());
     }
 }

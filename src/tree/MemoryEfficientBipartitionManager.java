@@ -34,13 +34,104 @@ public class MemoryEfficientBipartitionManager {
     // Gene tree data structures
     private final List<Tree> geneTrees;
     private final int[][] geneTreeTaxaOrdering;  // [tree_index][taxa_position] = taxon_id
-    private final long[][] prefixSums;           // [tree_index][position] = prefix sum of taxon IDs
-    private final long[][] prefixXORs;           // [tree_index][position] = prefix XOR of taxon IDs
+    private final long[][] prefixSums;           // Legacy occurrence-prefix sums used by older extension code
+    private final long[][] prefixXORs;           // Legacy occurrence-prefix XORs used by older extension code
     
     // Processing results
     private final Map<Object, List<RangeBipartition>> hashToBipartitions;
     private final Map<RangeBipartition, Integer> uniqueRangeBipartitions;
+    private final Map<RangeKey, RangeClusterInfo> rangeClusterInfoByRange;
     private final int realTaxaCount;
+
+    /**
+     * Immutable key for a contiguous occurrence range in one gene tree.
+     *
+     * The range is still expressed in leaf-occurrence coordinates because that
+     * is how the original memory-efficient DP refers to subtrees. The value
+     * associated with this key is duplicate-invariant: repeated species inside
+     * the range have already been collapsed.
+     */
+    public static final class RangeKey {
+        public final int geneTreeIndex;
+        public final int start;
+        public final int end;
+
+        public RangeKey(int geneTreeIndex, int start, int end) {
+            this.geneTreeIndex = geneTreeIndex;
+            this.start = start;
+            this.end = end;
+        }
+
+        @Override
+        public boolean equals(Object obj) {
+            if (this == obj) return true;
+            if (!(obj instanceof RangeKey)) return false;
+            RangeKey other = (RangeKey) obj;
+            return geneTreeIndex == other.geneTreeIndex && start == other.start && end == other.end;
+        }
+
+        @Override
+        public int hashCode() {
+            int result = geneTreeIndex;
+            result = 31 * result + start;
+            result = 31 * result + end;
+            return result;
+        }
+    }
+
+    /**
+     * Compact, persistent cluster record for one subtree range.
+     *
+     * No taxon set is stored here. The temporary set used to build rawSum/rawXor
+     * is released during traversal, leaving only O(1) data needed by the DP:
+     * duplicate-collapsed size plus the final cluster hash.
+     */
+    public static final class RangeClusterInfo {
+        public final int geneTreeIndex;
+        public final int start;
+        public final int end;
+        public final int uniqueTaxonCount;
+        public final long rawSum;
+        public final long rawXor;
+        public final ClusterHashPair hash;
+
+        public RangeClusterInfo(int geneTreeIndex, int start, int end,
+                                int uniqueTaxonCount, long rawSum, long rawXor,
+                                ClusterHashPair hash) {
+            this.geneTreeIndex = geneTreeIndex;
+            this.start = start;
+            this.end = end;
+            this.uniqueTaxonCount = uniqueTaxonCount;
+            this.rawSum = rawSum;
+            this.rawXor = rawXor;
+            this.hash = hash;
+        }
+    }
+
+    /**
+     * Mutable state used only while one gene tree is being traversed.
+     *
+     * The taxa set is the small-to-large merge payload. It is intentionally not
+     * retained after its subtree has been merged upward, because the permanent
+     * RangeClusterInfo cache already contains the compact hash/count summary.
+     */
+    private static final class ClusterBuildState {
+        int geneTreeIndex;
+        int start;
+        int end;
+        int uniqueTaxonCount;
+        long rawSum;
+        long rawXor;
+        ClusterHashPair hash;
+        Set<Integer> taxa;
+
+        void releaseTaxa() {
+            if (taxa != null) {
+                taxa.clear();
+                taxa = null;
+            }
+        }
+    }
     
     public MemoryEfficientBipartitionManager(List<Tree> geneTrees, int realTaxaCount) {
         this.geneTrees = geneTrees;
@@ -50,6 +141,7 @@ public class MemoryEfficientBipartitionManager {
         this.prefixXORs = new long[geneTrees.size()][];
         this.hashToBipartitions = new ConcurrentHashMap<>();
         this.uniqueRangeBipartitions = new ConcurrentHashMap<>();
+        this.rangeClusterInfoByRange = new ConcurrentHashMap<>();
         
         initializeGeneTreeOrderings();
         calculatePrefixArrays();
@@ -152,6 +244,10 @@ public class MemoryEfficientBipartitionManager {
      */
     public Map<RangeBipartition, Integer> processGeneTreesParallel() {
         System.out.println("Processing gene trees with memory-efficient range bipartitions...");
+
+        hashToBipartitions.clear();
+        uniqueRangeBipartitions.clear();
+        rangeClusterInfoByRange.clear();
         
         int numThreads = Runtime.getRuntime().availableProcessors();
         Threading.startThreading(numThreads);
@@ -191,7 +287,10 @@ public class MemoryEfficientBipartitionManager {
                     for (int treeIdx = startIdx; treeIdx < endIdx; treeIdx++) {
                         Tree tree = geneTrees.get(treeIdx);
                         if (tree.isRooted()) {
-                            extractRangeBipartitions(tree.root, treeIdx, localHashMap);
+                            ClusterBuildState rootState = extractRangeBipartitions(tree.root, treeIdx, localHashMap);
+                            if (rootState != null) {
+                                rootState.releaseTaxa();
+                            }
                         }
                         processedTrees.incrementAndGet();
                     }
@@ -231,114 +330,198 @@ public class MemoryEfficientBipartitionManager {
     }
     
     /**
-     * Extract range bipartitions from a gene tree recursively.
-     * This mirrors the original calculateSTBipartitionsUtilLocal logic.
+     * Extract range bipartitions and subtree hashes in one postorder traversal.
+     *
+     * This is the efficient STELAR-Pro path. Each child returns a temporary set
+     * of unique species in its subtree plus raw duplicate-invariant sum/XOR
+     * accumulators. The parent first uses the child summaries to add a candidate
+     * bipartition if the parent is a speciation node, then merges the child sets
+     * with the small-to-large rule to build its own summary.
+     *
+     * Duplication nodes are deliberately not added as candidate bipartitions, but
+     * they are still traversed and summarized because speciation descendants and
+     * ancestor union clusters are needed by the DP.
      */
-    private void extractRangeBipartitions(TreeNode node, int treeIndex, Map<Object, List<RangeBipartition>> localHashMap) {
-        if (node.isLeaf()) {
-            return;
-        }
-        
-        // STELAR-Pro only uses speciation-driven triplets. Therefore, a
-        // subtree bipartition is added only when its root is a speciation node.
-        if (node.childs != null && node.childs.size() == 2 && !node.isDuplicationNode) {
-            // Calculate ranges for both left and right subtrees
-            int[] leftRange = calculateSubtreeRange(node.childs.get(0), treeIndex);
-            int[] rightRange = calculateSubtreeRange(node.childs.get(1), treeIndex);
-            
-            if (leftRange != null && rightRange != null && 
-                leftRange[0] <= leftRange[1] && rightRange[0] <= rightRange[1]) {
-                
-                // Create bipartition with both left and right ranges
-                RangeBipartition rangeBip = new RangeBipartition(treeIndex, 
-                    leftRange[0], leftRange[1] + 1,     // left range (exclusive end)
-                    rightRange[0], rightRange[1] + 1);  // right range (exclusive end)
-                
-                Object hash = calculateSpeciesBipartitionHash(rangeBip);
-                
-                localHashMap.computeIfAbsent(hash, k -> new ArrayList<>()).add(rangeBip);
-            }
-        }
-        
-        // We still recurse below duplication nodes because their descendants may
-        // include speciation nodes that root valid speciation-driven triplets.
-        if (node.childs != null) {
-            for (TreeNode child : node.childs) {
-                extractRangeBipartitions(child, treeIndex, localHashMap);
-            }
-        }
-    }
-    
-    /**
-     * Calculate the range (min and max positions) covered by a subtree.
-     * Returns [min_position, max_position] or null if no valid range found.
-     */
-    private int[] calculateSubtreeRange(TreeNode node, int treeIndex) {
-        if (node.isLeaf()) {
-            if (node.traversalIndex >= 0) {
-                return new int[]{node.traversalIndex, node.traversalIndex};
-            }
+    private ClusterBuildState extractRangeBipartitions(TreeNode node, int treeIndex,
+                                                       Map<Object, List<RangeBipartition>> localHashMap) {
+        if (node == null) {
             return null;
         }
-        
-        int minPos = Integer.MAX_VALUE;
-        int maxPos = Integer.MIN_VALUE;
-        
+
+        if (node.isLeaf()) {
+            return createLeafClusterState(node, treeIndex);
+        }
+
+        List<ClusterBuildState> childStates = new ArrayList<>();
         if (node.childs != null) {
             for (TreeNode child : node.childs) {
-                int[] childRange = calculateSubtreeRange(child, treeIndex);
-                if (childRange != null) {
-                    minPos = Math.min(minPos, childRange[0]);
-                    maxPos = Math.max(maxPos, childRange[1]);
+                ClusterBuildState childState = extractRangeBipartitions(child, treeIndex, localHashMap);
+                if (childState != null) {
+                    childStates.add(childState);
                 }
             }
         }
-        
-        if (minPos == Integer.MAX_VALUE || maxPos == Integer.MIN_VALUE) {
+
+        if (childStates.isEmpty()) {
             return null;
         }
-        
-        return new int[]{minPos, maxPos};
+
+        // STELAR-Pro only uses speciation-driven triplets. Therefore the
+        // candidate split rooted at this node is admitted only when the tag says
+        // this is not a duplication. The children have already been collapsed to
+        // unique species summaries, so duplicate copies inside either side do
+        // not change the candidate identity.
+        if (node.childs != null && node.childs.size() == 2 && childStates.size() == 2 && !node.isDuplicationNode) {
+            ClusterBuildState left = childStates.get(0);
+            ClusterBuildState right = childStates.get(1);
+
+            if (left.start <= left.end && right.start <= right.end) {
+                RangeBipartition rangeBip = new RangeBipartition(treeIndex,
+                    left.start, left.end,
+                    right.start, right.end);
+
+                Object hash = calculateSpeciesBipartitionHash(
+                    left.hash, left.uniqueTaxonCount,
+                    right.hash, right.uniqueTaxonCount);
+
+                localHashMap.computeIfAbsent(hash, k -> new ArrayList<>()).add(rangeBip);
+            }
+        }
+
+        ClusterBuildState merged = mergeChildClusterStates(childStates);
+        storeRangeClusterInfo(merged);
+        return merged;
     }
 
     /**
-     * Compute the candidate-bipartition identity after collapsing duplicated
-     * species within each side.
+     * Build the base cluster for a leaf occurrence.
      *
-     * A RangeBipartition still points to occurrence ranges in a gene tree, e.g.
-     * left=[10,15) and right=[15,20). Those ranges may contain repeated species
-     * IDs when a gene family has paralogs. The species tree, however, can contain
-     * each species only once. Therefore the candidate identity must be based on:
-     *
-     *   unique species set on left side | unique species set on right side
-     *
-     * rather than on raw leaf occurrences. This makes (20,20)|(...), (20)|(...),
-     * and any other copy multiplicity of species 20 represent the same species
-     * side for the DP candidate set.
-     *
-     * The two sides are canonicalized before combining their hashes so A|B and
-     * B|A share the same identity, matching the existing subtree-bipartition
-     * equivalence rule.
+     * A duplicated taxon may appear as several different leaf occurrences in a
+     * gene tree, but each leaf cluster itself contains exactly one unique
+     * species. Higher nodes collapse repeated species while merging these sets.
      */
-    private Object calculateSpeciesBipartitionHash(RangeBipartition rangeBip) {
-        Set<Integer> leftSpecies = getSpeciesSetForRange(
-            rangeBip.geneTreeIndex, rangeBip.leftStart, rangeBip.leftEnd);
-        Set<Integer> rightSpecies = getSpeciesSetForRange(
-            rangeBip.geneTreeIndex, rangeBip.rightStart, rangeBip.rightEnd);
+    private ClusterBuildState createLeafClusterState(TreeNode node, int treeIndex) {
+        if (node.traversalIndex < 0) {
+            return null;
+        }
 
-        ClusterHashPair leftHash = HashUtils.computeClusterHashFromTaxonSet(leftSpecies);
-        ClusterHashPair rightHash = HashUtils.computeClusterHashFromTaxonSet(rightSpecies);
+        int taxonId = node.taxon.id;
+        long hashedTaxon = HashUtils.hashSingleTaxon(taxonId);
 
+        ClusterBuildState state = new ClusterBuildState();
+        state.geneTreeIndex = treeIndex;
+        state.start = node.traversalIndex;
+        state.end = node.traversalIndex + 1;
+        state.uniqueTaxonCount = 1;
+        state.rawSum = hashedTaxon;
+        state.rawXor = hashedTaxon;
+        state.hash = HashUtils.computeClusterHashFromRaw(state.rawSum, state.rawXor, state.uniqueTaxonCount);
+        state.taxa = new HashSet<>(1);
+        state.taxa.add(taxonId);
+
+        storeRangeClusterInfo(state);
+        return state;
+    }
+
+    /**
+     * Merge child cluster states with the small-to-large technique.
+     *
+     * The largest child set becomes the parent set. Every smaller set is scanned
+     * once and immediately cleared after its species have been inserted into the
+     * large set. Across a tree, each surviving set entry migrates from a
+     * smaller set to a set at least twice as large. Entries for duplicated
+     * species disappear once they collide with an existing copy, so the bound is
+     * O(m log m) worst-case for m leaf occurrences and often lower on highly
+     * duplicated gene trees.
+     */
+    private ClusterBuildState mergeChildClusterStates(List<ClusterBuildState> childStates) {
+        ClusterBuildState base = childStates.get(0);
+        int minStart = Integer.MAX_VALUE;
+        int maxEnd = Integer.MIN_VALUE;
+
+        for (ClusterBuildState child : childStates) {
+            if (child.taxa != null && (base.taxa == null || child.taxa.size() > base.taxa.size())) {
+                base = child;
+            }
+            minStart = Math.min(minStart, child.start);
+            maxEnd = Math.max(maxEnd, child.end);
+        }
+
+        long rawSum = base.rawSum;
+        long rawXor = base.rawXor;
+        int uniqueTaxonCount = base.uniqueTaxonCount;
+
+        for (ClusterBuildState child : childStates) {
+            if (child == base || child.taxa == null) {
+                continue;
+            }
+
+            for (int taxonId : child.taxa) {
+                // Hash contribution is added only on the first insertion into
+                // the surviving set. Extra copies of the same species therefore
+                // do not affect rawSum/rawXor or the cluster size.
+                if (base.taxa.add(taxonId)) {
+                    long hashedTaxon = HashUtils.hashSingleTaxon(taxonId);
+                    rawSum += hashedTaxon;
+                    rawXor ^= hashedTaxon;
+                    uniqueTaxonCount++;
+                }
+            }
+
+            // The compact RangeClusterInfo for this child has already been
+            // stored, so the temporary set can be released as soon as it has
+            // been merged into the parent.
+            child.releaseTaxa();
+        }
+
+        base.start = minStart;
+        base.end = maxEnd;
+        base.rawSum = rawSum;
+        base.rawXor = rawXor;
+        base.uniqueTaxonCount = uniqueTaxonCount;
+        base.hash = HashUtils.computeClusterHashFromRaw(rawSum, rawXor, uniqueTaxonCount);
+        return base;
+    }
+
+    /**
+     * Persist the compact subtree summary used later by ClusterHashManager.
+     */
+    private void storeRangeClusterInfo(ClusterBuildState state) {
+        if (state == null) {
+            return;
+        }
+
+        RangeKey key = new RangeKey(state.geneTreeIndex, state.start, state.end);
+        rangeClusterInfoByRange.put(key, new RangeClusterInfo(
+            state.geneTreeIndex,
+            state.start,
+            state.end,
+            state.uniqueTaxonCount,
+            state.rawSum,
+            state.rawXor,
+            state.hash));
+    }
+
+    /**
+     * Combine already-computed duplicate-invariant side hashes into an
+     * orientation-free bipartition hash.
+     *
+     * This replaces the previous naive implementation that rescanned the left
+     * and right occurrence ranges into Set<Integer> objects every time a
+     * candidate was seen.
+     */
+    private Object calculateSpeciesBipartitionHash(ClusterHashPair leftHash, int leftSize,
+                                                   ClusterHashPair rightHash, int rightSize) {
         ClusterHashPair first = leftHash;
         ClusterHashPair second = rightHash;
-        int firstSize = leftSpecies.size();
-        int secondSize = rightSpecies.size();
+        int firstSize = leftSize;
+        int secondSize = rightSize;
 
-        if (shouldSwapCanonicalSides(leftHash, leftSpecies.size(), rightHash, rightSpecies.size())) {
+        if (shouldSwapCanonicalSides(leftHash, leftSize, rightHash, rightSize)) {
             first = rightHash;
             second = leftHash;
-            firstSize = rightSpecies.size();
-            secondSize = leftSpecies.size();
+            firstSize = rightSize;
+            secondSize = leftSize;
         }
 
         long sumComponent = first.sumHash * 0x9e3779b97f4a7c15L
@@ -363,22 +546,6 @@ public class MemoryEfficientBipartitionManager {
             return Long.compareUnsigned(leftHash.sumHash, rightHash.sumHash) > 0;
         }
         return Long.compareUnsigned(leftHash.xorHash, rightHash.xorHash) > 0;
-    }
-
-    /**
-     * Return the unique species IDs in an occurrence range.
-     */
-    private Set<Integer> getSpeciesSetForRange(int geneTreeIndex, int start, int end) {
-        Set<Integer> speciesSet = new HashSet<>();
-        if (geneTreeIndex < 0 || geneTreeIndex >= geneTreeTaxaOrdering.length) {
-            return speciesSet;
-        }
-
-        int[] ordering = geneTreeTaxaOrdering[geneTreeIndex];
-        for (int i = Math.max(0, start); i < end && i < ordering.length; i++) {
-            speciesSet.add(ordering[i]);
-        }
-        return speciesSet;
     }
 
     private long splitMix64(long z) {
@@ -463,72 +630,36 @@ public class MemoryEfficientBipartitionManager {
     }
     
     /**
-     * Check if two range bipartitions are equal by comparing their actual taxon sets.
+     * Check equality through the cached duplicate-invariant side summaries.
+     *
+     * The old STELAR-X equality path compared occurrence ranges and, for
+     * different trees, fell back to prefix-array hashes plus Set scans. That is
+     * not correct for STELAR-Pro because two ranges with different copy counts
+     * can represent the same species cluster. Here both orientations are tested
+     * using the side cluster hashes/counts already produced by the traversal.
      */
     private boolean rangesAreEqual(RangeBipartition range1, RangeBipartition range2) {
-        // Same tree - compare ranges directly (both orientations)
-        if (range1.geneTreeIndex == range2.geneTreeIndex) {
-            // Direct match: left1==left2 && right1==right2
-            boolean directMatch = range1.leftStart == range2.leftStart && range1.leftEnd == range2.leftEnd &&
-                                 range1.rightStart == range2.rightStart && range1.rightEnd == range2.rightEnd;
-            
-            // Symmetric match: left1==right2 && right1==left2
-            boolean symmetricMatch = range1.leftStart == range2.rightStart && range1.leftEnd == range2.rightEnd &&
-                                   range1.rightStart == range2.leftStart && range1.rightEnd == range2.leftEnd;
-            
-            return directMatch || symmetricMatch;
-        }
-        
-        // Different trees - compare hash values for efficiency
-        Object hash1 = DEFAULT_HASH_FUNCTION.calculateHash(range1, prefixSums, prefixXORs);
-        Object hash2 = DEFAULT_HASH_FUNCTION.calculateHash(range2, prefixSums, prefixXORs);
-        
-        if (!hash1.equals(hash2)) {
+        RangeClusterInfo left1 = getRangeClusterInfo(range1.geneTreeIndex, range1.leftStart, range1.leftEnd);
+        RangeClusterInfo right1 = getRangeClusterInfo(range1.geneTreeIndex, range1.rightStart, range1.rightEnd);
+        RangeClusterInfo left2 = getRangeClusterInfo(range2.geneTreeIndex, range2.leftStart, range2.leftEnd);
+        RangeClusterInfo right2 = getRangeClusterInfo(range2.geneTreeIndex, range2.rightStart, range2.rightEnd);
+
+        if (left1 == null || right1 == null || left2 == null || right2 == null) {
             return false;
         }
-        
-        // Hash collision possible - compare actual taxon sets
-        // Check both orientations: {left1, right1} == {left2, right2} OR {left1, right1} == {right2, left2}
-        Set<Integer> left1 = getLeftTaxonSetForRange(range1);
-        Set<Integer> right1 = getRightTaxonSetForRange(range1);
-        Set<Integer> left2 = getLeftTaxonSetForRange(range2);
-        Set<Integer> right2 = getRightTaxonSetForRange(range2);
-        
-        // Direct match: left1==left2 && right1==right2
-        boolean directMatch = left1.equals(left2) && right1.equals(right2);
-        
-        // Symmetric match: left1==right2 && right1==left2  
-        boolean symmetricMatch = left1.equals(right2) && right1.equals(left2);
-        
+
+        boolean directMatch = clusterInfosEqual(left1, left2) && clusterInfosEqual(right1, right2);
+        boolean symmetricMatch = clusterInfosEqual(left1, right2) && clusterInfosEqual(right1, left2);
+
         return directMatch || symmetricMatch;
     }
-    
-    /**
-     * Get the set of taxon IDs for the left cluster of a range bipartition.
-     */
-    private Set<Integer> getLeftTaxonSetForRange(RangeBipartition range) {
-        Set<Integer> taxonSet = new HashSet<>();
-        int[] ordering = geneTreeTaxaOrdering[range.geneTreeIndex];
-        
-        for (int i = range.leftStart; i < range.leftEnd && i < ordering.length; i++) {
-            taxonSet.add(ordering[i]);
-        }
-        
-        return taxonSet;
+
+    private boolean clusterInfosEqual(RangeClusterInfo first, RangeClusterInfo second) {
+        return first.uniqueTaxonCount == second.uniqueTaxonCount && first.hash.equals(second.hash);
     }
-    
-    /**
-     * Get the set of taxon IDs for the right cluster of a range bipartition.
-     */
-    private Set<Integer> getRightTaxonSetForRange(RangeBipartition range) {
-        Set<Integer> taxonSet = new HashSet<>();
-        int[] ordering = geneTreeTaxaOrdering[range.geneTreeIndex];
-        
-        for (int i = range.rightStart; i < range.rightEnd && i < ordering.length; i++) {
-            taxonSet.add(ordering[i]);
-        }
-        
-        return taxonSet;
+
+    private RangeClusterInfo getRangeClusterInfo(int geneTreeIndex, int start, int end) {
+        return rangeClusterInfoByRange.get(new RangeKey(geneTreeIndex, start, end));
     }
     
     
@@ -563,6 +694,16 @@ public class MemoryEfficientBipartitionManager {
      */
     public Map<Object, List<RangeBipartition>> getHashToBipartitions() {
         return hashToBipartitions;
+    }
+
+    /**
+     * Get compact duplicate-invariant cluster summaries for subtree ranges.
+     *
+     * ClusterHashManager uses this map to reuse the hashes produced during
+     * small-to-large traversal instead of rescanning occurrence ranges.
+     */
+    public Map<RangeKey, RangeClusterInfo> getRangeClusterInfoByRange() {
+        return rangeClusterInfoByRange;
     }
     
     /**
