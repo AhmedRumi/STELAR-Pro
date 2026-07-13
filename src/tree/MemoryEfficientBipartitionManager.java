@@ -26,6 +26,13 @@ public class MemoryEfficientBipartitionManager {
     public static boolean ENABLE_DOUBLE_HASHING = true;
     public static boolean ENABLE_EXPENSIVE_EQUALITY_CHECKS = false; // Default: trust the hash functions
     public static RangeBipartition.HashFunction DEFAULT_HASH_FUNCTION = getDefaultHashFunction();
+
+    private static final Comparator<RangeBipartition> RANGE_BIPARTITION_ORDER = Comparator
+        .comparingInt((RangeBipartition range) -> range.geneTreeIndex)
+        .thenComparingInt(range -> range.leftStart)
+        .thenComparingInt(range -> range.leftEnd)
+        .thenComparingInt(range -> range.rightStart)
+        .thenComparingInt(range -> range.rightEnd);
     
     private static RangeBipartition.HashFunction getDefaultHashFunction() {
         return ENABLE_DOUBLE_HASHING ? new RangeBipartition.DoubleHashFunction() : new RangeBipartition.SumHashFunction();
@@ -604,15 +611,18 @@ public class MemoryEfficientBipartitionManager {
                 }
             }
         } else {
-            // Fast approach: trust the hash function, just take the first from each hash group
-            for (Map.Entry<Object, List<RangeBipartition>> entry : hashToBipartitions.entrySet()) {
+            // Fast approach: trust the hash function and pick a stable representative from each hash group.
+            List<Map.Entry<Object, List<RangeBipartition>>> hashGroups =
+                new ArrayList<>(hashToBipartitions.entrySet());
+            hashGroups.sort(Comparator.comparing(entry -> stableHashKey(entry.getKey())));
+
+            for (Map.Entry<Object, List<RangeBipartition>> entry : hashGroups) {
                 List<RangeBipartition> ranges = entry.getValue();
                 totalRanges += ranges.size();
                 
                 if (ranges.isEmpty()) continue;
                 
-                // Just take the first range from each hash group and sum up all occurrences
-                RangeBipartition representative = ranges.get(0);
+                RangeBipartition representative = Collections.min(ranges, RANGE_BIPARTITION_ORDER);
                 int totalCount = ranges.size(); // All ranges in this hash group are considered identical
                 
                 if (representative != null) {
@@ -627,6 +637,14 @@ public class MemoryEfficientBipartitionManager {
         System.out.println("  Unique RangeBipartitions created: " + uniqueRanges);
         System.out.println("  Memory reduction factor: " + ((double) totalRanges / Math.max(1, uniqueRanges)));
         System.out.println("  Final unique RangeBipartitions: " + uniqueRangeBipartitions.size());
+    }
+
+    private String stableHashKey(Object key) {
+        if (key instanceof RangeBipartition.HashPair) {
+            RangeBipartition.HashPair hash = (RangeBipartition.HashPair) key;
+            return String.format("%016x:%016x", hash.sumHash, hash.xorHash);
+        }
+        return String.valueOf(key);
     }
     
     /**

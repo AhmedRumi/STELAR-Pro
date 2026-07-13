@@ -38,6 +38,8 @@ public class MemoryOptimizedInferenceDP {
     private long clusterValidations = 0;
     private long totalProcessingTime = 0;
     private long mixedBipChoices = 0;  // Count how many times mixed bipartition was chosen
+    private long clustersWithoutCandidates = 0;
+    private long clustersWithoutValidBipartitions = 0;
     
     public MemoryOptimizedInferenceDP(GeneTrees geneTrees, List<RangeBipartition> candidateRangeBips) {
         System.out.println("==== INITIALIZING MEMORY-OPTIMIZED INFERENCE DP ====");
@@ -343,6 +345,8 @@ public class MemoryOptimizedInferenceDP {
         System.out.println("Cluster validations: " + clusterValidations);
         System.out.println("Unique clusters in DP state space: " + clusterHashToRangeBips.size());
         System.out.println("Unique clusters visited (memoized): " + dpMemo.size());
+        System.out.println("Clusters without candidates: " + clustersWithoutCandidates);
+        System.out.println("Clusters without valid bipartitions: " + clustersWithoutValidBipartitions);
         
         // Print mixed bipartition statistics if enabled
         if (useMixedBipartitions) {
@@ -464,10 +468,10 @@ public class MemoryOptimizedInferenceDP {
         // Handle case where no valid bipartition found
         if (bestChoice == null) {
             if (rangeCandidates == null && (!useMixedBipartitions || clusterHashToMixedBips.get(clusterHash) == null)) {
-                System.out.println("No candidates found for cluster " + clusterHash.toDebugString() + " (size " + taxaCount + ")");
+                clustersWithoutCandidates++;
             }
+            clustersWithoutValidBipartitions++;
             maxScore = 0.0;
-            System.out.println("No valid bipartition found for cluster " + clusterHash.toDebugString());
         }
         
         // Memoize result

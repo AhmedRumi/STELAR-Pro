@@ -3,6 +3,8 @@ package preprocessing;
 import java.io.File;
 import java.io.FileNotFoundException;
 import java.util.ArrayList;
+import java.util.Collections;
+import java.util.Comparator;
 import java.util.HashMap;
 import java.util.HashSet;
 import java.util.Map;
@@ -170,7 +172,9 @@ public class GeneTrees {
 
         // Create RealTaxon objects with consistent IDs
         this.taxaMap = new HashMap<>();
-        for(var x : taxaSet){
+        List<String> sortedTaxa = new ArrayList<>(taxaSet);
+        Collections.sort(sortedTaxa);
+        for(var x : sortedTaxa){
             Taxon taxon = new Taxon(x);
             taxaMap.put(x, taxon);
         }
@@ -393,6 +397,12 @@ public class GeneTrees {
         for (RangeBipartition range : rangeBipartitions.keySet()) {
             candidates.add(range);
         }
+        candidates.sort(Comparator
+            .comparingInt((RangeBipartition range) -> range.geneTreeIndex)
+            .thenComparingInt(range -> range.leftStart)
+            .thenComparingInt(range -> range.leftEnd)
+            .thenComparingInt(range -> range.rightStart)
+            .thenComparingInt(range -> range.rightEnd));
         
         // Note: Complementary bipartition generation is more complex with ranges
         // and may not be necessary since we're working with subtree bipartitions
