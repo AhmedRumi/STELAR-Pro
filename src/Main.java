@@ -17,6 +17,7 @@ import core.SpeciesTreeScorer;
 import tree.RangeBipartition;
 import tree.MixedBipartition;
 import tree.Tree;
+import taxon.Taxon;
 
 /**
  * Main entry point for phylogeny project with GeneTrees processing.
@@ -488,9 +489,12 @@ public class Main {
             throw new IOException("ASTRAL-Pro executable is not executable: " + astralProPath);
         }
 
+        String normalizedInputFilePath = normalizeInputGeneTreeLabels(inputFilePath);
+
         if (!quietExternalOutput) {
             System.out.println("\nRooting and tagging gene trees with ASTRAL-Pro...");
-            System.out.println("Command: " + astralProPath + " -T -o " + taggedPath + " " + inputFilePath);
+            System.out.println("Normalized input gene-tree labels: " + normalizedInputFilePath);
+            System.out.println("Command: " + astralProPath + " -T -o " + taggedPath + " " + normalizedInputFilePath);
         }
 
         ProcessBuilder builder = new ProcessBuilder(
@@ -498,7 +502,7 @@ public class Main {
                 "-T",
                 "-o",
                 taggedPath.toString(),
-                inputFilePath);
+                normalizedInputFilePath);
         if (quietExternalOutput) {
             builder.redirectErrorStream(true);
         } else {
@@ -540,6 +544,59 @@ public class Main {
             System.out.println("Root/tag preprocessing completed: " + taggedPath);
         }
         return taggedPath.toString();
+    }
+
+    private static String normalizeInputGeneTreeLabels(String inputFilePath) throws IOException {
+        Path normalizedPath = Files.createTempFile("stelar-pro-normalized-input-", ".tre");
+        normalizedPath.toFile().deleteOnExit();
+
+        try (BufferedReader reader = Files.newBufferedReader(Paths.get(inputFilePath));
+             java.io.BufferedWriter writer = Files.newBufferedWriter(normalizedPath)) {
+            String line;
+            while ((line = reader.readLine()) != null) {
+                writer.write(normalizeNewickLeafLabels(line));
+                writer.newLine();
+            }
+        }
+
+        return normalizedPath.toString();
+    }
+
+    private static String normalizeNewickLeafLabels(String newickLine) {
+        StringBuilder normalized = new StringBuilder(newickLine.length());
+        char previousSignificant = '\0';
+        int i = 0;
+
+        while (i < newickLine.length()) {
+            char c = newickLine.charAt(i);
+            if (Character.isWhitespace(c) || c == '(' || c == ')' || c == ',' || c == ':' || c == ';') {
+                normalized.append(c);
+                if (!Character.isWhitespace(c)) {
+                    previousSignificant = c;
+                }
+                i++;
+                continue;
+            }
+
+            int start = i;
+            while (i < newickLine.length()) {
+                c = newickLine.charAt(i);
+                if (Character.isWhitespace(c) || c == '(' || c == ')' || c == ',' || c == ':' || c == ';') {
+                    break;
+                }
+                i++;
+            }
+
+            String token = newickLine.substring(start, i);
+            if (previousSignificant == '(' || previousSignificant == ',') {
+                normalized.append(Taxon.normalizeLabel(token));
+            } else {
+                normalized.append(token);
+            }
+            previousSignificant = 'L';
+        }
+
+        return normalized.toString();
     }
 
     private static String resolveAstralProPath() {

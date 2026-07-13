@@ -403,6 +403,10 @@ public class MemoryOptimizedInferenceDP {
                     // Get left and right cluster hashes
                     ClusterHashPair leftHash = clusterHashManager.getLeftClusterHash(rangeBip);
                     ClusterHashPair rightHash = clusterHashManager.getRightClusterHash(rangeBip);
+
+                    if (!isStrictSplit(clusterHash, leftHash, rightHash, taxaCount)) {
+                        continue;
+                    }
                     
                     // Recursive DP calls
                     double leftScore = dp(leftHash);
@@ -436,6 +440,10 @@ public class MemoryOptimizedInferenceDP {
                         mixed.leftTreeIndex, mixed.leftStart, mixed.leftEnd);
                     ClusterHashPair rightHash = clusterHashManager.getClusterHash(
                         mixed.rightTreeIndex, mixed.rightStart, mixed.rightEnd);
+
+                    if (!isStrictSplit(clusterHash, leftHash, rightHash, taxaCount)) {
+                        continue;
+                    }
                     
                     // Recursive DP calls
                     double leftScore = dp(leftHash);
@@ -479,6 +487,26 @@ public class MemoryOptimizedInferenceDP {
         
         // Use cluster hash manager's equality check (with collision handling)
         return clusterHashManager.clustersEqual(unionHash, clusterHash);
+    }
+
+    private boolean isStrictSplit(
+            ClusterHashPair parentHash,
+            ClusterHashPair leftHash,
+            ClusterHashPair rightHash,
+            int parentSize) {
+        int leftSize = clusterHashManager.getClusterSize(leftHash);
+        int rightSize = clusterHashManager.getClusterSize(rightHash);
+
+        if (leftSize <= 0 || rightSize <= 0) {
+            return false;
+        }
+        if (leftSize >= parentSize || rightSize >= parentSize) {
+            return false;
+        }
+        if (leftSize + rightSize != parentSize) {
+            return false;
+        }
+        return !leftHash.equals(parentHash) && !rightHash.equals(parentHash);
     }
     
     /**
