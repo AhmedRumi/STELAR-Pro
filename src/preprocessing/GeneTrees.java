@@ -98,7 +98,7 @@ public class GeneTrees {
                     i++;
                 }
                 
-                String label = taxaName.toString();
+                String label = Taxon.normalizeLabel(taxaName.toString());
                 if (!label.isEmpty()) {
                     taxaSet.add(label);
                 }
@@ -491,4 +491,3 @@ public class GeneTrees {
     
     // Removed addValidBipartition method - no longer used with memory-efficient approach
 } 
-

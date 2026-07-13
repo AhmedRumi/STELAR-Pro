@@ -18,6 +18,14 @@ public class Taxon {
         label = lb;
     }
 
+    public static String normalizeLabel(String label) {
+        int separatorIndex = label.indexOf('_');
+        if (separatorIndex < 0) {
+            return label;
+        }
+        return label.substring(0, separatorIndex);
+    }
+
     @Override
     public String toString(){
         return label;

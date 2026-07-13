@@ -76,7 +76,7 @@ public class Tree {
                 }
                 
                 // Create leaf node
-                String taxonLabel = taxaName.toString();
+                String taxonLabel = Taxon.normalizeLabel(taxaName.toString());
                 if (!taxonLabel.isEmpty()) {
                     Taxon taxon = this.taxaMap.get(taxonLabel);
                     if (taxon == null) {
