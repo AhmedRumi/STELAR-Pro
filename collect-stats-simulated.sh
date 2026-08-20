@@ -3,35 +3,41 @@
 # Merges stat-*.csv files under simphy/data into one combined CSV file
 # and appends gt-gt,gt-st from a stat-sim.csv in the same directory (if present).
 # Handles header mismatches by taking the union of columns, filling missing ones with empty values.
-# Outputs columns in the prescribed order: alg,num-taxa,gene-trees,replicate,sb,spmin,spmax,rf-rate,running-time-s,max-cpu-mb,max-gpu-mb,gt-gt,gt-st
+# Outputs columns in the prescribed order: alg,setting,num-taxa,gene-trees,replicate,sb,spmin,spmax,rf-rate,running-time-s,max-cpu-mb,max-gpu-mb,gt-gt,gt-st
 #
 # Usage:
 #   ./collect-stats-simulated.sh
-#   ./collect-stats-simulated.sh --base-dir /home/you/research --out /tmp/perf-combined.csv
-#   ./collect-stats-simulated.sh --simphy-dir /home/you/research/STELAR-Pro/simphy
+#   ./collect-stats-simulated.sh --project-root /path/to/checkout --out /tmp/perf-combined.csv
+#   ./collect-stats-simulated.sh --simphy-dir /path/to/simphy
 
 set -euo pipefail
 
-# Algorithm configuration - modify this to select which algorithms to collect
-ALGORITHMS=("stelar" "astral" "tree-qmc" "wqfm-tree" "aster")
+SCRIPT_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+source "${SCRIPT_ROOT}/scripts/phylogeny-data-dir.sh"
 
-BASE_DIR="${HOME}/phylogeny"
+# Algorithm configuration - modify this to select which algorithms to collect
+ALGORITHMS=("stelarx")
+
+BASE_DIR="$SCRIPT_ROOT"
 SIMPHY_DIR=""
+SIMPHY_DATA_DIR=""
 OUT_FILE="./perf-combined.csv"
 
 print_help() {
   cat <<EOF
 collect-stats-simulated.sh
 
-Finds all stat-*.csv files for configured algorithms under <SIMPHY_DIR>/data (default derived from --base-dir),
+Finds all stat-*.csv files for configured algorithms under the SimPhy data directory,
 takes the union of headers, merges them into --out with columns in prescribed order,
 and appends gt-gt,gt-st from a stat-sim.csv located in the same directory as each stat file (if present).
 
 Configured algorithms: ${ALGORITHMS[*]}
 
 Options:
-  --base-dir, -b    Base directory (default: ${BASE_DIR})
-  --simphy-dir      Path to simphy dir (overrides --base-dir)
+  --project-root    STELAR-X checkout root (default: ${SCRIPT_ROOT})
+  --base-dir, -b    Compatibility alias for --project-root
+  --simphy-dir      Path to simphy dir (overrides --project-root)
+  --simphy-data-dir SimPhy data root (default: \$PHYLOGENY_DATA_DIR/simphy/data)
   --out, -o         Output CSV path (default: ${OUT_FILE})
   --help, -h        Show this message
 EOF
@@ -40,8 +46,9 @@ EOF
 # parse args
 while [[ $# -gt 0 ]]; do
   case "$1" in
-    --base-dir|-b) BASE_DIR="$2"; shift 2 ;;
+    --project-root|--base-dir|-b) BASE_DIR="$2"; shift 2 ;;
     --simphy-dir) SIMPHY_DIR="$2"; shift 2 ;;
+    --simphy-data-dir) SIMPHY_DATA_DIR="$2"; shift 2 ;;
     --out|-o) OUT_FILE="$2"; shift 2 ;;
     --help|-h) print_help; exit 0 ;;
     *) echo "Unknown option: $1"; print_help; exit 1 ;;
@@ -49,18 +56,13 @@ while [[ $# -gt 0 ]]; do
 done
 
 if [[ -z "$SIMPHY_DIR" ]]; then
-  SIMPHY_DIR="${BASE_DIR%/}/STELAR-Pro/simphy"
+  SIMPHY_DIR="${BASE_DIR%/}/simphy"
 fi
 
-SIMPHY_DATA_DIR="${SIMPHY_DIR%/}/data"
-
-if [[ ! -d "$SIMPHY_DATA_DIR" ]]; then
-  echo "Error: simphy data directory not found at: $SIMPHY_DATA_DIR" >&2
-  exit 2
-fi
+SIMPHY_DATA_DIR="$(stelarx_prepare_simphy_data_dir "$SIMPHY_DATA_DIR")"
 
 # find stat files for all configured algorithms (only if lock file exists)
-declare -a all_stat_files
+declare -a all_stat_files=()
 total_files=0
 skipped_no_lock=0
 
@@ -107,7 +109,7 @@ norm_line() {
 }
 
 # Define the prescribed header order
-PRESCRIBED_HEADER="alg,num-taxa,gene-trees,replicate,sb,spmin,spmax,rf-rate,running-time-s,max-cpu-mb,max-gpu-mb,gt-gt,gt-st"
+PRESCRIBED_HEADER="alg,setting,num-taxa,gene-trees,replicate,sb,spmin,spmax,rf-rate,optimal-triplet-score,running-time-s,max-cpu-mb,max-gpu-mb,gt-gt,gt-st"
 
 # Write prescribed header to output
 printf "%s\n" "$PRESCRIBED_HEADER" > "$OUT_FILE"
@@ -133,7 +135,23 @@ for stat_file in "${all_stat_files[@]}"; do
 
   # Process stat-sim.csv for gt-gt, gt-st
   dir=$(dirname "$stat_file")
-  stat_sim="${dir%/}/stat-sim.csv"
+  setting_name="default"
+  dir_base="$(basename "$dir")"
+  if [[ "$dir_base" == *"_"* ]]; then
+    setting_name="$dir_base"
+  fi
+  stat_sim=""
+  search_dir="$dir"
+  while [[ "$search_dir" != "/" && "$search_dir" != "." ]]; do
+    if [[ -f "${search_dir%/}/stat-sim.csv" ]]; then
+      stat_sim="${search_dir%/}/stat-sim.csv"
+      break
+    fi
+    search_dir="$(dirname "$search_dir")"
+  done
+  if [[ -z "$stat_sim" && -f "./stat-sim.csv" ]]; then
+    stat_sim="./stat-sim.csv"
+  fi
   gt_gt=""
   gt_st=""
 
@@ -148,7 +166,7 @@ for stat_file in "${all_stat_files[@]}"; do
   fi
 
   # Process data rows, mapping to prescribed header
-  awk -F, -v OFS=',' -v header="$file_header" -v prescribed="$PRESCRIBED_HEADER" -v gt_gt="$gt_gt" -v gt_st="$gt_st" '
+  awk -F, -v OFS=',' -v header="$file_header" -v prescribed="$PRESCRIBED_HEADER" -v gt_gt="$gt_gt" -v gt_st="$gt_st" -v setting_name="$setting_name" '
   BEGIN {
     split(header, h, ",");
     split(prescribed, u, ",");
@@ -169,6 +187,7 @@ for stat_file in "${all_stat_files[@]}"; do
     # Set gt-gt and gt-st
     out[length(u)-1]=gt_gt;
     out[length(u)]=gt_st;
+    if (out[2] == "") out[2]=setting_name;
     # Build output line
     line="";
     for (i=1; i<=length(u); i++) {

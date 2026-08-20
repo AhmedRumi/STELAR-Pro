@@ -1,357 +1,98 @@
-# STELAR-Pro: Scaling Coalescent-Based Species Tree Inference to 100,000 Species and Beyond
+# STELAR-X
 
-**STELAR-Pro** is a highly scalable, statistically consistent summary method for species tree inference that reconstructs species trees from large collections of gene trees under the multispecies coalescent model. It achieves near-input-size O(nk) memory usage through a redesigned computational framework built on compact integer-tuple bipartition encodings, fast precomputation of bipartition weights, and GPU-accelerated parallelism, all integrated into an optimized dynamic programming pipeline.
+STELAR-X is a scalable rooted species-tree summary method. It maximizes agreement
+with the rooted triplets displayed by rooted gene trees and provides compact
+multi-seed hashes, range intersections, cross-tree recombination, configurable
+search spaces and intersections, similarity/UPGMA guidance, parallel CPU paths,
+and CUDA acceleration for binary and polytomous rooted inputs.
 
-With this combination of algorithmic engineering and parallel computation, STELAR-Pro delivers unprecedented scalability—analyzing **100,000 taxa × 1,000 genes in about 8.5 hours using 86 GB RAM**, and **1,000 taxa × 100,000 genes in 4 minutes using 106 GB RAM**. STELAR-Pro is therefore expected to handle substantially larger datasets (>100,000 taxa) on machines with a few hundred gigabytes of RAM (e.g., 256 GB) and modest multi-day runtimes.
+The checkout directory name and location are arbitrary; scripts resolve the
+project root from their own location. The program and artifacts are named
+STELAR-X regardless of the checkout name.
+The source, Java package, JNI symbols, native libraries, launchers, and portable
+artifacts all use the `stelarx` name.
 
-> **Platform:** Developed and tested on **Ubuntu Linux**.
+## Build and run
 
----
-
-## Quick Start (Precompiled Release)
-
-The fastest way to use STELAR-Pro. **No build tools needed — just Java.**
-
-**Prerequisite:** Java 11+ (tested with OpenJDK 17 and 21)
-
-```bash
-# Install Java if not already installed (Ubuntu/Debian)
-sudo apt update && sudo apt install -y openjdk-17-jdk
-
-# Verify
-java -version
-```
-
-### Download
-
-You can download the lightweight, portable `.tar` archive from either source:
-
-* **GitHub Releases:** [https://github.com/aaniksahaa/STELAR-Pro/releases](https://github.com/aaniksahaa/STELAR-Pro/releases)
-  
-  Example: v1.0.0 — [https://github.com/aaniksahaa/STELAR-Pro/releases/tag/v1.0.0](https://github.com/aaniksahaa/STELAR-Pro/releases/tag/v1.0.0)
-  
-* **Google Drive mirror:** [https://drive.google.com/drive/folders/1iyvmd__u_sCLZG1Z5TmzgOOuB1pVXlec?usp=sharing](https://drive.google.com/drive/folders/1iyvmd__u_sCLZG1Z5TmzgOOuB1pVXlec?usp=sharing)
-
-```bash
-# 1. Extract the prebuilt release archive
-tar xzf stelar-pro-1.0.0.tar.gz
-cd stelar-pro-1.0.0
-
-# 2. Run on the included example (37-taxon dataset, 200 gene trees)
-./stelar-pro -i examples/all_gt_bs_rooted_37.tre -o examples/out_37.tre
-```
-
-That's it. An example gene trees file is included so you can verify it works immediately. Note that, you can run inference for any gene trees with relative or absolute path. GPU mode is used automatically if an NVIDIA GPU is detected; otherwise it falls back to CPU parallel.
-
-```bash
-# Force CPU parallel mode
-./stelar-pro -i examples/all_gt_bs_rooted_37.tre -o examples/out_37.tre --cpu-parallel
-
-# Run on your own data
-./stelar-pro -i gene_trees.tre -o output.tre
-
-# Score a known species tree against gene trees
-./stelar-pro -i gene_trees.tre -c species_tree.tre
-
-# See all options
-./stelar-pro --help
-```
-
-**Optional** — add to PATH for system-wide access:
-
-```bash
-sudo ln -sf $(pwd)/stelar-pro /usr/local/bin/stelar-pro
-stelar-pro -i gene_trees.tre -o output.tre    # works from anywhere
-```
-
----
-
-## Building from Source
-
-For developers who want to edit code, rebuild, or experiment.
-
-### Prerequisites
-
-| Dependency | Required | Version | Notes |
-|------------|----------|---------|-------|
-| **Java (JDK)** | Yes | 11+ | Tested with OpenJDK 17 and 21 |
-| **NVIDIA CUDA Toolkit** | No | 11.0+ | For GPU acceleration; CPU fallback is automatic |
-| **NVIDIA GPU** | No | Compute capability ≥ 7.0 | Required only for GPU mode |
-
-> **Maven is NOT required.** The bundled Maven Wrapper (`mvnw`) handles it automatically.
-
-### Install Java (if not installed)
-
-```bash
-sudo apt update && sudo apt install -y openjdk-17-jdk
-
-# Verify
-java -version
-```
-
-### Build
-
-```bash
-# 1. Clone the repository
-git clone https://github.com/aaniksahaa/STELAR-Pro.git
-cd STELAR-Pro
-
-# 2. Build everything (one command)
-# this install may take time in the first run
-./install.sh
-```
-
-`install.sh` will:
-- Check that Java 11+ (JDK) is available
-- Compile the Java project into a fat JAR via the Maven Wrapper (no Maven installation needed)
-- Compile the CUDA kernels if `nvcc` is available (otherwise, uses the pre-built library or skips gracefully)
-
-```bash
-# Build options
-./install.sh                  # Auto-detects CUDA
-./install.sh --no-cuda        # Skip CUDA compilation (CPU-only)
-./install.sh --force-cuda     # Fail if CUDA compilation fails
-./install.sh --clean          # Clean rebuild from scratch
-```
-
-### Run
-
-```bash
-./run.sh -i all_gt_bs_rooted_37.tre -o out_37.tre
-```
-
-After editing source code, rebuild with:
+JDK 21 or newer is required. CUDA is optional.
 
 ```bash
 ./build.sh
+./stelarx -i rooted_gene_trees.tre -o species_tree.tre --cpu
 ```
 
-### Build Precompiled Release Archive
+Input contains one rooted Newick tree per non-empty line. STELAR-X uses the
+supplied top-level root exactly. A top-level node with anything other than two
+children is rejected because ordinary Newick has no independent rootedness flag
+and STELAR-X never invents an arbitrary root.
 
-To package a standalone distribution (for sharing with others):
+SimPhy datasets default to `$PHYLOGENY_DATA_DIR/simphy/data`. The simulation,
+testing, bulk-transfer, and statistics scripts create that directory when it is
+missing. Their explicit SimPhy data-directory options still override the
+environment-based default.
+
+Use `--search-space S1`, `S2`, or `S3` and `--intersection-method I1` through
+`I4`. The default is S1/I2. S2 completes missing taxa with root-preserving
+nearest-anchor insertion, adds a UPGMA guide, and enables hash-based cross-tree
+recombination. S3 additionally enables consensus-guided enrichment.
+
+Score a supplied rooted species tree with:
 
 ```bash
-./dist.sh                     # Produces dist/stelar-pro-1.0.0.tar.gz (~3.3 MB)
-./dist.sh --skip-build        # Package existing build without rebuilding
+./stelarx -i rooted_gene_trees.tre \
+  --score-species-tree rooted_species_tree.tre --cpu
 ```
 
----
+The machine-readable result is `TRIPLET_SCORE: N`.
 
-## Usage
+## Crash reports
 
-### Inference Mode (default)
+Unexpected Java failures and JVM fatal-error logs are written under
+`crash_logs/`, which STELAR-X creates automatically instead of placing logs in
+the repository root. Set `STELARX_CRASH_DIR=/path/to/directory` to override the
+location when using the repository launchers.
 
-Infer a species tree from a set of gene trees:
+## CUDA
+
+Build native libraries with `./build_native.sh`. The native libraries are
+`libstelarx_weight`, `libstelarx_dp`, `libstelarx_dist`, and `libstelarx_sim`
+(with the platform's shared-library suffix). Every intersection method supports
+rooted-polytomy weights on both CPU and CUDA.
+
+## Migration details
+
+See [MIGRATION_DOCS/00-overview.md](MIGRATION_DOCS/00-overview.md) for the design,
+invariants, retained components, and validation evidence. The canonical names
+for every implementation surface are listed in
+[MIGRATION_DOCS/04-stelarx-identity.md](MIGRATION_DOCS/04-stelarx-identity.md).
+
+Run the migration-focused validation suite with:
 
 ```bash
-./run.sh -i <gene_trees.tre> -o <output.tre> [options]
+test/run_stelarx_tests.sh
 ```
 
-### Score Mode
-
-Calculate the triplet score of a known species tree against gene trees:
+Run the complete layered suite (CPU, independent randomized oracles, malformed
+inputs, end-to-end inference, packaging, and CUDA automatically when usable):
 
 ```bash
-./run.sh -i <gene_trees.tre> -c <species_tree.tre> [options]
+test/run_stelarx_comprehensive_tests.sh
 ```
 
-### With Performance Monitoring
-
-Records running time, peak CPU RAM, and peak GPU VRAM:
+Useful variants are `--require-gpu` (CUDA absence is a failure), `--cpu-only`,
+`--quick`, and `--skip-packaging`. On a CUDA host, the standalone no-fallback
+hardware layer remains available with:
 
 ```bash
-./run-with-monitor.sh -i <gene_trees.tre> -o <output.tre>
+test/run_stelarx_gpu_tests.sh
 ```
 
-### Examples
+For accuracy plus wall-time/peak-RSS scaling measurements across the complete
+S1–S3 × I1–I4 matrix, run:
 
 ```bash
-# GPU mode (auto-detected)
-./run.sh -i all_gt_bs_rooted_37.tre -o out-37.tre
-
-# Explicit CPU parallel
-./run.sh -i all_gt_bs_rooted_37.tre -o out-37.tre --cpu-parallel
-
-# GPU with cross-tree recombination (expansion)
-./run.sh -i all_gt_bs_rooted_37.tre -o out-37.tre --gpu --expansion
-
-# Score-only mode
-./run.sh -i all_gt_bs_rooted_37.tre -c known_species.tre
-
-# Custom Java heap size
-./run.sh -i large_dataset.tre -o out.tre --xms 8g --xmx 256g
-
-# Monitored run with stats output
-./run-with-monitor.sh -i all_gt_bs_rooted_48.tre -o out-48.tre
+python3 test/test_stelarx_scalability.py --require-gpu
 ```
 
----
-
-## Command-Line Parameters
-
-### Required Parameters
-
-| Flag | Long Form | Description |
-|------|-----------|-------------|
-| `-i` | `--input <file>` | Input gene trees file in Newick format |
-| `-o` | `--output <file>` | Output species tree file (inference mode) |
-
-> In **score mode**, use `-c` instead of `-o`.
-
-### Computation Mode
-
-| Flag | Long Form | Description |
-|------|-----------|-------------|
-| | `--gpu` | GPU parallel mode (**default** if NVIDIA GPU is detected) |
-| | `--cpu-parallel` | CPU multi-threaded mode (default if no GPU) |
-| | `--cpu` | CPU single-threaded mode |
-| `-m` | `--mode <mode>` | Explicit mode: `GPU_PARALLEL`, `CPU_PARALLEL`, `CPU_SINGLE` |
-
-### Optional Parameters
-
-| Flag | Long Form | Description | Default |
-|------|-----------|-------------|---------|
-| `-c` | `--score <file>` | Score-only mode: calculate triplet score for a given species tree | — |
-| `-e` | `--expansion` | Enable cross-tree recombination (mixed bipartitions) | Off |
-| `-v` | `--verbose` | Verbose expansion output | Off |
-| | `--xms <size>` | Java minimum heap size | `4g` |
-| | `--xmx <size>` | Java maximum heap size | `128g` |
-| `-h` | `--help` | Show help message | — |
-
-### Environment Variables
-
-| Variable | Description | Example |
-|----------|-------------|---------|
-| `STELAR_PRO_XMS` | Default minimum Java heap size | `STELAR_PRO_XMS=8g ./run.sh ...` |
-| `STELAR_PRO_XMX` | Default maximum Java heap size | `STELAR_PRO_XMX=256g ./run.sh ...` |
-
----
-
-## Testing with Simulated Datasets
-
-We use [SimPhy](https://github.com/adamallo/SimPhy) to generate simulated datasets for large-scale benchmarking.
-
-### Generate and test simulated data
-
-```bash
-# Generate simulated dataset (100 taxa, 200 gene trees)
-./sim.sh -t 100 -g 200 --sb 0.000001 --spmin 100000 --spmax 200000 -rs 1 --fresh
-
-# Run STELAR-Pro on the simulated data
-./test-stelar-simulated.sh -t 100 -g 200 --sb 0.000001 --spmin 100000 --spmax 200000 -r R1 --fresh
-```
-
-### Specifying a base directory
-
-```bash
-./sim.sh -b $HOME/research -t 100 -g 200 --sb 0.000001 --spmin 100000 --spmax 200000 -rs 1 --fresh
-./test-stelar-simulated.sh -b $HOME/research -t 100 -g 200 --sb 0.000001 --spmin 100000 --spmax 200000 -r R1 --fresh
-```
-
-Here, `-b` should point to the directory *containing* the STELAR-Pro folder.
-
-### Custom SimPhy data directory
-
-```bash
-./sim.sh -b $HOME/research --simphy-data-dir /dev/shm/data -t 100 -g 200 --sb 0.000001 --spmin 100000 --spmax 200000 -rs 1 --fresh
-./test-stelar-simulated.sh -b $HOME/research --simphy-data-dir /dev/shm/data -t 100 -g 200 --sb 0.000001 --spmin 100000 --spmax 200000 -r R1 --fresh
-```
-
-### Optional tools
-
-These are not required for STELAR-Pro itself, but are useful for evaluation:
-
-```bash
-pip install dendropy        # RF distance calculation
-sudo apt install -y time    # Detailed time/memory monitoring (for run-with-monitor.sh)
-```
-
----
-
-## Building Upon the Codebase
-
-### Modifying Java Code
-
-After editing any Java source files in `src/`, rebuild:
-
-```bash
-./build.sh
-```
-
-This recompiles the project and regenerates the fat JAR with all dependencies bundled. (`build.sh` and `install.sh` are equivalent — use whichever feels right.)
-
-### Modifying the CUDA Kernel
-
-After editing `cuda/weight_calc.cu`, rebuild:
-
-```bash
-cd cuda
-make clean && make
-cd ..
-```
-
-Or simply re-run `./build.sh`, which handles both Java and CUDA compilation.
-
-### Installing the CUDA Toolkit (if not already installed)
-
-```bash
-# Check if nvcc is available
-nvcc --version
-
-# If missing (Ubuntu/Debian):
-sudo apt update
-sudo apt install -y nvidia-cuda-toolkit
-
-# Verify
-nvcc --version
-```
-
----
-
-## Implementation Notes
-
-- We use the hash functions **addition** and **bitwise XOR**
-- We use 2^64 as the modulus since it arises naturally from the wrap-around behavior of the corresponding datatype, providing greater efficiency
-- For the single-element hash function, we use a mixing function comprising multiplication and bit-shift operations
-- The CUDA kernel is compiled for GPU architectures `sm_70` through `sm_90`, covering NVIDIA Volta, Turing, Ampere, Ada Lovelace, and Hopper generations
-
----
-
-## Troubleshooting
-
-| Problem | Possible Cause | Solution |
-|---------|---------------|----------|
-| `JAR not found` | Project not built | Run `./install.sh` |
-| CUDA library not loaded | Missing GPU or CUDA runtime | Runs in CPU mode automatically; or install CUDA toolkit |
-| `OutOfMemoryError` | Dataset too large for default heap | Increase heap: `--xms 8g --xmx 256g` |
-| GPU out of memory | Dataset too large for GPU VRAM | Use `--cpu-parallel` instead |
-| `nvcc` not found | CUDA toolkit not installed | `sudo apt install -y nvidia-cuda-toolkit` |
-| Slow performance | Running in single-threaded mode | Use `--cpu-parallel` or `--gpu` |
-
----
-
-## Project Structure
-
-```
-STELAR-Pro/
-├── install.sh              # One-command build (Java + CUDA)
-├── build.sh                # Same as install.sh (convenient alias for rebuilds)
-├── run.sh                  # Main launcher
-├── run-with-monitor.sh     # Launcher with performance monitoring
-├── dist.sh                 # Build standalone release archive
-├── mvnw                    # Maven Wrapper (no Maven installation needed)
-├── pom.xml                 # Maven project configuration
-├── src/                    # Java source code
-│   ├── Main.java
-│   ├── core/               # Inference engine, weight calculators, DP
-│   ├── preprocessing/      # Gene tree parsing
-│   ├── tree/               # Tree and bipartition data structures
-│   ├── taxon/              # Taxon representation
-│   └── utils/              # Configuration, threading, hashing utilities
-├── cuda/
-│   ├── weight_calc.cu      # CUDA GPU kernels
-│   ├── libweight_calc.so   # Pre-built CUDA library
-│   └── Makefile
-└── target/
-    └── stelar-pro-*.jar      # Built fat JAR (after install.sh)
-```
+Pass `--reference-dir PATH` to compare median S1/I2 CPU resources against a
+separately built reference checkout with guarded time and memory ratios.
