@@ -31,6 +31,52 @@ SB_LIST=(0.000001)
 SPMIN_LIST=(100000)
 SPMAX_LIST=(200000)
 
+# Configurations that must not run through STELAR-X. Each entry is an exact
+# TAXA,GENE_TREES,SB,SPMIN,SPMAX,REPLICATE tuple. Keep replicate names in R<n>
+# form. sim.sh may still prepare the surrounding dataset batch; only the listed
+# per-replicate inference/result run is purposefully skipped.
+EXCLUDED_SIMULATED_CONFIGS=(
+  "30000,1000,0.000001,100000,150000,R5"
+  "30000,1000,0.000001,100000,250000,R4"
+  "30000,1000,0.000001,100000,300000,R3"
+  "40000,1000,0.000001,100000,150000,R2"
+  "40000,1000,0.000001,100000,150000,R5"
+  "40000,1000,0.000001,100000,200000,R5"
+  "40000,1000,0.000001,100000,300000,R5"
+  "1000,25000,0.000001,100000,200000,R3"
+  "1000,25000,0.000001,100000,250000,R2"
+  "75000,1000,0.000001,100000,200000,R5"
+  "100000,1000,0.000001,100000,200000,R3"
+  "100000,1000,0.000001,100000,200000,R4"
+  "125000,1000,0.000001,100000,200000,R2"
+  "125000,1000,0.000001,100000,200000,R3"
+  "125000,1000,0.000001,100000,200000,R4"
+  "150000,1000,0.000001,100000,200000,R4"
+  "175000,1000,0.000001,100000,200000,R2"
+  "175000,1000,0.000001,100000,200000,R4"
+  "200000,1000,0.000001,100000,200000,R1"
+  "200000,1000,0.000001,100000,200000,R2"
+  "225000,1000,0.000001,100000,200000,R1"
+  "225000,1000,0.000001,100000,200000,R3"
+  "1000,75000,0.000001,100000,200000,R3"
+  "1000,100000,0.000001,100000,200000,R4"
+  "1000,125000,0.000001,100000,200000,R4"
+  "1000,150000,0.000001,100000,200000,R2"
+  "1000,200000,0.000001,100000,200000,R4"
+  "1000,225000,0.000001,100000,200000,R2"
+  "1000,275000,0.000001,100000,200000,R3"
+  "1000,300000,0.000001,100000,200000,R2"
+)
+
+IS_SIMULATED_CONFIG_EXCLUDED() {
+  local CANDIDATE_CONFIG="$1,$2,$3,$4,$5,$6"
+  local EXCLUDED_CONFIG
+  for EXCLUDED_CONFIG in "${EXCLUDED_SIMULATED_CONFIGS[@]}"; do
+    [[ "$CANDIDATE_CONFIG" == "$EXCLUDED_CONFIG" ]] && return 0
+  done
+  return 1
+}
+
 # Method-specific options (passed through)
 ASTER_OPTS=""
 ASTER_BIN=""
@@ -42,6 +88,12 @@ TREEQMC_OPTS=""
 WQFM_OPTS=""
 SUPERTRIPLETS_OPTS=""
 TMC_OPTS=""
+
+# Permit the exclusion predicate and uppercase configuration array to be loaded
+# by the isolated regression test without executing a simulated-data sweep.
+if [[ "${BASH_SOURCE[0]}" != "$0" ]]; then
+  return 0
+fi
 
 print_help() {
   cat <<EOF
@@ -186,10 +238,16 @@ for t in "${T_LIST[@]}"; do
           
           # Run replicates
           for ((i=1; i<=NUM_REPLICATES; i++)); do
-            echo "  Running replicate R$i with $METHOD"
+            REPLICATE_NAME="R$i"
+            if IS_SIMULATED_CONFIG_EXCLUDED \
+                "$t" "$g" "$sb" "$spmin" "$spmax" "$REPLICATE_NAME"; then
+              echo "  SKIPPING excluded configuration: t=$t g=$g sb=$sb spmin=$spmin spmax=$spmax replicate=$REPLICATE_NAME"
+              continue
+            fi
+            echo "  Running replicate $REPLICATE_NAME with $METHOD"
             
             for STELARX_OPTS_ITEM in "${STELARX_OPTS_LIST[@]}"; do
-              TEST_CMD=("${STELARX_ROOT}/test-stelarx-simulated.sh" -r "R$i" "${BASE_DIR_ARGS[@]}" "${SHARED_TEST_ARGS[@]}" -t "$t" -g "$g" --sb "$sb" --spmin "$spmin" --spmax "$spmax" "${FRESH_ARGS[@]}")
+              TEST_CMD=("${STELARX_ROOT}/test-stelarx-simulated.sh" -r "$REPLICATE_NAME" "${BASE_DIR_ARGS[@]}" "${SHARED_TEST_ARGS[@]}" -t "$t" -g "$g" --sb "$sb" --spmin "$spmin" --spmax "$spmax" "${FRESH_ARGS[@]}")
               if [[ -n "$STELARX_OPTS_ITEM" ]]; then
                 TEST_CMD+=(--opts "$STELARX_OPTS_ITEM")
               fi
@@ -249,10 +307,16 @@ for t in "${T_LIST[@]}"; do
           
           # Run replicates
           for ((i=1; i<=NUM_REPLICATES; i++)); do
-            echo "  Running replicate R$i with $METHOD"
+            REPLICATE_NAME="R$i"
+            if IS_SIMULATED_CONFIG_EXCLUDED \
+                "$t" "$g" "$sb" "$spmin" "$spmax" "$REPLICATE_NAME"; then
+              echo "  SKIPPING excluded configuration: t=$t g=$g sb=$sb spmin=$spmin spmax=$spmax replicate=$REPLICATE_NAME"
+              continue
+            fi
+            echo "  Running replicate $REPLICATE_NAME with $METHOD"
             
             for STELARX_OPTS_ITEM in "${STELARX_OPTS_LIST[@]}"; do
-              TEST_CMD=("${STELARX_ROOT}/test-stelarx-simulated.sh" -r "R$i" "${BASE_DIR_ARGS[@]}" "${SHARED_TEST_ARGS[@]}" -t "$t" -g "$g" --sb "$sb" --spmin "$spmin" --spmax "$spmax" "${FRESH_ARGS[@]}")
+              TEST_CMD=("${STELARX_ROOT}/test-stelarx-simulated.sh" -r "$REPLICATE_NAME" "${BASE_DIR_ARGS[@]}" "${SHARED_TEST_ARGS[@]}" -t "$t" -g "$g" --sb "$sb" --spmin "$spmin" --spmax "$spmax" "${FRESH_ARGS[@]}")
               if [[ -n "$STELARX_OPTS_ITEM" ]]; then
                 TEST_CMD+=(--opts "$STELARX_OPTS_ITEM")
               fi

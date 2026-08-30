@@ -35,5 +35,7 @@ java -Djava.library.path="${ROOT}/native" -cp "${ROOT}/build" \
 grep -q "weight / CUDA probe:.*loaded" "${WORK}/diagnose.log"
 
 "${ROOT}/test/test_phylogeny_data_dir.sh"
+"${ROOT}/test/test_clear_bulk_simulated.sh"
+"${ROOT}/test/test_bulk_simulated_exclusions.sh"
 
 echo "STELAR-X focused suite: PASS"

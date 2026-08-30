@@ -12,12 +12,13 @@ import stelarx.cluster.ClusterHash;
  *   M_i = subtree of child i  (range [partStarts[i], partEnds[i]))  for i = 0..d-2
  *   M_{d-1} = Lg \ sub(u)     -- the "everything else in this tree" (complement)
  *
- * Binary nodes are the special case k=2, d=3 — for which the named convenience
- * fields (hash1/2/3, size1/2/3, leftStart/End, rightStart/End) are populated
- * identically to the established compact layout. The canonical storage is the arrays.
+ * Binary nodes are the special case k=2, d=3.  They use the named scalar fields
+ * directly and leave the general-polytomy arrays null, avoiding four redundant
+ * per-partition arrays on the overwhelmingly common binary path.
  *
- * The complement part is not stored as a range (it is non-contiguous in general);
- * its hash is stored in {@code hashes[d-1]} and its size in {@code sizes[d-1]}.
+ * For a general polytomy the complement part is not stored as a range (it is
+ * non-contiguous in general); its hash and size occupy the last array slot.
+ * Binary partitions retain those values in {@code hash3}/{@code size3} instead.
  */
 public final class Partition {
 
@@ -42,17 +43,17 @@ public final class Partition {
     public final int size1, size2, size3;
     public final int leftStart, leftEnd, rightStart, rightEnd;
 
-    /** Binary constructor (d=3) — unchanged signature, byte-identical layout. */
+    /** Binary constructor (d=3). */
     public Partition(ClusterHash h1, ClusterHash h2, ClusterHash h3,
                      int sz1, int sz2, int sz3,
                      int treeIndex,
                      int leftStart, int leftEnd,
                      int rightStart, int rightEnd) {
         this.d = 3;
-        this.hashes = new ClusterHash[]{h1, h2, h3};
-        this.sizes  = new int[]{sz1, sz2, sz3};
-        this.partStarts = new int[]{leftStart, rightStart};
-        this.partEnds   = new int[]{leftEnd,   rightEnd};
+        this.hashes = null;
+        this.sizes  = null;
+        this.partStarts = null;
+        this.partEnds   = null;
         this.treeIndex = treeIndex;
         // aliases
         this.hash1 = h1; this.hash2 = h2; this.hash3 = h3;
@@ -93,7 +94,14 @@ public final class Partition {
     @Override
     public String toString() {
         StringBuilder sb = new StringBuilder("Partition{sz=");
-        for (int i = 0; i < d; i++) { if (i > 0) sb.append('|'); sb.append(sizes[i]); }
+        if (d == 3) {
+            sb.append(size1).append('|').append(size2).append('|').append(size3);
+        } else {
+            for (int i = 0; i < d; i++) {
+                if (i > 0) sb.append('|');
+                sb.append(sizes[i]);
+            }
+        }
         sb.append(", d=").append(d).append(", t=").append(treeIndex).append('}');
         return sb.toString();
     }

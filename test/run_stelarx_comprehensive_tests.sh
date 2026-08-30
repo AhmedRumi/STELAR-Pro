@@ -37,6 +37,7 @@ javac -cp "${ROOT}/build" -d "$TEST_CLASSES" \
   "${ROOT}/test/ThreadingFailureTest.java" \
   "${ROOT}/test/WideSimilarityBoundaryTest.java" \
   "${ROOT}/test/stelarx/FatalReporterTest.java" \
+  "${ROOT}/test/stelarx/cluster/ResidualLookupTest.java" \
   "${ROOT}/test/stelarx/completion/PackedMatrixBoundaryTest.java" \
   "${ROOT}/test/stelarx/completion/RootedPolytomyLifecycleTest.java" \
   "${ROOT}/test/stelarx/util/Int128Test.java" \
@@ -51,6 +52,8 @@ STELARX_WEIGHT_FORCE_DOUBLE=1 java -cp "$CP" stelarx.weight.WeightModeBoundaryTe
 STELARX_WEIGHT_FORCE_LONG=1 java -cp "$CP" stelarx.weight.WeightModeBoundaryTest long
 java -cp "$CP" stelarx.completion.PackedMatrixBoundaryTest
 java -cp "$CP" stelarx.FatalReporterTest "${WORK}/fatal-reporter"
+java -cp "$CP" stelarx.cluster.ResidualLookupTest \
+  "${ROOT}/test/input/test_incomplete.tre"
 java -Xmx1g -cp "$CP" PackedPreflightTest
 java -cp "$CP" ThreadingFailureTest
 if [[ $QUICK -eq 0 ]]; then

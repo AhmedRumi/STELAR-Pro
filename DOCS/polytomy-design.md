@@ -1,5 +1,13 @@
 # Polytomy Support in ASTRAL-X — Design Document
 
+> **Rooted STELAR-X correction (2026-08):** This document began as an
+> ASTRAL-MP/unrooted implementation plan.  In rooted STELAR-X the final group of
+> a d-partition is the outside/complement group, not another interchangeable
+> incident branch: only the first d-1 child groups contribute to the node's
+> rooted-triplet weight.  Consequently the complement must remain distinguished
+> in `PartitionHash`.  The rooted invariant and formula in §§3.5 and 3.8
+> supersede any remaining historical ASTRAL-MP pseudocode below.
+
 > **Source-of-truth**: ASTRAL-MP implementation at
 > `astral-my/ASTRAL/main/phylonet/coalescent/` — specifically
 > `WQDataCollection.java` (cluster / search-space construction),
@@ -219,11 +227,14 @@ otherwise the verifier — our own correctness oracle — produces false alarms.
 
 **Current**: order-invariant over (h1, h2) pair; h3 appended separately.
 
-**New**: order-invariant over ALL d parts — confirmed by `Polytomy.java` in ASTRAL-MP,
-which sorts all d clusters by `hash1` before storing.
+**New**: order-invariant over the d-1 child parts, with the final complement
+part distinguished.  ASTRAL-MP sorts all d incident clusters for its unrooted
+objective, but that symmetry does not hold for a rooted node: swapping one child
+with the outside group changes the rooted triplets displayed at the node.
 
-Algorithm: build one `long[]` fingerprint per ClusterHash, sort all d fingerprints
-lexicographically, concatenate, hash.
+Algorithm: build one `long[]` fingerprint per ClusterHash, sort the first d-1
+fingerprints lexicographically, append the complement fingerprint, concatenate,
+and hash.
 
 ```java
 public PartitionHash(ClusterHash[] parts) {
@@ -233,8 +244,8 @@ public PartitionHash(ClusterHash[] parts) {
         System.arraycopy(parts[i].sums, 0, fps[i], 0, m);
         System.arraycopy(parts[i].xors, 0, fps[i], m, m);
     }
-    // Sort fingerprints lexicographically (unsigned long comparison)
-    Arrays.sort(fps, (a, b) -> { for(int s=0;s<a.length;s++){int c=Long.compareUnsigned(a[s],b[s]);if(c!=0)return c;} return 0; });
+    // Sort child fingerprints only (unsigned lexicographic comparison).
+    Arrays.sort(fps, 0, d - 1, (a, b) -> { for(int s=0;s<a.length;s++){int c=Long.compareUnsigned(a[s],b[s]);if(c!=0)return c;} return 0; });
     // Flatten and hash
     int h = 1;
     for (long[] fp : fps) for (long v : fp) h = 31 * h + Long.hashCode(v);
@@ -243,9 +254,9 @@ public PartitionHash(ClusterHash[] parts) {
 }
 ```
 
-**Effect on binary trees (d=3)**: any permutation of {M1,M2,M3} produces the same hash.
-For binary gene trees where M3 is always the complement (a unique set), the old and new
-schemes produce identical deduplication results on all existing test cases.
+**Effect on binary trees (d=3)**: none.  They continue to use the dedicated
+constructor, which sorts the two children and appends the distinguished
+complement exactly as before.
 
 ---
 
@@ -355,38 +366,33 @@ always true and behavior is unchanged).
 
 ### 3.8 WeightTable — QI Formula (weight/WeightTable.java)
 
-#### 3.8.1 Current binary formula (for reference)
+#### 3.8.1 Rooted binary formula (for reference)
 
-For a 3-partition (M₁|M₂|M₃) — the current O(6) inner loop:
+For a rooted 3-partition `(M0 | M1 | outside)`:
 ```
-2·QI = Σ_{(i,j,k) distinct perms of {0,1,2}}  a[i]·b[j]·c[k]·(a[i]+b[j]+c[k]-3)
+2w = a0·b1·(a0+b1-2) + a1·b0·(a1+b0-2)
 ```
+The outside group does not participate.  A rooted triplet attributed to this
+gene-tree node has its paired taxa in one actual child and its third taxon in a
+different actual child; triplets involving outside taxa are attributed to an
+ancestor.
 
-#### 3.8.2 Generalized O(d) ASTRAL-III formula
+#### 3.8.2 Generalized O(d) rooted formula
 
-For species-tree split A|B (C = S \ (A∪B)) and gene-tree d-partition M₀|…|M_{d-1}:
+For species-tree child split A|B and gene-tree rooted d-partition
+`M0|…|M_{d-2}|outside`, let:
 
-**Intersection table** (d entries each):
 ```
-aᵢ = |A ∩ Mᵢ|,   bᵢ = |B ∩ Mᵢ|,   cᵢ = |Mᵢ| - aᵢ - bᵢ
-```
-
-**Global sums and cross-products**:
-```
-Sₐ = Σaᵢ,   S_b = Σbᵢ,   S_c = Σcᵢ
-S_{ab} = Σaᵢbᵢ,   S_{ac} = Σaᵢcᵢ,   S_{bc} = Σbᵢcᵢ
-```
-
-**O(d) formula for 2·QI** (same convention as current code — divide by 2 at end):
-```
-2·QI = Σᵢ aᵢ(aᵢ-1)·[(S_b-bᵢ)·(S_c-cᵢ) - S_{bc} + bᵢcᵢ]
-     + Σᵢ bᵢ(bᵢ-1)·[(Sₐ-aᵢ)·(S_c-cᵢ) - S_{ac} + aᵢcᵢ]
-     + Σᵢ cᵢ(cᵢ-1)·[(Sₐ-aᵢ)·(S_b-bᵢ) - S_{ab} + aᵢbᵢ]
+aᵢ = |A ∩ Mᵢ|,  bᵢ = |B ∩ Mᵢ|  for 0 ≤ i < d-1
+Sₐ = Σᵢ aᵢ,      S_b = Σᵢ bᵢ
 ```
 
-This is provably equivalent to the O(d³) triple-sum formula (see §4 for the derivation).
-For d=3 it produces exactly the same value as the current 6-permutation loop — this
-will be verified by a unit test before committing.
+Then:
+```
+2w = Σᵢ [aᵢ(aᵢ-1)(S_b-bᵢ) + bᵢ(bᵢ-1)(Sₐ-aᵢ)]
+```
+where every sum ranges only over the d-1 actual children.  The complement is
+retained for partition identity and intersection bookkeeping, but not scored.
 
 #### 3.8.3 Intersection computation for d-partitions
 
@@ -807,7 +813,7 @@ range-based X via restriction to the individual-children ranges).
 | `TreeParser.java` | YES | Remove polytomy rejection; handle k≥3 at non-root; update range assignment |
 | `ClusterTable.java` | YES | Recurse into all children; **no combo clusters** (confirmed ASTRAL-MP) |
 | `Partition.java` | YES | Generalize to d-part with arrays |
-| `PartitionHash.java` | YES | Sort all d parts (not just 2) |
+| `PartitionHash.java` | YES | Sort d-1 children; retain the complement as the final distinguished part |
 | `PartitionTable.java` | YES | Extract d-partition for polytomous nodes; recurse into all children |
 | `DPTable.java` | YES | Skip Type 2 for children of polytomous parents (one-line guard); polytomous nodes themselves add no transitions |
 | `WeightTable.java` | YES | O(d) QI formula for all 3 numeric modes (CPU); emit two-tier (binary + polytomy) CSR/parts for both GPU kernels |
@@ -862,11 +868,9 @@ Write a test (Java JUnit or Python script) that:
 The in-process and Python verifiers are our correctness oracles; both are binary-only
 today and must be generalized **before** they can validate polytomous runs:
 - **`Phase4Verifier.java`** — generalize the five binary assertions per §3.4.1.
-- **`verify_weights.py`** — `extract_tripartitions()` and the QI reference currently
-  assume `M1=left, M2=right, M3=complement` (binary). Generalize to extract a d-partition
-  per internal node (d−1 child ranges + complement) and compute the reference QI by the
-  O(d³) brute force (the independent, obviously-correct formula) so it can cross-check the
-  Java O(d) result on polytomous inputs.
+- **`verify_weights.py`** — extract d−1 child groups plus a distinguished
+  complement, and compute the independent rooted-triplet weight over the child
+  groups only so it can cross-check the Java O(d) result on polytomous inputs.
 
 ### 8.4 Polytomous gene-tree test cases
 

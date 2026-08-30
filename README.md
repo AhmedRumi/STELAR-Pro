@@ -31,6 +31,14 @@ testing, bulk-transfer, and statistics scripts create that directory when it is
 missing. Their explicit SimPhy data-directory options still override the
 environment-based default.
 
+To remove that complete directory—including simulated datasets and every
+inferred result beneath it—preview or run the dedicated cleanup command:
+
+```bash
+./clear-bulk-simulated.sh --dry-run
+./clear-bulk-simulated.sh --yes
+```
+
 Use `--search-space S1`, `S2`, or `S3` and `--intersection-method I1` through
 `I4`. The default is S1/I2. S2 completes missing taxa with root-preserving
 nearest-anchor insertion, adds a UPGMA guide, and enables hash-based cross-tree

@@ -24,6 +24,62 @@ import java.util.*;
  */
 public class ClusterTable {
 
+    /**
+     * Allocation-free lookup for {@code A \ B}.  A lookup owns one mutable
+     * probe key and must therefore stay confined to one worker thread.
+     * Successful lookups return the canonical immutable hash already in X.
+     */
+    public final class ResidualLookup {
+        private final ProbeKey probe = new ProbeKey(m);
+
+        private ResidualLookup() {}
+
+        public ClusterHash find(ClusterHash a, ClusterHash b) {
+            Entry entry = table.get(probe.setResidual(a, b));
+            return entry == null ? null : entry.hash;
+        }
+    }
+
+    /** Mutable lookup-only key; it is never inserted into {@link #table}. */
+    private static final class ProbeKey {
+        private final long[] sums;
+        private final long[] xors;
+        private int size;
+        private int hashCode;
+
+        ProbeKey(int m) {
+            sums = new long[m];
+            xors = new long[m];
+        }
+
+        ProbeKey setResidual(ClusterHash a, ClusterHash b) {
+            size = a.size - b.size;
+            int h = 1;
+            for (int s = 0; s < sums.length; s++) {
+                long value = a.sums[s] - b.sums[s];
+                sums[s] = value;
+                h = 31 * h + Long.hashCode(value);
+            }
+            for (int s = 0; s < xors.length; s++) {
+                long value = a.xors[s] ^ b.xors[s];
+                xors[s] = value;
+                h = 31 * h + Long.hashCode(value);
+            }
+            hashCode = h;
+            return this;
+        }
+
+        @Override public int hashCode() { return hashCode; }
+
+        @Override public boolean equals(Object other) {
+            if (!(other instanceof ClusterHash cluster) || size != cluster.size) {
+                return false;
+            }
+            return Arrays.equals(sums, cluster.sums)
+                && Arrays.equals(xors, cluster.xors);
+        }
+    }
+
     /** Entry in the cluster hash table. */
     public static final class Entry {
         public final ClusterHash hash;
@@ -239,6 +295,9 @@ public class ClusterTable {
     public ClusterHash getAllTaxaHash()     { return allTaxaHash; }
     public Collection<Entry> entries()     { return table.values(); }
     public int numSeeds()                  { return m; }
+
+    /** Create one allocation-free residual lookup for a single worker thread. */
+    public ResidualLookup newResidualLookup() { return new ResidualLookup(); }
 
     /** All cluster hashes of a given size. */
     public List<ClusterHash> getBySize(int sz) {

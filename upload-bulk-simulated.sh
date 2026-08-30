@@ -9,7 +9,7 @@ source "${SCRIPT_DIR}/scripts/phylogeny-data-dir.sh"
 DATA_DIR=""
 REPO_ID="imAniksahA/blab"
 REPO_TYPE="dataset"
-REMOTE_DIR="ph/d/simulated/stelarx-datasets/raw"
+REMOTE_DIR="ph/d/simulated/astralx-datasets/raw"
 UPLOADER="${HOME}/utils/hf-data-transfer/hf_upload.py"
 PYTHON_BIN="python3"
 MIN_TAXA=1000

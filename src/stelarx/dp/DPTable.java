@@ -222,22 +222,32 @@ public class DPTable {
 
         java.util.concurrent.atomic.AtomicInteger cpuDone = new java.util.concurrent.atomic.AtomicInteger(0);
         ProgressBar cpuBar = new ProgressBar("Cross-tree DP (CPU)", N);
+        ThreadLocal<ClusterTable.ResidualLookup> residualLookups =
+            ThreadLocal.withInitial(clusterTable::newResidualLookup);
         Threading.processRangeParallel(N, idx -> {
             ClusterHash hashA = allHashes.get(idx);
             int szA = hashA.size;
-            Set<BipartitionSplit> localSet = null; // lazy-init to avoid object churn
+            // Every A is processed by exactly one worker. Existing transition
+            // sets are distinct objects, so workers can extend them directly
+            // without duplicating all splits in a temporary perCluster set.
+            Set<BipartitionSplit> localSet = transitions.get(hashA);
+            boolean detached = false;
+            ClusterTable.ResidualLookup residualLookup = residualLookups.get();
 
             for (int sz = 1; sz <= szA / 2; sz++) {
                 for (ClusterHash hashB : clusterTable.getBySize(sz)) {
-                    ClusterHash residual = ClusterHash.residual(hashA, hashB);
-                    if (clusterTable.contains(residual)) {
-                        if (localSet == null) localSet = new LinkedHashSet<>();
+                    ClusterHash residual = residualLookup.find(hashA, hashB);
+                    if (residual != null) {
+                        if (localSet == null) {
+                            localSet = new LinkedHashSet<>();
+                            detached = true;
+                        }
                         localSet.add(new BipartitionSplit(hashB, residual));
                     }
                 }
             }
 
-            if (localSet != null) perCluster[idx] = localSet;
+            if (detached) perCluster[idx] = localSet;
             cpuBar.update(cpuDone.incrementAndGet());
         });
         cpuBar.done();
@@ -341,10 +351,11 @@ public class DPTable {
         int szRoot = rootHash.size;
         Set<BipartitionSplit> rootSet =
             transitions.computeIfAbsent(rootHash, k -> new LinkedHashSet<>());
+        ClusterTable.ResidualLookup residualLookup = clusterTable.newResidualLookup();
         for (int sz = 1; sz <= szRoot / 2; sz++) {
             for (ClusterHash hashB : clusterTable.getBySize(sz)) {
-                ClusterHash residual = ClusterHash.residual(rootHash, hashB);
-                if (clusterTable.contains(residual)) {
+                ClusterHash residual = residualLookup.find(rootHash, hashB);
+                if (residual != null) {
                     rootSet.add(new BipartitionSplit(hashB, residual));
                 }
             }

@@ -20,7 +20,7 @@ SPMAX_LIST=(200000)
 
 REPO_ID="imAniksahA/blab"
 REPO_TYPE="dataset"
-REMOTE_DIR="ph/d/simulated/stelarx-datasets/raw"
+REMOTE_DIR="ph/d/simulated/astralx-datasets/raw"
 LOCAL_DATA_DIR=""
 DOWNLOAD_SCRIPT="${HOME}/utils/hf-data-transfer/hf_download.sh"
 

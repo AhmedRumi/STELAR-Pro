@@ -10,10 +10,11 @@ import stelarx.cluster.ClusterHash;
  * trees two nodes can share M1,M2 but differ in M3, so h3 is included.  This binary
  * path is kept BYTE-IDENTICAL to the pre-polytomy implementation.
  *
- * POLYTOMOUS (d≥4): a d-partition M0|…|M_{d-1} is identified by the unordered MULTISET
- * of its d part-hashes (ASTRAL-MP's {@code Polytomy} sorts all d clusters before
- * storing — polytomy-design.md §3.5).  We sort the d fingerprints lexicographically and
- * hash the concatenation.
+ * POLYTOMOUS (d≥4): a rooted d-partition M0|…|M_{d-1} is identified by the
+ * unordered multiset of its d-1 child hashes plus its distinguished final
+ * complement hash.  Only the children contribute to the rooted-triplet weight,
+ * so exchanging a child with the complement is not a symmetry.  We sort the
+ * child fingerprints lexicographically and append the complement fingerprint.
  *
  * The two representations never collide: binary partitions (d=3) and polytomous ones
  * (d≥4) come from disjoint parser paths and {@code equals} short-circuits on {@code d}.
@@ -23,13 +24,8 @@ public final class PartitionHash {
     private final int cachedHashCode;
     private final int d;       // number of parts (3 for binary, k+1 for polytomous)
 
-    // ── Binary (d=3) representation — unchanged ──
-    private final long[] lo;   // lexicographically smaller of {h1,h2}; null when d≥4
-    private final long[] hi;   // the larger; null when d≥4
-    private final long[] m3;   // h3 (complement); null when d≥4
-
-    // ── General (d≥4) representation ──
-    private final long[] data; // sorted+flattened d fingerprints; null when d==3
+    /** Flattened canonical fingerprints for both binary and general partitions. */
+    private final long[] data;
 
     public PartitionHash(ClusterHash a, ClusterHash b, ClusterHash c) {
         // Decide ordering of the two explicit parts (a,b are interchangeable)
@@ -39,30 +35,25 @@ public final class PartitionHash {
 
         int m = a.sums.length;
         this.d = 3;
-        this.data = null;
-        lo = new long[2 * m];
-        hi = new long[2 * m];
-        m3 = new long[2 * m];
+        data = new long[6 * m];
         for (int s = 0; s < m; s++) {
-            lo[s]     = first.sums[s];
-            lo[s + m] = first.xors[s];
-            hi[s]     = second.sums[s];
-            hi[s + m] = second.xors[s];
-            m3[s]     = c.sums[s];
-            m3[s + m] = c.xors[s];
+            data[s]         = first.sums[s];
+            data[s + m]     = first.xors[s];
+            data[s + 2 * m] = second.sums[s];
+            data[s + 3 * m] = second.xors[s];
+            data[s + 4 * m] = c.sums[s];
+            data[s + 5 * m] = c.xors[s];
         }
 
         int h = 1;
-        for (long v : lo) h = 31 * h + Long.hashCode(v);
-        for (long v : hi) h = 31 * h + Long.hashCode(v);
-        for (long v : m3) h = 31 * h + Long.hashCode(v);
+        for (long v : data) h = 31 * h + Long.hashCode(v);
         this.cachedHashCode = h;
     }
 
     /**
-     * General d-partition key (used for polytomous nodes, d≥4): order-invariant over
-     * ALL d parts.  {@code parts[d-1]} is conventionally the complement, but the hash
-     * is symmetric so the convention is irrelevant.
+     * General rooted d-partition key (used for polytomous nodes, d≥4):
+     * order-invariant over the d-1 children, with {@code parts[d-1]} retained as
+     * the distinguished complement.
      */
     public PartitionHash(ClusterHash[] parts) {
         int dd = parts.length;
@@ -74,7 +65,7 @@ public final class PartitionHash {
                 fps[i][s + m] = parts[i].xors[s];
             }
         }
-        java.util.Arrays.sort(fps, (x, y) -> {
+        java.util.Arrays.sort(fps, 0, dd - 1, (x, y) -> {
             for (int s = 0; s < x.length; s++) {
                 int c = Long.compareUnsigned(x[s], y[s]);
                 if (c != 0) return c;
@@ -87,7 +78,6 @@ public final class PartitionHash {
 
         this.d = dd;
         this.data = flat;
-        this.lo = null; this.hi = null; this.m3 = null;
         int h = 1;
         for (long v : flat) h = 31 * h + Long.hashCode(v);
         this.cachedHashCode = h;
@@ -98,14 +88,7 @@ public final class PartitionHash {
         if (this == o) return true;
         if (!(o instanceof PartitionHash p)) return false;
         if (d != p.d) return false;
-        if (data != null) {
-            return java.util.Arrays.equals(data, p.data);
-        }
-        if (lo.length != p.lo.length) return false;
-        for (int i = 0; i < lo.length; i++) {
-            if (lo[i] != p.lo[i] || hi[i] != p.hi[i] || m3[i] != p.m3[i]) return false;
-        }
-        return true;
+        return java.util.Arrays.equals(data, p.data);
     }
 
     @Override
