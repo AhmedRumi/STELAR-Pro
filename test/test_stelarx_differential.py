@@ -155,6 +155,11 @@ def fixed_cases() -> list[Case]:
         ("deep-and-shallow", "(A,(B,(C,(D,(E,(F,G))))));",
          ["(A,(B,(C,(D,(E,(F,G))))));", "(((A,B,C),D),(E,F,G));",
           "((A,(C,E)),(B,D,F,G));"]),
+        # These two internal polytomies have the same unordered set of four
+        # groups, but a different group is outside the polytomous node.  A
+        # rooted partition key must therefore keep the complement distinguished.
+        ("polytomy-complement-dedup", "(((a1,b),(a2,c)),d);",
+         ["(((a1,a2),b,c),d);", "(((a1,a2),b,d),c);"]),
     ]
     cases = []
     for name, species_text, gene_texts in raw:
@@ -265,7 +270,7 @@ def main() -> int:
 
         # Force the normally large-N-only arithmetic paths on small exact oracles.
         if not args.skip_numeric:
-            for case in (cases[2], cases[3]):
+            for case in (cases[2], cases[3], cases[5]):
                 for numeric in ("int128", "double"):
                     for method in METHODS:
                         actual = run_score(case, method, work, compute, numeric=numeric)

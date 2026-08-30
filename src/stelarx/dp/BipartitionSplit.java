@@ -15,6 +15,13 @@ public final class BipartitionSplit {
 
     private final int cachedHashCode;
 
+    /**
+     * Dense slot assigned by the run's WeightTable.  Keeping the score in a
+     * primitive array avoids a second HashMap (and one boxed value) for every
+     * split already retained by DPTable.  Unreachable/unscored splits stay -1.
+     */
+    private int scoreIndex = -1;
+
     public BipartitionSplit(ClusterHash a, ClusterHash b) {
         if (compare(a, b) <= 0) { this.lo = a; this.hi = b; }
         else                     { this.lo = b; this.hi = a; }
@@ -43,6 +50,10 @@ public final class BipartitionSplit {
 
     @Override
     public int hashCode() { return cachedHashCode; }
+
+    public int scoreIndex() { return scoreIndex; }
+
+    public void assignScoreIndex(int index) { this.scoreIndex = index; }
 
     @Override
     public String toString() {

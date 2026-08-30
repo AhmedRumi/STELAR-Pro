@@ -48,9 +48,13 @@ public class WeightTable {
      */
     public enum Mode { LONG, DOUBLE, INT128 }
 
-    private final Map<BipartitionSplit, Long>    scores  = new HashMap<>();   // LONG path
-    private final Map<BipartitionSplit, Double>  scoresD = new HashMap<>();   // DOUBLE path
-    private final Map<BipartitionSplit, Int128>  scoresI = new HashMap<>();   // INT128 path
+    // DPTable already owns every BipartitionSplit. Assign each scored split a
+    // dense index and keep only the mode-matching value array here. This avoids
+    // a duplicate HashMap plus boxed Long/Double values at peak residency.
+    private long[]   scores  = new long[0];
+    private double[] scoresD = new double[0];
+    private Int128[] scoresI = new Int128[0];
+    private BipartitionSplit[] scoredSplits = new BipartitionSplit[0];
     private final int n;   // total taxa
 
     private final Mode mode;
@@ -125,6 +129,9 @@ public class WeightTable {
             for (var entry : dpTable.entries()) splitList.addAll(entry.getValue());
         }
         int numSplits = splitList.size();
+
+        scoredSplits = splitList.toArray(BipartitionSplit[]::new);
+        for (int i = 0; i < numSplits; i++) scoredSplits[i].assignScoreIndex(i);
 
         // Nothing below is meaningful for an empty launch, and the native auto-
         // batching code necessarily divides by the resolved batch size.  This can
@@ -286,34 +293,34 @@ public class WeightTable {
 
         long ms;
         if (mode == Mode.INT128) {
+            scoresI = scoreArrayI;
             for (int i = 0; i < numSplits; i++) {
                 Int128 s = scoreArrayI[i];
-                scoresI.put(splitList.get(i), s);
                 if (maxScoreI == null || s.compareTo(maxScoreI) > 0) maxScoreI = s;
                 totalScoreI = totalScoreI.add(s);
             }
             ms = (System.nanoTime() - t0) / 1_000_000;
             Logging.info("Weight table: %d splits scored [INT128], maxScore=%s, totalScore=%s in %d ms",
-                scoresI.size(), maxScoreI, totalScoreI, ms);
+                numSplits, maxScoreI, totalScoreI, ms);
         } else if (mode == Mode.DOUBLE) {
+            scoresD = scoreArrayD;
             for (int i = 0; i < numSplits; i++) {
                 double s = scoreArrayD[i];
-                scoresD.put(splitList.get(i), s);
                 if (s > maxScoreD) maxScoreD = s;
                 totalScoreD += s;
             }
             ms = (System.nanoTime() - t0) / 1_000_000;
             Logging.info("Weight table: %d splits scored [DOUBLE], maxScore=%.6e, totalScore=%.6e in %d ms",
-                scoresD.size(), maxScoreD, totalScoreD, ms);
+                numSplits, maxScoreD, totalScoreD, ms);
         } else {
+            scores = scoreArray;
             for (int i = 0; i < numSplits; i++) {
-                scores.put(splitList.get(i), scoreArray[i]);
                 if (scoreArray[i] > maxScore) maxScore = scoreArray[i];
                 totalScore += scoreArray[i];
             }
             ms = (System.nanoTime() - t0) / 1_000_000;
             Logging.info("Weight table: %d splits scored [LONG], maxScore=%d, totalScore=%d in %d ms",
-                scores.size(), maxScore, totalScore, ms);
+                numSplits, maxScore, totalScore, ms);
         }
     }
 
@@ -2159,23 +2166,29 @@ public class WeightTable {
      * mode-matching accessor ({@link #getScoreD} / {@link #getScoreI}).
      */
     public long getScore(BipartitionSplit split) {
-        if (useInt128) { Int128 v = scoresI.get(split); return v == null ? 0L : Math.round(v.toDouble()); }
-        if (useDouble) return Math.round(scoresD.getOrDefault(split, 0.0));
-        return scores.getOrDefault(split, 0L);
+        int i = split.scoreIndex();
+        if (i < 0 || i >= scoredSplits.length || scoredSplits[i] != split) return 0L;
+        if (useInt128) return Math.round(scoresI[i].toDouble());
+        if (useDouble) return Math.round(scoresD[i]);
+        return scores[i];
     }
 
     /** Score of a split as a double (valid in all modes; approximate for INT128). */
     public double getScoreD(BipartitionSplit split) {
-        if (useInt128) { Int128 v = scoresI.get(split); return v == null ? 0.0 : v.toDouble(); }
-        if (useDouble) return scoresD.getOrDefault(split, 0.0);
-        return (double) scores.getOrDefault(split, 0L);
+        int i = split.scoreIndex();
+        if (i < 0 || i >= scoredSplits.length || scoredSplits[i] != split) return 0.0;
+        if (useInt128) return scoresI[i].toDouble();
+        if (useDouble) return scoresD[i];
+        return (double) scores[i];
     }
 
     /** Score of a split as an exact Int128 (valid in all modes). */
     public Int128 getScoreI(BipartitionSplit split) {
-        if (useInt128) return scoresI.getOrDefault(split, Int128.ZERO);
-        if (useDouble) return Int128.ofLong(Math.round(scoresD.getOrDefault(split, 0.0)));
-        return Int128.ofLong(scores.getOrDefault(split, 0L));
+        int i = split.scoreIndex();
+        if (i < 0 || i >= scoredSplits.length || scoredSplits[i] != split) return Int128.ZERO;
+        if (useInt128) return scoresI[i];
+        if (useDouble) return Int128.ofLong(Math.round(scoresD[i]));
+        return Int128.ofLong(scores[i]);
     }
 
     public long   getMaxScore()    { return useInt128 ? Math.round(getMaxScoreD())
@@ -2186,9 +2199,16 @@ public class WeightTable {
                                           : useDouble ? maxScoreD   : (double) maxScore; }
     public double getTotalScoreD() { return useInt128 ? totalScoreI.toDouble()
                                           : useDouble ? totalScoreD : (double) totalScore; }
-    public int    size()           { return useInt128 ? scoresI.size()
-                                          : useDouble ? scoresD.size() : scores.size(); }
+    public int    size()           { return scoredSplits.length; }
 
     /** Iterate all (split, score) pairs (LONG mode only; empty in DOUBLE/INT128 mode). */
-    public Set<Map.Entry<BipartitionSplit, Long>> entries() { return scores.entrySet(); }
+    public Set<Map.Entry<BipartitionSplit, Long>> entries() {
+        if (mode != Mode.LONG) return Collections.emptySet();
+        Set<Map.Entry<BipartitionSplit, Long>> out = new LinkedHashSet<>(
+            Math.max(16, scoredSplits.length * 2));
+        for (int i = 0; i < scoredSplits.length; i++) {
+            out.add(new AbstractMap.SimpleImmutableEntry<>(scoredSplits[i], scores[i]));
+        }
+        return out;
+    }
 }
