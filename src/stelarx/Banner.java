@@ -163,16 +163,16 @@ public class Banner {
         out.println("    " + row("Compute mode", computeValue));
         out.println("    " + row("CPU threads",    c(available == using ? WHT : YLW, String.valueOf(using))
                                                   + c(DIM, "  (" + available + " available)")));
-        out.println("    " + row("Gene-tree preprocessing",
-            c(WHT, "unrooted → automatic root/tag")));
+        String preprocessing = cfg.isScoreOnly()
+            ? "unrooted → automatic root/tag"
+            : "unrooted → arbitrary resolve → root/tag";
+        out.println("    " + row("Gene-tree preprocessing", c(WHT, preprocessing)));
         String inferencePolytomies = cfg.isScoreOnly()
             ? c(DIM, "(n/a; no inference)")
-            : c(WHT, cfg.isKeepPolytomyDuringInference()
-                ? "keep"
-                : "resolve  (deterministic first-pair refinement)");
+            : c(WHT, "resolved before rooting/tagging");
         out.println("    " + row("Inference polytomies", inferencePolytomies));
         out.println("    " + row("Triplet-score polytomies",
-            c(WHT, "keep  (always; native input topology)")));
+            c(WHT, cfg.isScoreOnly() ? "keep native topology" : "use resolved topology")));
         out.println();
 
         // ── Search ─────────────────────────────────────────────────────────

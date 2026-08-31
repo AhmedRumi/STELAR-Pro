@@ -23,7 +23,7 @@ public final class SpeciationCandidateFilterTest {
 
         checkTree(work.resolve("duplication.tre"),
             "(((A,B)D,(C,D)),(E,F));\n", 9, 4, 4, 0, 2);
-        checkTree(work.resolve("artificial.tre"),
+        checkTree(work.resolve("parser-refinement.tre"),
             "((A,B,C),(D,E));\n", 7, 3, 3, 0, 2);
 
         System.out.println("STELAR-Pro speciation candidate filter: PASS");
@@ -39,7 +39,8 @@ public final class SpeciationCandidateFilterTest {
         TaxonHasher hasher = new TaxonHasher(registry.size(), 2, 17L);
         PrefixHashArrays pref = new PrefixHashArrays(trees, hasher);
 
-        ClusterTable clusters = new ClusterTable(trees, pref, registry.size());
+        UniqueTaxonSubtreeHashes unique = new UniqueTaxonSubtreeHashes(trees, hasher);
+        ClusterTable clusters = new ClusterTable(trees, pref, registry.size(), unique);
         check(clusters.size() == expectedClusters, "candidate cluster count");
         boolean skippedClusterPresent = clusters.entries().stream().anyMatch(entry ->
             !entry.exemplar.complement
@@ -53,7 +54,7 @@ public final class SpeciationCandidateFilterTest {
         check(partitions.size() == expectedPartitions, "partition count");
         check(partitionOccurrences == expectedPartitions, "partition occurrence count");
 
-        DPTable dp = new DPTable(trees, pref, clusters);
+        DPTable dp = new DPTable(trees, pref, clusters, unique);
         check(dp.numEmitted() == expectedTransitions, "transition emission count");
         check(dp.numUniqueSplits() == expectedTransitions, "unique transition count");
     }

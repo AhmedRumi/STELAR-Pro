@@ -78,8 +78,7 @@ Optional:
   --seeds, -m        Number of hash seeds
   --rooted           Rooted input treatment (required and default)
   --keep-polytomy-during-inference
-                     Preserve input polytomies during inference (default: resolve);
-                     final triplet scoring always preserves input polytomies
+                     Legacy STELAR-X option; STELAR-Pro inference pre-resolves them
   --no-gpu-batch              Disable GPU batching
   --gpu-batch-size            GPU batch size (manual)
   --gpu-batches               Number of GPU batches (manual)

@@ -29,7 +29,7 @@ public final class Cluster {
     public final int left;        // inclusive range start (single-range) / span lo (multi)
     public final int right;       // exclusive range end   (single-range) / span hi (multi)
     public final boolean complement;
-    public final int size;        // number of taxa in this cluster
+    public final int size;        // number of distinct taxa in this cluster
 
     /** Multi-range descriptor: disjoint ranges [los[j],his[j]); null for single-range. */
     public final int[] los;
@@ -37,12 +37,18 @@ public final class Cluster {
 
     /** Single-range cluster (los/his == null) — the existing fast path, unchanged. */
     public Cluster(int treeIndex, int left, int right, boolean complement, int treeLeafCount) {
+        this(treeIndex, left, right, complement, treeLeafCount,
+            complement ? treeLeafCount - (right - left) : right - left);
+    }
+
+    /** Single-range cluster with an explicit distinct-taxon size. */
+    public Cluster(int treeIndex, int left, int right, boolean complement,
+                   int treeLeafCount, int distinctTaxonCount) {
         this.treeIndex  = treeIndex;
         this.left       = left;
         this.right      = right;
         this.complement = complement;
-        int rangeSize   = right - left;
-        this.size       = complement ? (treeLeafCount - rangeSize) : rangeSize;
+        this.size       = distinctTaxonCount;
         this.los = null;
         this.his = null;
     }

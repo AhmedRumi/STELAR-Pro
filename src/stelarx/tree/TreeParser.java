@@ -541,16 +541,7 @@ public class TreeParser {
         RawNode rawRoot = (RawNode) stack.pop();
         if (rawRoot.isLeaf()) return null;
 
-        Tree tree = buildTree(rawRoot, treeIdx, reg, rootingCounts, keepPolytomy);
-        boolean[] seen = new boolean[reg.size()];
-        for (int taxonId : tree.postorderArray) {
-            if (seen[taxonId]) {
-                throw new IllegalArgumentException("Tree " + treeIdx
-                    + " contains duplicate selected taxon: " + reg.getName(taxonId));
-            }
-            seen[taxonId] = true;
-        }
-        return tree;
+        return buildTree(rawRoot, treeIdx, reg, rootingCounts, keepPolytomy);
     }
 
     private static Tree buildTree(RawNode rawRoot, int treeIdx, TaxonRegistry reg,

@@ -18,9 +18,8 @@ import java.util.*;
  * Checks:
  *   1. Root hash has at least one split.
  *   2. For every split (A → B | C): size(B) + size(C) == size(A).
- *   3. For every split, both halves are in ClusterTable (or one of them is a
- *      root-child subtree cluster, which is always valid).
- *   4. Expected transition counts match rooted binary internal nodes.
+ *   3. Report split halves that are not themselves candidate-root clusters.
+ *   4. Expected transition counts match usable speciation nodes.
  *   5. Small input: print all splits with taxon names.
  */
 public class Phase5Verifier {
@@ -70,36 +69,33 @@ public class Phase5Verifier {
         if (sizeFailCount == 0) out.println("Check 2 (size consistency): PASSED");
         else                    out.printf("Check 2 (size consistency): %d FAILURES%n", sizeFailCount);
 
-        // ── Check 3: Both halves in ClusterTable (warn on misses) ────────────
-        // Halves should always be in X; if not, something is wrong with extraction.
-        int membershipFails = 0;
+        // ── Check 3: Child membership diagnostic ─────────────────────────────
+        // A speciation-rooted candidate remains valid when one of its children is
+        // duplication-rooted, so child membership in X is not an invariant.
+        int childSidesOutsideX = 0;
         for (var entry : dpTable.entries()) {
             for (BipartitionSplit split : entry.getValue()) {
                 boolean loInX = clusterTable.contains(split.lo);
                 boolean hiInX = clusterTable.contains(split.hi);
                 if (!loInX || !hiInX) {
-                    out.printf("FAIL membership: lo=%s(%s) hi=%s(%s)%n",
-                        split.lo, loInX ? "OK" : "MISSING",
-                        split.hi, hiInX ? "OK" : "MISSING");
-                    membershipFails++;
-                    fails++;
+                    childSidesOutsideX++;
                 }
             }
         }
-        if (membershipFails == 0) out.println("Check 3 (cluster membership): PASSED");
-        else out.printf("Check 3 (cluster membership): %d FAILURES%n", membershipFails);
+        out.printf("Child splits with a side outside candidate-root X: %d (informational)%n",
+            childSidesOutsideX);
 
         // ── Check 4: Expected transition counts (tree-structural) ────────────
-        // Type 1 comes from each resolved binary internal node.
-        // Type 2 comes from each resolved non-root node (leaf OR internal) whose
-        // parent is binary and whose parent's super-complement is nonempty.
-        // Type 3 connects an incomplete tree's taxon boundary to S.
-        int expType1 = 0;
+        // Each resolved speciation node emits unless its child species sets overlap.
+        int speciationNodes = 0;
         for (Tree t : trees) {
-            expType1 += countType1(t.root, -1, false);
+            speciationNodes += countSpeciationNodes(t.root);
         }
-        out.printf("%nExpected rooted child transitions (incl. root): %d%n", expType1);
-        int expectedEmitted = expType1;
+        int expectedEmitted = speciationNodes
+            - dpTable.numOverlappingSpeciationNodesSkipped();
+        out.printf("%nResolved speciation nodes: %d%n", speciationNodes);
+        out.printf("Skipped overlapping child sets: %d%n",
+            dpTable.numOverlappingSpeciationNodesSkipped());
         out.printf("Total emitted: %d  (expected %d)%n",
             dpTable.numEmitted(), expectedEmitted);
         if (dpTable.numEmitted() != expectedEmitted) {
@@ -145,22 +141,17 @@ public class Phase5Verifier {
 
     // -------------------------------------------------------------------------
 
-    /** Count resolved internal nodes that emit Type 1. */
-    private static int countType1(stelarx.tree.TreeNode u, int anchorPos,
-                                  boolean anchorFree) {
+    /** Count resolved biological-speciation nodes. */
+    private static int countSpeciationNodes(stelarx.tree.TreeNode u) {
         if (u.isLeaf()) return 0;
-        int count = 0;
-        if (!u.isPolytomous()
-                && (!anchorFree || !containsPosition(u, anchorPos))) {
-            count = 1;
-        }
+        int count = !u.isPolytomous() && u.isSpeciation() ? 1 : 0;
         if (u.isPolytomous()) {
             for (var child : u.children) {
-                count += countType1(child, anchorPos, anchorFree);
+                count += countSpeciationNodes(child);
             }
         } else {
-            count += countType1(u.left, anchorPos, anchorFree);
-            count += countType1(u.right, anchorPos, anchorFree);
+            count += countSpeciationNodes(u.left);
+            count += countSpeciationNodes(u.right);
         }
         return count;
     }

@@ -18,6 +18,8 @@ import stelarx.gpu.GPUDPBuilder;
 import stelarx.gpu.GPUWeightCalculator;
 import stelarx.partition.PartitionTable;
 import stelarx.pro.GeneTreeRooterTagger;
+import stelarx.pro.GeneTreePolytomyResolver;
+import stelarx.pro.UniqueTaxonSubtreeHashes;
 import stelarx.weight.WeightTable;
 import stelarx.hash.PrefixHashArrays;
 import stelarx.hash.TaxonHasher;
@@ -100,13 +102,27 @@ public class Main {
         boolean analysisCompleted = false;
         boolean inferenceInputHasPolytomy = false;
         String unrootedInputFile = cfg.getInputFile();
+        Path automaticResolvedInput = null;
         Path automaticTaggedInput = null;
 
         try {
+            String preprocessingInput = unrootedInputFile;
+            if (!cfg.isScoreOnly()) {
+                automaticResolvedInput = Files.createTempFile(
+                    "stelar-pro-polytomy-resolved-", ".tre");
+                Logging.info("STELAR-Pro preprocessing: uniquifying copies and "
+                    + "resolving input polytomies");
+                GeneTreePolytomyResolver.Result resolution = GeneTreePolytomyResolver.run(
+                    unrootedInputFile, automaticResolvedInput.toString());
+                preprocessingInput = resolution.output().toString();
+                Logging.info("STELAR-Pro preprocessing: %d gene tree(s) resolved",
+                    resolution.treeCount());
+            }
+
             automaticTaggedInput = Files.createTempFile("stelar-pro-rooted-tagged-", ".tre");
             Logging.info("STELAR-Pro preprocessing: rooting and tagging input gene trees");
             GeneTreeRooterTagger.Result preprocessing = GeneTreeRooterTagger.run(
-                unrootedInputFile, automaticTaggedInput.toString(),
+                preprocessingInput, automaticTaggedInput.toString(),
                 cfg.getAstralProExecutable(), cfg.getGeneSpeciesMapFile());
             cfg.setInputFile(preprocessing.output().toString());
             Logging.info("STELAR-Pro preprocessing: %d rooted/tagged gene tree(s) ready",
@@ -143,7 +159,10 @@ public class Main {
                 trees = restricted.trees();
                 inferenceInputHasPolytomy = restricted.hasPolytomy();
             }
-            rejectRepeatedSpeciesUntilDuplicateAwareDataModel(trees, registry);
+            String repeatedSpecies = findRepeatedSpecies(trees, registry);
+            if (cfg.isScoreOnly() && repeatedSpecies != null) {
+                rejectRepeatedSpeciesBeforeWeights(repeatedSpecies);
+            }
             PhaseLogger.end("Phase 1  Parse gene trees", t1, false);
 
             if (cfg.isVerifyParse()) {
@@ -287,13 +306,13 @@ public class Main {
                 return;
             }
 
-            // ── Phase 3: Cluster extraction -> X (from COMPLETED trees) ──────
-            // Anchor-free X stores only the orientation of each bipartition that
-            // excludes the fixed anchor.  Both local and full modes use the
-            // corresponding single anchored root when the option is enabled.
+            // ── Phase 3: duplicate-invariant cluster extraction -> X ─────────
             boolean anchorFreeX = cfg.isAnchorOutgroup();
+            UniqueTaxonSubtreeHashes candidateHashes =
+                new UniqueTaxonSubtreeHashes(trees, hasher);
             long t3 = PhaseLogger.begin("Phase 3  Cluster extraction", false);
-            ClusterTable clusterTable = new ClusterTable(trees, pref, registry.size(), anchorFreeX);
+            ClusterTable clusterTable = new ClusterTable(
+                trees, pref, registry.size(), candidateHashes);
             PhaseLogger.end("Phase 3  Cluster extraction", t3, false);
 
             if (cfg.isVerifyClusters()) {
@@ -415,7 +434,7 @@ public class Main {
 
             // ── Phase 5: DP search space (from COMPLETED trees) ───────────────
             long t5 = PhaseLogger.begin("Phase 5  DP local transitions", false);
-            DPTable dpTable = new DPTable(trees, pref, clusterTable);
+            DPTable dpTable = new DPTable(trees, pref, clusterTable, candidateHashes);
             PhaseLogger.end("Phase 5  DP local transitions", t5, false);
 
             // ── Phase 5b: Cross-tree transitions (Mode 2, optional) ───────────
@@ -456,6 +475,9 @@ public class Main {
                 (gcHeapBefore - gcHeapAfter) / 1_000_000);
 
             // ── Phase 6: Weight calculation ───────────────────────────────────
+            if (repeatedSpecies != null) {
+                rejectRepeatedSpeciesBeforeWeights(repeatedSpecies);
+            }
             boolean gpuWeight = (cfg.getComputeMode() == Config.ComputeMode.GPU)
                                 && GPUWeightCalculator.isLoaded();
             long t6 = PhaseLogger.begin("Phase 6  Weight calculation", gpuWeight);
@@ -538,6 +560,7 @@ public class Main {
             Threading.shutdown();
             cfg.setInputFile(unrootedInputFile);
             if (automaticTaggedInput != null) Files.deleteIfExists(automaticTaggedInput);
+            if (automaticResolvedInput != null) Files.deleteIfExists(automaticResolvedInput);
             long ms = (System.nanoTime() - t0) / 1_000_000;
             Logging.info("Total time: %d ms", ms);
             if (analysisCompleted) {
@@ -983,10 +1006,9 @@ public class Main {
               --large-n-score-type T            int128 (exact) | double
               --no-prune-search-space           Disable reachability pruning
               --rooted | --unrooted             Compatibility flags; normal STELAR-Pro runs
-                                                 always root and tag before parsing
-              --keep-polytomy-during-inference   Preserve input polytomies while inferring;
-                                                  final scoring always preserves them
-                                                 (default: deterministic binary refinement)
+                                                 resolve, root, and tag before parsing
+              --keep-polytomy-during-inference   Legacy STELAR-X option; STELAR-Pro
+                                                 inference pre-resolves polytomies
               -m, --seeds N                     Number of cluster-hash seeds
 
             Incomplete trees and enrichment:
@@ -1258,25 +1280,26 @@ public class Main {
             java.nio.file.Path.of(second).toAbsolutePath().normalize());
     }
 
-    /**
-     * Temporary boundary between Phase 0 and the duplicate-aware tree data model.
-     * Failing explicitly prevents the legacy scalar position map and multiplicity-
-     * sensitive hashes from silently producing a plausible but incorrect result.
-     */
-    private static void rejectRepeatedSpeciesUntilDuplicateAwareDataModel(
-            List<Tree> trees, TaxonRegistry registry) {
+    /** Return the first repeated species occurrence, or null for single-copy input. */
+    private static String findRepeatedSpecies(List<Tree> trees, TaxonRegistry registry) {
         for (Tree tree : trees) {
             boolean[] seen = new boolean[registry.size()];
             for (int taxonId : tree.postorderArray) {
                 if (seen[taxonId]) {
-                    throw new UnsupportedOperationException(
-                        "STELAR-Pro duplicate-aware tree storage is the next implementation "
-                        + "stage (tree " + tree.treeIndex + " repeats species "
-                        + registry.getName(taxonId) + ")");
+                    return "tree " + tree.treeIndex + " repeats species "
+                        + registry.getName(taxonId);
                 }
                 seen[taxonId] = true;
             }
         }
+        return null;
+    }
+
+    /** Weight indexing remains occurrence-based until the next implementation step. */
+    private static void rejectRepeatedSpeciesBeforeWeights(String repeatedSpecies) {
+        throw new UnsupportedOperationException(
+            "STELAR-Pro duplicate-aware candidate DP is ready, but duplicate-aware "
+            + "weight indexing is the next implementation stage (" + repeatedSpecies + ")");
     }
 
     /** Keep incomplete STELAR-Pro paths from being selected accidentally. */

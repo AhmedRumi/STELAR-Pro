@@ -3,6 +3,7 @@ package stelarx.cluster;
 import stelarx.Config;
 import stelarx.Logging;
 import stelarx.hash.PrefixHashArrays;
+import stelarx.pro.UniqueTaxonSubtreeHashes;
 import stelarx.util.ProgressBar;
 import stelarx.tree.Tree;
 import stelarx.tree.TreeNode;
@@ -13,8 +14,8 @@ import java.util.*;
  * The cluster set X: all unique clusters extracted from gene trees.
  *
  * For each rooted gene tree, we register leaves and descendant clusters rooted
- * at biological speciation nodes. Duplication and artificial refinement nodes
- * are traversed but do not contribute candidate clusters.
+ * at biological speciation nodes. Duplication and untagged parser-refinement
+ * nodes are traversed but do not contribute candidate clusters.
  *
  * Also registers the all-taxa cluster (DP root) separately.
  * Singleton clusters (size 1) are included -- they are DP base cases.
@@ -105,6 +106,7 @@ public class ClusterTable {
     private ClusterHash anchorHash;
 
     private final int m; // number of hash seeds
+    private final UniqueTaxonSubtreeHashes uniqueTaxonHashes;
 
     // Anchored-outgroup mode (DOCS/anchored-outgroup-search-space-design.md): when
     // true, register only the ANCHOR-FREE orientation of every bipartition (the side
@@ -124,7 +126,13 @@ public class ClusterTable {
 
     /** Full registration (both orientations) — backward-compatible entry point. */
     public ClusterTable(List<Tree> trees, PrefixHashArrays pref, int numTaxa) {
-        this(trees, pref, numTaxa, false);
+        this(trees, pref, numTaxa, false, null);
+    }
+
+    /** STELAR-Pro S1 entry point with duplicate-invariant subtree hashes. */
+    public ClusterTable(List<Tree> trees, PrefixHashArrays pref, int numTaxa,
+                        UniqueTaxonSubtreeHashes uniqueTaxonHashes) {
+        this(trees, pref, numTaxa, false, uniqueTaxonHashes);
     }
 
     /**
@@ -133,8 +141,16 @@ public class ClusterTable {
      *                     with the anchored DP root.
      */
     public ClusterTable(List<Tree> trees, PrefixHashArrays pref, int numTaxa, boolean anchorFreeX) {
+        this(trees, pref, numTaxa, anchorFreeX, null);
+    }
+
+    private ClusterTable(List<Tree> trees, PrefixHashArrays pref, int numTaxa,
+                         boolean anchorFreeX,
+                         UniqueTaxonSubtreeHashes uniqueTaxonHashes) {
         long t0 = System.nanoTime();
-        this.m = pref.numSeeds();
+        this.uniqueTaxonHashes = uniqueTaxonHashes;
+        this.m = uniqueTaxonHashes == null
+            ? pref.numSeeds() : uniqueTaxonHashes.numSeeds();
         if (anchorFreeX) {
             throw new IllegalArgumentException(
                 "Outgroup anchoring is an unrooted reduction and is not valid in STELAR-X");
@@ -142,13 +158,16 @@ public class ClusterTable {
         this.anchorFreeX = false;
         this.anchor = -1;
 
-        // Build all-taxa hash from prefix arrays (using any complete tree)
-        long[] atSums = new long[m], atXors = new long[m];
-        for (int s = 0; s < m; s++) {
-            atSums[s] = pref.allTaxaSum(s);
-            atXors[s] = pref.allTaxaXor(s);
+        if (uniqueTaxonHashes != null) {
+            allTaxaHash = uniqueTaxonHashes.allTaxaHash();
+        } else {
+            long[] atSums = new long[m], atXors = new long[m];
+            for (int s = 0; s < m; s++) {
+                atSums[s] = pref.allTaxaSum(s);
+                atXors[s] = pref.allTaxaXor(s);
+            }
+            allTaxaHash = new ClusterHash(atSums, atXors, numTaxa, m);
         }
-        allTaxaHash = new ClusterHash(atSums, atXors, numTaxa, m);
 
         int totalCandidates = 0;
         int treesDone = 0;
@@ -213,8 +232,9 @@ public class ClusterTable {
         if (!node.isLeaf() && !node.isSpeciation()) return;
 
         int lo = node.rangeStart, hi = node.rangeEnd;
-        int rangeSize = hi - lo;
-        registerCluster(ti, lo, hi, false, rangeSize, L, pref, numTaxa);
+        ClusterHash knownHash = uniqueTaxonHashes == null
+            ? null : uniqueTaxonHashes.get(ti, node);
+        registerCluster(ti, lo, hi, false, hi - lo, L, pref, numTaxa, knownHash);
         count[0]++;
     }
 
@@ -223,20 +243,23 @@ public class ClusterTable {
      */
     private void registerCluster(int ti, int lo, int hi, boolean complement,
                                   int size, int leafCount,
-                                  PrefixHashArrays pref, int numTaxa) {
-        long[] rawSums = new long[m], rawXors = new long[m];
-        for (int s = 0; s < m; s++) {
-            if (!complement) {
-                rawSums[s] = pref.rangeSum(ti, s, lo, hi);
-                rawXors[s] = pref.rangeXor(ti, s, lo, hi);
-            } else {
-                // Super-complement w.r.t. ALL taxa (S \ [lo,hi))
-                rawSums[s] = pref.superCompSum(ti, s, lo, hi);
-                rawXors[s] = pref.superCompXor(ti, s, lo, hi);
+                                  PrefixHashArrays pref, int numTaxa,
+                                  ClusterHash knownHash) {
+        ClusterHash hash = knownHash;
+        if (hash == null) {
+            long[] rawSums = new long[m], rawXors = new long[m];
+            for (int s = 0; s < m; s++) {
+                if (!complement) {
+                    rawSums[s] = pref.rangeSum(ti, s, lo, hi);
+                    rawXors[s] = pref.rangeXor(ti, s, lo, hi);
+                } else {
+                    // Super-complement w.r.t. ALL taxa (S \ [lo,hi))
+                    rawSums[s] = pref.superCompSum(ti, s, lo, hi);
+                    rawXors[s] = pref.superCompXor(ti, s, lo, hi);
+                }
             }
+            hash = new ClusterHash(rawSums, rawXors, size, m);
         }
-
-        ClusterHash hash = new ClusterHash(rawSums, rawXors, size, m);
 
         // Skip the all-taxa cluster (it's the DP root, not in X)
         if (hash.equals(allTaxaHash)) return;
@@ -245,10 +268,11 @@ public class ClusterTable {
         if (existing != null) {
             existing.frequency++;
         } else {
-            Cluster exemplar = new Cluster(ti, lo, hi, complement, leafCount);
+            Cluster exemplar = new Cluster(
+                ti, lo, hi, complement, leafCount, hash.size);
             Entry entry = new Entry(hash, exemplar);
             table.put(hash, entry);
-            sizeBins.computeIfAbsent(size, k -> new ArrayList<>()).add(hash);
+            sizeBins.computeIfAbsent(hash.size, k -> new ArrayList<>()).add(hash);
         }
     }
 

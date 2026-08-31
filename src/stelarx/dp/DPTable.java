@@ -6,6 +6,7 @@ import stelarx.cluster.ClusterHash;
 import stelarx.cluster.ClusterTable;
 import stelarx.gpu.GPUDPBuilder;
 import stelarx.hash.PrefixHashArrays;
+import stelarx.pro.UniqueTaxonSubtreeHashes;
 import stelarx.tree.Tree;
 import stelarx.tree.TreeNode;
 import stelarx.util.ProgressBar;
@@ -42,6 +43,8 @@ public class DPTable {
     // stats
     private int totalEmitted = 0;   // total emitted (with duplicates across trees)
     private int uniqueSplits = 0;   // sum of set sizes after dedup
+    private int overlappingSpeciationNodes = 0;
+    private final UniqueTaxonSubtreeHashes uniqueTaxonHashes;
 
     // -------------------------------------------------------------------------
 
@@ -52,8 +55,16 @@ public class DPTable {
     private final int     anchor;
 
     public DPTable(List<Tree> trees, PrefixHashArrays pref, ClusterTable clusterTable) {
+        this(trees, pref, clusterTable, null);
+    }
+
+    /** STELAR-Pro S1 entry point with duplicate-invariant subtree hashes. */
+    public DPTable(List<Tree> trees, PrefixHashArrays pref, ClusterTable clusterTable,
+                   UniqueTaxonSubtreeHashes uniqueTaxonHashes) {
         long t0 = System.nanoTime();
-        this.m        = pref.numSeeds();
+        this.uniqueTaxonHashes = uniqueTaxonHashes;
+        this.m        = uniqueTaxonHashes == null
+            ? pref.numSeeds() : uniqueTaxonHashes.numSeeds();
         this.rootHash = clusterTable.getAllTaxaHash();
         this.n        = rootHash.size;
         Config cfg = Config.getInstance();
@@ -74,6 +85,10 @@ public class DPTable {
         long ms = (System.nanoTime() - t0) / 1_000_000;
         Logging.info("DP table: %d clusters with splits, %d unique splits (%d emitted) in %d ms",
             transitions.size(), uniqueSplits, totalEmitted, ms);
+        if (overlappingSpeciationNodes > 0) {
+            Logging.info("DP table: skipped %d tagged-speciation node(s) whose child "
+                + "species sets overlap", overlappingSpeciationNodes);
+        }
     }
 
     // -------------------------------------------------------------------------
@@ -109,16 +124,32 @@ public class DPTable {
         emit(u.left,  ti, anchorPos, pref);
         emit(u.right, ti, anchorPos, pref);
 
-        // Duplication and artificial nodes do not define species-tree candidates.
+        // Duplication and untagged parser-refinement nodes emit no candidates.
         if (!u.isSpeciation()) return;
 
         // In anchor-free mode, sub(u) contains the anchor iff the anchor's position in
         // this tree falls in [rangeStart,rangeEnd).  Exactly one of the two parents
         // below (sub(u) for Type 1, S\sub(u) for Type 2) is then anchor-free; the other
         // is unreachable from the anchored root, so we skip building it.
-        ClusterHash hU     = hashRange(ti, u.rangeStart,       u.rangeEnd,       false, pref);
-        ClusterHash hLeft  = hashRange(ti, u.left.rangeStart,  u.left.rangeEnd,  false, pref);
-        ClusterHash hRight = hashRange(ti, u.right.rangeStart, u.right.rangeEnd, false, pref);
+        ClusterHash hU;
+        ClusterHash hLeft;
+        ClusterHash hRight;
+        if (uniqueTaxonHashes != null) {
+            hU = uniqueTaxonHashes.get(ti, u);
+            hLeft = uniqueTaxonHashes.get(ti, u.left);
+            hRight = uniqueTaxonHashes.get(ti, u.right);
+            if (hLeft.size + hRight.size != hU.size) {
+                overlappingSpeciationNodes++;
+                return;
+            }
+        } else {
+            hU = hashRange(ti, u.rangeStart, u.rangeEnd, false, pref);
+            hLeft = hashRange(ti, u.left.rangeStart, u.left.rangeEnd, false, pref);
+            hRight = hashRange(ti, u.right.rangeStart, u.right.rangeEnd, false, pref);
+        }
+
+        // Admission depends on u's tag only. A child may itself be rooted at a
+        // duplication; that does not change the speciation-driven split at u.
         addTransition(hU, hLeft, hRight);
     }
 
@@ -439,6 +470,7 @@ public class DPTable {
     public int numClusters()                               { return transitions.size(); }
     public int numUniqueSplits()                           { return uniqueSplits; }
     public int numEmitted()                                { return totalEmitted; }
+    public int numOverlappingSpeciationNodesSkipped()      { return overlappingSpeciationNodes; }
     public boolean isAnchorFree()                          { return anchorFreeX; }
     public int getAnchorTaxon()                            { return anchor; }
     public Set<Map.Entry<ClusterHash, Set<BipartitionSplit>>> entries() { return transitions.entrySet(); }

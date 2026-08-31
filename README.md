@@ -14,7 +14,8 @@ artifacts all use the `stelarx` name.
 
 ## Build and run
 
-JDK 21 or newer is required. CUDA is optional.
+JDK 21 or newer and Python 3 are required. CUDA is optional. The polytomy
+resolver is self-contained and requires no Python packages.
 
 ```bash
 ./build.sh
@@ -22,12 +23,14 @@ JDK 21 or newer is required. CUDA is optional.
 ```
 
 Input contains one unrooted Newick gene tree per non-empty line. STELAR-Pro
-automatically roots and tags every gene tree before the existing analysis phases.
+temporarily uniquifies repeated leaves, arbitrarily resolves polytomies, restores
+the repeated species labels, then roots and tags every gene tree before inference.
+Tag-only mode skips polytomy resolution and uniquification.
 
 ## STELAR-Pro rooting and tagging
 
-STELAR-Pro accepts unrooted, multi-copy gene trees. Normal runs automatically
-root and tag them before parsing. To perform only that preprocessing and exit:
+STELAR-Pro accepts unrooted, multi-copy gene trees. Normal inference resolves
+polytomies before rooting and tagging. To root/tag without resolving and exit:
 
 ```bash
 ./stelarx -T -i unrooted_multicopy_gene_trees.tre \
@@ -39,8 +42,8 @@ Use `--gene-species-map FILE` when gene-copy labels require an explicit two-colu
 gene-to-species mapping. `--astral-pro-executable FILE` overrides the bundled
 `ASTER-Linux/bin/astral-pro3`. Tag-only mode suppresses backend messages and emits
 only brief STELAR-Pro status lines. Normal inference currently stops explicitly
-when it reaches repeated species because duplicate-aware hashing and position
-maps are the next implementation stage.
+before weight calculation: the S1 candidate DP is duplicate-aware, while the
+per-tree multi-copy index maps and scoring path are the next implementation stage.
 
 SimPhy datasets default to `$PHYLOGENY_DATA_DIR/simphy/data`. The simulation,
 testing, bulk-transfer, and statistics scripts create that directory when it is
