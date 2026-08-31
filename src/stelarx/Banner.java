@@ -163,7 +163,8 @@ public class Banner {
         out.println("    " + row("Compute mode", computeValue));
         out.println("    " + row("CPU threads",    c(available == using ? WHT : YLW, String.valueOf(using))
                                                   + c(DIM, "  (" + available + " available)")));
-        out.println("    " + row("Tree treatment", c(WHT, cfg.getTreatAsUnrooted() ? "unrooted" : "rooted")));
+        out.println("    " + row("Gene-tree preprocessing",
+            c(WHT, "unrooted → automatic root/tag")));
         String inferencePolytomies = cfg.isScoreOnly()
             ? c(DIM, "(n/a; no inference)")
             : c(WHT, cfg.isKeepPolytomyDuringInference()

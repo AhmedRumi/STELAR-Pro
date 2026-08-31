@@ -18,7 +18,7 @@ import java.util.*;
  *
  * Built via Mode 1 (tree-local transitions only), O(nk):
  *
- *   Type 1  -- for every resolved binary internal node u (incl. root):
+ *   Type 1  -- for every resolved binary speciation node u (incl. root):
  *              sub(u) → sub(left(u)) | sub(right(u))
  *
  *   Type 2  -- for every resolved non-root node u (leaf or internal) with a
@@ -84,7 +84,7 @@ public class DPTable {
         emit(tree.root, tree.treeIndex, -1, pref);
     }
 
-    /** Post-order recursion: emit transitions for this node, then children. */
+    /** Post-order recursion: visit descendants, then emit speciation transitions. */
     private void emit(TreeNode u, int ti, int anchorPos, PrefixHashArrays pref) {
         // A leaf has no Type-1 subtree split, but it can still induce a Type-2
         // split of its complement.  If u={x}, sibling(u)=B, and the taxa outside
@@ -108,6 +108,9 @@ public class DPTable {
 
         emit(u.left,  ti, anchorPos, pref);
         emit(u.right, ti, anchorPos, pref);
+
+        // Duplication and artificial nodes do not define species-tree candidates.
+        if (!u.isSpeciation()) return;
 
         // In anchor-free mode, sub(u) contains the anchor iff the anchor's position in
         // this tree falls in [rangeStart,rangeEnd).  Exactly one of the two parents

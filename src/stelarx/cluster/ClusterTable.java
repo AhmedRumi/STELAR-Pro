@@ -12,8 +12,9 @@ import java.util.*;
 /**
  * The cluster set X: all unique clusters extracted from gene trees.
  *
- * For each rooted gene tree, we walk every node u (excluding the root) and
- * register its descendant cluster sub(u). Complements are not rooted clades.
+ * For each rooted gene tree, we register leaves and descendant clusters rooted
+ * at biological speciation nodes. Duplication and artificial refinement nodes
+ * are traversed but do not contribute candidate clusters.
  *
  * Also registers the all-taxa cluster (DP root) separately.
  * Singleton clusters (size 1) are included -- they are DP base cases.
@@ -177,8 +178,7 @@ public class ClusterTable {
     }
 
     /**
-     * Extract clusters from one tree: subtree ranges + complements for every
-     * non-root internal node. Leaves are also included (size-1 clusters).
+     * Extract singleton leaves and non-root speciation clusters from one tree.
      * Returns the number of candidates generated (before dedup).
      */
     private int extractFromTree(Tree tree, PrefixHashArrays pref, int numTaxa) {
@@ -190,9 +190,8 @@ public class ClusterTable {
     }
 
     /**
-     * Post-order walk. For every node (including leaves, but excluding root):
-     *   full mode        — register the subtree cluster AND its super-complement;
-     *   anchor-free mode  — register ONLY the side not containing the anchor taxon.
+     * Post-order walk. Leaves remain DP base cases. Internal candidates must be
+     * rooted at biological speciation nodes.
      */
     private void walkNodes(TreeNode node, int ti, int L, int anchorPos,
                            PrefixHashArrays pref, int numTaxa, int[] count) {
@@ -208,7 +207,10 @@ public class ClusterTable {
             }
         }
 
-        if (node.isRoot()) return;  // skip root -- it is the all-taxa cluster
+        if (node.isRoot()) return;  // The root is represented by allTaxaHash.
+
+        // Keep walking through duplications so speciation descendants survive.
+        if (!node.isLeaf() && !node.isSpeciation()) return;
 
         int lo = node.rangeStart, hi = node.rangeEnd;
         int rangeSize = hi - lo;

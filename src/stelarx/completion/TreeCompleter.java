@@ -937,6 +937,8 @@ public class TreeCompleter {
         if (src == null) return null;
         TreeNode copy    = new TreeNode();
         copy.taxonId     = src.taxonId;
+        copy.isDuplicationNode = src.isDuplicationNode;
+        copy.isSpeciationNode = src.isSpeciationNode;
         copy.rangeStart  = src.rangeStart;
         copy.rangeEnd    = src.rangeEnd;
         copy.parent      = parent;
@@ -953,6 +955,8 @@ public class TreeCompleter {
         if (src == null) return null;
         TreeNode copy = new TreeNode();
         copy.taxonId = src.taxonId;
+        copy.isDuplicationNode = src.isDuplicationNode;
+        copy.isSpeciationNode = src.isSpeciationNode;
         copy.rangeStart = src.rangeStart;
         copy.rangeEnd = src.rangeEnd;
         copy.parent = parent;

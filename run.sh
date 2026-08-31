@@ -2,7 +2,7 @@
 #
 # STELAR-X runner
 # ===============
-# Usage: ./run.sh -i <gene_trees> -o <output> [options]
+# Usage: ./run.sh -i <unrooted_gene_trees> -o <output> [options]
 #
 # Core options are forwarded to stelarx.Main. This wrapper centralizes the
 # working classpath/library-path invocation so higher-level scripts do not need
@@ -39,6 +39,7 @@ PROGRAM_ARGS=()
 COMPUTE_MODE_SET=false
 NO_NOTIFY=false
 INPUT_OPTIONAL=false
+TAG_ONLY=false
 
 print_help() {
   cat <<EOF
@@ -57,17 +58,22 @@ Optional:
   --taxa-file FILE   Restrict inference or scoring to listed taxa (one name per line)
   --extract-taxa     Extract input taxa and exit (union by default)
   --taxa-set MODE    Taxa extraction mode: union | intersection
+  -T, --tag-only     Root/tag gene trees, write --output, and exit
+  --astral-pro-executable FILE
+                     Override bundled ASTER-Linux/bin/astral-pro3
+  --gene-species-map FILE
+                     Optional two-column gene-copy to species mapping
   --cpu              Force CPU mode
   --gpu              Force GPU mode
   --auto             Automatically select CUDA or CPU (default)
   --gpu-strict       Require CUDA; do not fall back to CPU
-  --search-space     S1 through S3 (recommended)
+  --search-space     S1 (current STELAR-Pro path)
   --intersection-method, --im
-                     I1 through I4 (recommended)
+                     I1 (current STELAR-Pro method)
   --search-mode      local | full
-  --weight-intersection-method  prefix-sum | smaller-side-traversal | bitset | simple-tree-walk  (default: prefix-sum)
+  --weight-intersection-method  smaller-side-traversal (current STELAR-Pro method)
   --no-prune-search-space  Disable the DP-reachability weight prune (default: on)
-  --threads, --num-threads, -t, -T
+  --threads, --num-threads, -t
                      Thread count
   --seeds, -m        Number of hash seeds
   --rooted           Rooted input treatment (required and default)
@@ -158,12 +164,17 @@ while [[ $# -gt 0 ]]; do
       PROGRAM_ARGS+=("$1" "$2")
       shift 2
       ;;
-    --search-space|--intersection-method|--im|--search-mode|-t|-T|--threads|--num-threads|-m|--seeds|--weight-intersection-method|--large-n-score-type|--large-score-type|--anchor-taxon|--gpu-batch-size|--gpu-batches|--gpu-vram-control-factor|--gpu-vram-occupancy-factor|--gpu-treewalk-vram-cap-mb|--gpu-progress-interval|--gpu-dp-state-space-construction-output-cap|--gpu-dp-state-space-progress-time-interval|--gpu-dp-state-space-progress-max-steps|--gpu-dist-tile-size|--gpu-sim-vram-cap-mb|--dump-clusters|--dump-completed-gene-trees|--completion-method|--stepb-restriction|--taxa-file|--species-list|--species-list-file|--taxa-set|--taxa-operation)
+    --search-space|--intersection-method|--im|--search-mode|-t|--threads|--num-threads|-m|--seeds|--weight-intersection-method|--large-n-score-type|--large-score-type|--anchor-taxon|--gpu-batch-size|--gpu-batches|--gpu-vram-control-factor|--gpu-vram-occupancy-factor|--gpu-treewalk-vram-cap-mb|--gpu-progress-interval|--gpu-dp-state-space-construction-output-cap|--gpu-dp-state-space-progress-time-interval|--gpu-dp-state-space-progress-max-steps|--gpu-dist-tile-size|--gpu-sim-vram-cap-mb|--dump-clusters|--dump-completed-gene-trees|--completion-method|--stepb-restriction|--taxa-file|--species-list|--species-list-file|--taxa-set|--taxa-operation|--astral-pro-executable|--gene-species-map)
       PROGRAM_ARGS+=("$1" "$2")
       shift 2
       ;;
     --stepb-fast-restriction)
       PROGRAM_ARGS+=("--stepb-restriction" "dlogd")
+      shift
+      ;;
+    -T|--tag-only)
+      TAG_ONLY=true
+      PROGRAM_ARGS+=("$1")
       shift
       ;;
     --rooted|--unrooted|--keep-polytomy-during-inference|--anchor-outgroup|--anchor|--no-anchor-outgroup|--no-anchor|--no-prune-search-space|--no-prune-unreachable|--prune-search-space|--prune-unreachable|--no-gpu-batch|--consensus-experimental|--stepb-quadratic-nn-balls|--stepb-random-leftover-resolution|--stepb-process-large-polytomies|--resolve-input-gene-tree-polytomies|--verify-parse|--verify-hash|--verify-clusters|--verify-partitions|--verify-dp|--verify-weights|--verify-distance-matrix|--verify-similarity-matrix|--verify-upgma|--verify-greedy-consensus|--autocomplete-incomplete-gene-trees|--extract-taxa|-v|-vv|-vvv|-q|--quiet)
@@ -305,21 +316,23 @@ if [[ "$COMPUTE_MODE_SET" == false ]]; then
   PROGRAM_ARGS+=("--auto")
 fi
 
-echo "=== STELAR-X ==="
-if [[ -n "$INPUT_FILE" ]]; then
-  echo "Input:       $INPUT_FILE"
+if [[ "$TAG_ONLY" != true ]]; then
+  echo "=== STELAR-X ==="
+  if [[ -n "$INPUT_FILE" ]]; then
+    echo "Input:       $INPUT_FILE"
+  fi
+  if [[ -n "$OUTPUT_FILE" ]]; then
+    echo "Output:      $OUTPUT_FILE"
+  fi
+  if [[ -n "$SCORE_SPECIES_TREE" ]]; then
+    echo "Score tree:  $SCORE_SPECIES_TREE"
+  fi
+  echo "Build dir:   $BUILD_DIR"
+  echo "Native dir:  $NATIVE_DIR"
+  echo "GPU ready:   $gpu_available"
+  echo "Java heap:   -Xms${XMS} -Xmx${XMX}"
+  echo
 fi
-if [[ -n "$OUTPUT_FILE" ]]; then
-  echo "Output:      $OUTPUT_FILE"
-fi
-if [[ -n "$SCORE_SPECIES_TREE" ]]; then
-  echo "Score tree:  $SCORE_SPECIES_TREE"
-fi
-echo "Build dir:   $BUILD_DIR"
-echo "Native dir:  $NATIVE_DIR"
-echo "GPU ready:   $gpu_available"
-echo "Java heap:   -Xms${XMS} -Xmx${XMX}"
-echo
 
 if [[ -n "$SCORE_SPECIES_TREE" ]]; then
   TMP_LOG="$(mktemp /tmp/stelarx_score_only.XXXXXX.log)"
@@ -330,6 +343,7 @@ if [[ -n "$SCORE_SPECIES_TREE" ]]; then
   java \
     -Xms"${XMS}" -Xmx"${XMX}" \
     "${JAVA_CRASH_ARGS[@]}" \
+    -Dstelarx.home="${STELARX_ROOT}" \
     -Djava.library.path="${NATIVE_DIR}" \
     -cp "${BUILD_DIR}" \
     stelarx.Main \
@@ -363,6 +377,7 @@ fi
 exec java \
   -Xms"${XMS}" -Xmx"${XMX}" \
   "${JAVA_CRASH_ARGS[@]}" \
+  -Dstelarx.home="${STELARX_ROOT}" \
   -Djava.library.path="${NATIVE_DIR}" \
   -cp "${BUILD_DIR}" \
   stelarx.Main \

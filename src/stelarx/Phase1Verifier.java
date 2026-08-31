@@ -86,7 +86,8 @@ public class Phase1Verifier {
             out.printf("%sleaf %s : [%d,%d)%n",
                 indent, reg.getName(n.taxonId), n.rangeStart, n.rangeEnd);
         } else {
-            out.printf("%sinternal%s [%d,%d)%n", indent,
+            out.printf("%sinternal event=%s%s [%d,%d)%n", indent,
+                n.isDuplication() ? "duplication" : n.isSpeciation() ? "speciation" : "artificial",
                 n.isPolytomous() ? " degree=" + n.children.length : "",
                 n.rangeStart, n.rangeEnd);
             if (n.isPolytomous()) {

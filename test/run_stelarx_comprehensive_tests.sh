@@ -40,6 +40,8 @@ javac -cp "${ROOT}/build" -d "$TEST_CLASSES" \
   "${ROOT}/test/stelarx/cluster/ResidualLookupTest.java" \
   "${ROOT}/test/stelarx/completion/PackedMatrixBoundaryTest.java" \
   "${ROOT}/test/stelarx/completion/RootedPolytomyLifecycleTest.java" \
+  "${ROOT}/test/stelarx/pro/GeneTreeRooterTaggerTest.java" \
+  "${ROOT}/test/stelarx/tree/GeneTreeEventTagTest.java" \
   "${ROOT}/test/stelarx/util/Int128Test.java" \
   "${ROOT}/test/stelarx/weight/WeightModeBoundaryTest.java"
 
@@ -54,6 +56,8 @@ java -cp "$CP" stelarx.completion.PackedMatrixBoundaryTest
 java -cp "$CP" stelarx.FatalReporterTest "${WORK}/fatal-reporter"
 java -cp "$CP" stelarx.cluster.ResidualLookupTest \
   "${ROOT}/test/input/test_incomplete.tre"
+java -cp "$CP" stelarx.pro.GeneTreeRooterTaggerTest "${WORK}/root-and-tag"
+java -cp "$CP" stelarx.tree.GeneTreeEventTagTest "${WORK}/event-tags"
 java -Xmx1g -cp "$CP" PackedPreflightTest
 java -cp "$CP" ThreadingFailureTest
 if [[ $QUICK -eq 0 ]]; then

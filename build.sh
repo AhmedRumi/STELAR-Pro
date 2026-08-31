@@ -16,4 +16,4 @@ rm -f "$TMP_SRC_LIST"
 trap - EXIT
 
 echo "Build OK -> $BUILD"
-echo "Run: ./stelarx -i <rooted-input.tre> -vv --no-build"
+echo "Run: ./stelarx -i <unrooted-input.tre> -vv --no-build"

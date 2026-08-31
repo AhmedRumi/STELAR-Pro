@@ -65,6 +65,12 @@ public class Config {
     private String outputFile;
     private String logFile;
     private String scoreSpeciesTreeFile;
+    /** Tag-only utility mode: root/tag input with ASTRAL-Pro3, write -o, and exit. */
+    private boolean tagOnly = false;
+    /** Optional override for the bundled ASTRAL-Pro3 executable. */
+    private String astralProExecutable;
+    /** Optional gene-copy to species mapping passed to ASTRAL-Pro3 with {@code -a}. */
+    private String geneSpeciesMapFile;
     /** Optional inference/scoring taxon allow-list (one name per non-empty line). */
     private String taxaFile;
     /** Parser-backed utility mode: write taxa from the input tree file and exit. */
@@ -87,7 +93,7 @@ public class Config {
      */
     private boolean keepPolytomyDuringInference = false;
     private SearchMode searchMode = SearchMode.LOCAL;
-    private WeightIntersectionMethod weightIntersectionMethod = WeightIntersectionMethod.PREFIX_SUM;
+    private WeightIntersectionMethod weightIntersectionMethod = WeightIntersectionMethod.SMALLER_SIDE_TRAVERSAL;
     private LargeScoreType largeScoreType = LargeScoreType.INT128;
 
     /**
@@ -229,6 +235,12 @@ public class Config {
     public String getScoreSpeciesTreeFile()      { return scoreSpeciesTreeFile; }
     public void setScoreSpeciesTreeFile(String f){ this.scoreSpeciesTreeFile = f; }
     public boolean isScoreOnly()       { return scoreSpeciesTreeFile != null; }
+    public boolean isTagOnly() { return tagOnly; }
+    public void setTagOnly(boolean v) { this.tagOnly = v; }
+    public String getAstralProExecutable() { return astralProExecutable; }
+    public void setAstralProExecutable(String f) { this.astralProExecutable = f; }
+    public String getGeneSpeciesMapFile() { return geneSpeciesMapFile; }
+    public void setGeneSpeciesMapFile(String f) { this.geneSpeciesMapFile = f; }
     public String getTaxaFile()        { return taxaFile; }
     public void setTaxaFile(String f)  { this.taxaFile = f; }
     public boolean isExtractTaxa()     { return extractTaxa; }

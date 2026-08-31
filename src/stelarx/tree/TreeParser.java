@@ -394,6 +394,8 @@ public class TreeParser {
     private static class RawNode {
         int taxonId = -1;                          // leaf: taxon ID; internal: -1
         final List<RawNode> children = new ArrayList<>();
+        boolean hasBiologicalEvent = false;        // false for leaves/artificial refinements
+        boolean duplication = false;               // meaningful when hasBiologicalEvent
         boolean isLeaf() { return children.isEmpty(); }
     }
 
@@ -431,8 +433,10 @@ public class TreeParser {
                 stack.push(node);
 
                 i++;
-                // skip optional internal label (e.g. bootstrap) then branch length
-                i = skipLabelAndBranchLen(s, i, n);
+                InternalSuffix suffix = readInternalSuffix(s, i, n);
+                node.hasBiologicalEvent = true;
+                node.duplication = "D".equals(suffix.label());
+                i = suffix.nextIndex();
 
             } else if (c == ',') {
                 i++;
@@ -493,16 +497,22 @@ public class TreeParser {
                 stack.pop();
                 Collections.reverse(children);
 
+                RawNode node = null;
                 if (children.size() == 1) {
                     stack.push(children.get(0));
                 } else if (children.size() > 1) {
-                    RawNode node = new RawNode();
+                    node = new RawNode();
                     node.children.addAll(children);
                     stack.push(node);
                 }
 
                 i++;
-                i = skipLabelAndBranchLen(s, i, n);
+                InternalSuffix suffix = readInternalSuffix(s, i, n);
+                if (node != null) {
+                    node.hasBiologicalEvent = true;
+                    node.duplication = "D".equals(suffix.label());
+                }
+                i = suffix.nextIndex();
             } else if (c == ',') {
                 i++;
             } else if (c == ';') {
@@ -554,7 +564,9 @@ public class TreeParser {
         boolean hasPolytomy = rootingCounts[2] != polytomyCountBefore;
 
         // Assign ranges and build postorderArray in one left-to-right DFS
-        int[] postorderArray = new int[reg.size()]; // upper bound; trimmed below
+        // Gene trees may contain multiple copies of one species. Allocate by leaf
+        // occurrence count rather than by the number of unique registered labels.
+        int[] postorderArray = new int[countLeaves(rawRoot)];
         int[] counter = {0};
         assignRangesAndFillArray(root, postorderArray, counter);
         int leafCount = counter[0];
@@ -618,6 +630,7 @@ public class TreeParser {
 
         if (nc == 2) {
             TreeNode node = new TreeNode();
+            copyGeneEvent(raw, node);
             node.left  = validateAndConvert(
                 raw.children.get(0), treeIdx, false, rootingCounts, keepPolytomy);
             node.right = validateAndConvert(
@@ -630,6 +643,7 @@ public class TreeParser {
             // nc >= 3 && !isRoot  → polytomous internal node.
             rootingCounts[2]++;
             TreeNode node = new TreeNode();
+            copyGeneEvent(raw, node);
             node.children = new TreeNode[nc];
             for (int j = 0; j < nc; j++) {
                 TreeNode cj = validateAndConvert(
@@ -667,6 +681,19 @@ public class TreeParser {
         }
         node.rangeStart = node.left.rangeStart;
         node.rangeEnd   = node.right.rangeEnd;
+    }
+
+    private static int countLeaves(RawNode node) {
+        if (node.isLeaf()) return 1;
+        int count = 0;
+        for (RawNode child : node.children) count += countLeaves(child);
+        return count;
+    }
+
+    private static void copyGeneEvent(RawNode raw, TreeNode node) {
+        if (!raw.hasBiologicalEvent) return;
+        node.isDuplicationNode = raw.duplication;
+        node.isSpeciationNode = !raw.duplication;
     }
 
     private static void validateCompleteTaxonSet(Tree tree, TaxonRegistry reg, String inputFile) {
@@ -711,9 +738,12 @@ public class TreeParser {
      * After a ')' we may have: optional label (bootstrap or name), optional ':len'.
      * Skip both.
      */
-    private static int skipLabelAndBranchLen(String s, int i, int n) {
-        // skip optional label (anything that is not a structural delimiter or ':')
+    private static InternalSuffix readInternalSuffix(String s, int i, int n) {
+        int start = i;
         while (i < n && s.charAt(i) != ':' && !isDelim(s.charAt(i))) i++;
-        return skipBranchLen(s, i, n);
+        String label = s.substring(start, i).trim();
+        return new InternalSuffix(label, skipBranchLen(s, i, n));
     }
+
+    private record InternalSuffix(String label, int nextIndex) {}
 }

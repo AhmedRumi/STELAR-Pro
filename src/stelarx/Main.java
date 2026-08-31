@@ -17,6 +17,7 @@ import stelarx.greedy.GreedyConsensusVerifier;
 import stelarx.gpu.GPUDPBuilder;
 import stelarx.gpu.GPUWeightCalculator;
 import stelarx.partition.PartitionTable;
+import stelarx.pro.GeneTreeRooterTagger;
 import stelarx.weight.WeightTable;
 import stelarx.hash.PrefixHashArrays;
 import stelarx.hash.TaxonHasher;
@@ -32,6 +33,8 @@ import stelarx.cluster.Cluster;
 import java.io.FileOutputStream;
 import java.io.IOException;
 import java.io.PrintStream;
+import java.nio.file.Files;
+import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.List;
@@ -62,17 +65,23 @@ public class Main {
     private static void run(String[] args) throws Exception {
         Config cfg = Config.getInstance();
         if (!parseArgs(args, cfg)) { printUsage(); System.exit(1); }
-        if (cfg.getTreatAsUnrooted()) {
-            throw new IllegalArgumentException(
-                "STELAR-X accepts rooted gene trees only; --unrooted is not supported");
+        validatePathCollisions(cfg);
+
+        Logging.setLevel(cfg.getVerbosity());
+        if (cfg.isTagOnly()) {
+            System.out.println("STELAR-Pro tag-only: rooting and tagging gene trees...");
+            GeneTreeRooterTagger.Result result = GeneTreeRooterTagger.run(
+                cfg.getInputFile(), cfg.getOutputFile(),
+                cfg.getAstralProExecutable(), cfg.getGeneSpeciesMapFile());
+            System.out.printf("STELAR-Pro tag-only: wrote %d rooted/tagged gene tree(s) to %s%n",
+                result.treeCount(), result.output());
+            return;
         }
+
         if (cfg.isAnchorOutgroup()) {
             throw new IllegalArgumentException(
                 "--anchor-outgroup is an unrooted optimization and is not valid in STELAR-X");
         }
-        validatePathCollisions(cfg);
-
-        Logging.setLevel(cfg.getVerbosity());
         if (cfg.isExtractTaxa()) {
             runTaxaExtraction(cfg);
             return;
@@ -84,14 +93,31 @@ public class Main {
             RuntimeDiagnostics.print(cfg);
             return;
         }
+        validateCurrentProScope(cfg);
 
-        Threading.start(cfg.getThreadCount());
         long t0 = System.nanoTime();
         String finalTripletScore = null;
         boolean analysisCompleted = false;
         boolean inferenceInputHasPolytomy = false;
+        String unrootedInputFile = cfg.getInputFile();
+        Path automaticTaggedInput = null;
 
         try {
+            automaticTaggedInput = Files.createTempFile("stelar-pro-rooted-tagged-", ".tre");
+            Logging.info("STELAR-Pro preprocessing: rooting and tagging input gene trees");
+            GeneTreeRooterTagger.Result preprocessing = GeneTreeRooterTagger.run(
+                unrootedInputFile, automaticTaggedInput.toString(),
+                cfg.getAstralProExecutable(), cfg.getGeneSpeciesMapFile());
+            cfg.setInputFile(preprocessing.output().toString());
+            Logging.info("STELAR-Pro preprocessing: %d rooted/tagged gene tree(s) ready",
+                preprocessing.treeCount());
+
+            if (cfg.getGeneSpeciesMapFile() != null) {
+                throw new UnsupportedOperationException(
+                    "STELAR-Pro gene-copy mapping ingestion is the next implementation stage");
+            }
+
+            Threading.start(cfg.getThreadCount());
             if (cfg.isScoreOnly() && cfg.getTaxaFile() != null) {
                 finalTripletScore = runTaxonRestrictedScoreOnly(cfg);
                 analysisCompleted = true;
@@ -117,6 +143,7 @@ public class Main {
                 trees = restricted.trees();
                 inferenceInputHasPolytomy = restricted.hasPolytomy();
             }
+            rejectRepeatedSpeciesUntilDuplicateAwareDataModel(trees, registry);
             PhaseLogger.end("Phase 1  Parse gene trees", t1, false);
 
             if (cfg.isVerifyParse()) {
@@ -509,6 +536,8 @@ public class Main {
 
         } finally {
             Threading.shutdown();
+            cfg.setInputFile(unrootedInputFile);
+            if (automaticTaggedInput != null) Files.deleteIfExists(automaticTaggedInput);
             long ms = (System.nanoTime() - t0) / 1_000_000;
             Logging.info("Total time: %d ms", ms);
             if (analysisCompleted) {
@@ -530,6 +559,15 @@ public class Main {
                 case "-i","--input"    -> { if (++i>=args.length) return false; cfg.setInputFile(args[i]); }
                 case "-o","--output"   -> { if (++i>=args.length) return false; cfg.setOutputFile(args[i]); }
                 case "--log-file"      -> { if (++i>=args.length) return false; cfg.setLogFile(args[i]); }
+                case "-T", "--tag-only" -> cfg.setTagOnly(true);
+                case "--astral-pro-executable" -> {
+                    if (++i >= args.length) return false;
+                    cfg.setAstralProExecutable(args[i]);
+                }
+                case "--gene-species-map" -> {
+                    if (++i >= args.length) return false;
+                    cfg.setGeneSpeciesMapFile(args[i]);
+                }
                 case "-c", "--score", "--species-tree", "--score-species-tree" -> {
                     if (++i>=args.length) return false;
                     cfg.setScoreSpeciesTreeFile(args[i]);
@@ -551,7 +589,7 @@ public class Main {
                         return false;
                     }
                 }
-                case "-t", "-T", "--threads", "--num-threads" -> {
+                case "-t", "--threads", "--num-threads" -> {
                     if (++i>=args.length) return false;
                     cfg.setThreadCount(Integer.parseInt(args[i]));
                 }
@@ -688,6 +726,18 @@ public class Main {
         }
         if (cfg.isExtractTaxa() && cfg.getTaxaFile() != null) {
             System.err.println("--extract-taxa cannot be combined with --taxa-file");
+            return false;
+        }
+        if (cfg.isTagOnly() && cfg.isScoreOnly()) {
+            System.err.println("-T/--tag-only cannot be combined with --score-species-tree");
+            return false;
+        }
+        if (cfg.isTagOnly() && cfg.isExtractTaxa()) {
+            System.err.println("-T/--tag-only cannot be combined with --extract-taxa");
+            return false;
+        }
+        if (cfg.isTagOnly() && cfg.getOutputFile() == null) {
+            System.err.println("-T/--tag-only requires -o/--output FILE");
             return false;
         }
         if (cfg.isDiagnose() && cfg.getTaxaFile() != null) {
@@ -892,14 +942,15 @@ public class Main {
         Banner.printTitle(System.err);
         System.err.print("""
             Usage:
-              stelarx -i <rooted_gene_trees.tre> [-o <species_tree.tre>] [options]
-              stelarx -i <rooted_gene_trees.tre> --score-species-tree <rooted_species_tree.tre> [options]
+              stelarx -i <unrooted_gene_trees.tre> [-o <species_tree.tre>] [options]
+              stelarx -i <unrooted_gene_trees.tre> --score-species-tree <rooted_species_tree.tre> [options]
+              stelarx -T -i <unrooted_gene_trees.tre> -o <tagged_gene_trees.tre>
               stelarx -i <trees.tre> --extract-taxa [-o <taxa.txt>]
               stelarx --diagnose
 
             General:
               -i, --input FILE                 Input gene trees (one Newick tree per line)
-              -o, --output FILE                Output species tree (stdout when omitted)
+              -o, --output FILE                Species-tree output, or tagged-tree output with -T
               --log-file FILE                  Save run messages to FILE (progress remains terminal-only)
               -c, --score-species-tree FILE    Score one supplied species tree and exit
               --taxa-file FILE                 Restrict inference to these gene-tree taxa,
@@ -907,7 +958,11 @@ public class Main {
                                                  (one name per non-empty line)
               --extract-taxa                   Write input taxa, one name per line, and exit
               --taxa-set union|intersection    Multi-tree extraction operation (default: union)
-              -t, -T, --threads, --num-threads N
+              -T, --tag-only                   Root/tag gene trees, write -o FILE, and exit
+              --astral-pro-executable FILE     Override the bundled astral-pro3 executable
+              --gene-species-map FILE          Optional gene-copy to species mapping for
+                                                 ASTRAL-Pro3 (two columns: gene species)
+              -t, --threads, --num-threads N
                                                  CPU worker threads (default: available cores)
               --auto                           Automatically use CUDA or fall back to CPU (default)
               --cpu                            Force CPU execution; do not require GPU libraries
@@ -920,14 +975,15 @@ public class Main {
               -vv | -vvv                       Debug or trace logging
 
             Search and scoring:
-              --search-space S1..S3            Friendly search-space preset (default: S1)
-              --intersection-method I1..I4     Friendly scoring method (default: I2)
-              --im I1..I4                      Short form of --intersection-method
+              --search-space S1                Current STELAR-Pro search path
+              --intersection-method I1         Current STELAR-Pro scoring method (default)
+              --im I1                          Short form of --intersection-method
               --search-mode local|full         Legacy/advanced DP search control
               --weight-intersection-method M   Legacy alias; named values remain supported
               --large-n-score-type T            int128 (exact) | double
               --no-prune-search-space           Disable reachability pruning
-              --rooted                          Rooted input treatment (required and default)
+              --rooted | --unrooted             Compatibility flags; normal STELAR-Pro runs
+                                                 always root and tag before parsing
               --keep-polytomy-during-inference   Preserve input polytomies while inferring;
                                                   final scoring always preserves them
                                                  (default: deterministic binary refinement)
@@ -1202,12 +1258,51 @@ public class Main {
             java.nio.file.Path.of(second).toAbsolutePath().normalize());
     }
 
+    /**
+     * Temporary boundary between Phase 0 and the duplicate-aware tree data model.
+     * Failing explicitly prevents the legacy scalar position map and multiplicity-
+     * sensitive hashes from silently producing a plausible but incorrect result.
+     */
+    private static void rejectRepeatedSpeciesUntilDuplicateAwareDataModel(
+            List<Tree> trees, TaxonRegistry registry) {
+        for (Tree tree : trees) {
+            boolean[] seen = new boolean[registry.size()];
+            for (int taxonId : tree.postorderArray) {
+                if (seen[taxonId]) {
+                    throw new UnsupportedOperationException(
+                        "STELAR-Pro duplicate-aware tree storage is the next implementation "
+                        + "stage (tree " + tree.treeIndex + " repeats species "
+                        + registry.getName(taxonId) + ")");
+                }
+                seen[taxonId] = true;
+            }
+        }
+    }
+
+    /** Keep incomplete STELAR-Pro paths from being selected accidentally. */
+    private static void validateCurrentProScope(Config cfg) {
+        if (cfg.getWeightIntersectionMethod()
+                != Config.WeightIntersectionMethod.SMALLER_SIDE_TRAVERSAL) {
+            throw new UnsupportedOperationException(
+                "STELAR-Pro currently supports only intersection method I1");
+        }
+        if (cfg.getSearchMode() != Config.SearchMode.LOCAL
+                || cfg.isAutoCompleteIncompleteTrees()
+                || cfg.isConsensusExperimental()
+                || cfg.isResolveInputGeneTreePolytomies()) {
+            throw new UnsupportedOperationException(
+                "STELAR-Pro currently supports only search-space path S1");
+        }
+    }
+
     /** Reject read/write aliases before any analysis output can replace an input. */
     private static void validatePathCollisions(Config cfg) {
         String[][] reads = {
             {"input tree file", cfg.getInputFile()},
             {"species tree file", cfg.getScoreSpeciesTreeFile()},
-            {"taxa file", cfg.getTaxaFile()}
+            {"taxa file", cfg.getTaxaFile()},
+            {"gene-to-species mapping file", cfg.getGeneSpeciesMapFile()},
+            {"ASTRAL-Pro3 executable", cfg.getAstralProExecutable()}
         };
         String[][] writes = {
             {"output file", cfg.getOutputFile()},

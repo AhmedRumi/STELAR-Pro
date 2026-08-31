@@ -18,13 +18,29 @@ JDK 21 or newer is required. CUDA is optional.
 
 ```bash
 ./build.sh
-./stelarx -i rooted_gene_trees.tre -o species_tree.tre --cpu
+./stelarx -i unrooted_gene_trees.tre -o species_tree.tre --cpu
 ```
 
-Input contains one rooted Newick tree per non-empty line. STELAR-X uses the
-supplied top-level root exactly. A top-level node with anything other than two
-children is rejected because ordinary Newick has no independent rootedness flag
-and STELAR-X never invents an arbitrary root.
+Input contains one unrooted Newick gene tree per non-empty line. STELAR-Pro
+automatically roots and tags every gene tree before the existing analysis phases.
+
+## STELAR-Pro rooting and tagging
+
+STELAR-Pro accepts unrooted, multi-copy gene trees. Normal runs automatically
+root and tag them before parsing. To perform only that preprocessing and exit:
+
+```bash
+./stelarx -T -i unrooted_multicopy_gene_trees.tre \
+  -o rooted_tagged_gene_trees.tre
+```
+
+ASTRAL-Pro3 writes `D` on duplication nodes and leaves speciation nodes unlabeled.
+Use `--gene-species-map FILE` when gene-copy labels require an explicit two-column
+gene-to-species mapping. `--astral-pro-executable FILE` overrides the bundled
+`ASTER-Linux/bin/astral-pro3`. Tag-only mode suppresses backend messages and emits
+only brief STELAR-Pro status lines. Normal inference currently stops explicitly
+when it reaches repeated species because duplicate-aware hashing and position
+maps are the next implementation stage.
 
 SimPhy datasets default to `$PHYLOGENY_DATA_DIR/simphy/data`. The simulation,
 testing, bulk-transfer, and statistics scripts create that directory when it is
@@ -39,10 +55,9 @@ inferred result beneath it—preview or run the dedicated cleanup command:
 ./clear-bulk-simulated.sh --yes
 ```
 
-Use `--search-space S1`, `S2`, or `S3` and `--intersection-method I1` through
-`I4`. The default is S1/I2. S2 completes missing taxa with root-preserving
-nearest-anchor insertion, adds a UPGMA guide, and enables hash-based cross-tree
-recombination. S3 additionally enables consensus-guided enrichment.
+The current STELAR-Pro implementation uses the S1 search path and I1
+smaller-side traversal. S2/S3 and I2/I3/I4 remain legacy STELAR-X code paths and
+are rejected until their duplicate-aware STELAR-Pro versions are implemented.
 
 Score a supplied rooted species tree with:
 
@@ -74,7 +89,15 @@ invariants, retained components, and validation evidence. The canonical names
 for every implementation surface are listed in
 [MIGRATION_DOCS/04-stelarx-identity.md](MIGRATION_DOCS/04-stelarx-identity.md).
 
-Run the migration-focused validation suite with:
+Run the focused tests for the implemented STELAR-Pro stages with:
+
+```bash
+test/run_stelar_pro_tests.sh
+```
+
+The `run_stelarx_*` suites remain useful for low-level regression checks, but
+their STELAR-X topology/score expectations are not STELAR-Pro correctness
+oracles. The original migration-focused suite is:
 
 ```bash
 test/run_stelarx_tests.sh

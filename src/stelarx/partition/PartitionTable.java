@@ -12,7 +12,7 @@ import java.util.*;
 /**
  * Table of unique rooted gene-tree child bipartitions with their frequencies.
  *
- * For each internal node u of each rooted gene tree g (root included) we extract:
+ * For each biological speciation node u (root included) we extract:
  *   part1 = sub(left(u))    range [L.start, L.end)   -- left subtree
  *   part2 = sub(right(u))   range [R.start, R.end)   -- right subtree
  *   part3 = Lg \ sub(u)     complement of [u.start, u.end) w.r.t. Lg
@@ -68,8 +68,7 @@ public class PartitionTable {
     }
 
     /**
-     * Recurse post-order. For each non-root internal node u, register the
-     * tripartition (left | right | complement_of_parent_range).
+     * Recurse post-order and register partitions rooted at speciation nodes.
      */
     private void extractNode(TreeNode node, int ti, int L,
                               PrefixHashArrays pref, int[] count) {
@@ -80,6 +79,9 @@ public class PartitionTable {
             extractNode(node.left,  ti, L, pref, count);
             extractNode(node.right, ti, L, pref, count);
         }
+
+        // Descendant speciations remain valid even below a skipped duplication.
+        if (!node.isSpeciation()) return;
 
         // ── Polytomous node: d = k+1 partition (k child subtrees + complement) ──
         if (node.isPolytomous()) {

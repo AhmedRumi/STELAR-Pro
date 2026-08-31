@@ -23,6 +23,15 @@ public class TreeNode {
     public int taxonId = -1;
 
     /**
+     * Gene-tree event tags retained from ASTRAL-Pro3 output. Exactly one flag is
+     * true for an original biological internal node: {@code D} sets duplication;
+     * an unlabeled internal node sets speciation. Leaves and artificial refinement
+     * nodes have both flags false.
+     */
+    public boolean isDuplicationNode = false;
+    public boolean isSpeciationNode = false;
+
+    /**
      * Half-open range [rangeStart, rangeEnd) in the tree's postorder array.
      * For a leaf: rangeEnd = rangeStart + 1.
      * For an internal node: spans entire descendant leaf range.
@@ -32,6 +41,8 @@ public class TreeNode {
 
     public boolean isLeaf() { return left == null; }
     public boolean isRoot() { return parent == null; }
+    public boolean isDuplication() { return !isLeaf() && isDuplicationNode; }
+    public boolean isSpeciation() { return !isLeaf() && isSpeciationNode; }
     /** True for an internal node with k ≥ 3 children (its {@code children} array is set). */
     public boolean isPolytomous() { return children != null; }
     public int rangeSize()  { return rangeEnd - rangeStart; }
