@@ -8,6 +8,11 @@ import java.util.List;
 /**
  * Prefix sum and prefix XOR arrays over taxon hashes for every gene tree.
  *
+ * <p>These arrays are occurrence-sensitive: repeated taxa appear once per leaf.
+ * STELAR-Pro therefore uses {@link stelarx.pro.UniqueTaxonSubtreeHashes} for S1
+ * candidate clusters and local DP transitions. Prefix arrays remain available
+ * for single-copy/legacy paths and the weight-indexing work that follows.</p>
+ *
  * For tree t, seed s, position i:
  *   prefSum[t][s][i]  = sum  of hashes[s][postorder[t][j]] for j in [0, i)
  *   prefXor[t][s][i]  = XOR  of hashes[s][postorder[t][j]] for j in [0, i)

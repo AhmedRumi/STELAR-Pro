@@ -10,7 +10,9 @@
  * === GPU memory design (scalable) ===
  *
  * The cluster data (sums, XORs, sizes) for all |X| clusters is uploaded once
- * and stays on-device for the entire search.  Memory = O(|X| * m * 16) bytes.
+ * and stays on-device for the entire search. The host has already collapsed
+ * duplicate taxa, so this kernel operates on canonical set hashes.
+ * Memory = O(|X| * m * 16) bytes.
  * For |X| = 1 M clusters with m=2 this is ~32 MB — fits in modern VRAM.
  * For even larger inputs (|X| >> 10 M), the cluster-data upload itself would
  * need to be batched; that extension is straightforward but not implemented here.

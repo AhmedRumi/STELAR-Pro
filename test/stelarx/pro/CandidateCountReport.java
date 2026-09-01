@@ -79,8 +79,8 @@ public final class CandidateCountReport {
                         speciationOccurrenceSplits.add(occurrenceSplit);
                         legacySpeciationSplits.add(legacySplit);
                         speciationSpeciesSplits.add(new BipartitionSplit(
-                            unique.get(tree.treeIndex, node.left),
-                            unique.get(tree.treeIndex, node.right)));
+                            unique.getChild(tree.treeIndex, node, 0),
+                            unique.getChild(tree.treeIndex, node, 1)));
                     }
                     nodes.push(node.left);
                     nodes.push(node.right);

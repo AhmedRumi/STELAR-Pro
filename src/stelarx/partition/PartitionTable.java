@@ -2,10 +2,11 @@ package stelarx.partition;
 
 import stelarx.Logging;
 import stelarx.cluster.ClusterHash;
-import stelarx.util.ProgressBar;
 import stelarx.hash.PrefixHashArrays;
+import stelarx.pro.UniqueTaxonSubtreeHashes;
 import stelarx.tree.Tree;
 import stelarx.tree.TreeNode;
+import stelarx.util.ProgressBar;
 
 import java.util.*;
 
@@ -20,6 +21,8 @@ import java.util.*;
  * The legacy third part stores the taxa outside u only to preserve the compact
  * data ABI used by the optimized intersection engines. STELAR-X ignores it.
  *
+ * In STELAR-Pro, every part hash contains each species once. The subtree and
+ * outside-subtree hashes come from the shared small-to-large tree index.
  * Deduplication: PartitionHash is order-invariant over (part1, part2).
  */
 public class PartitionTable {
@@ -34,6 +37,7 @@ public class PartitionTable {
 
     private final Map<PartitionHash, Entry> table = new HashMap<>();
     private final int m;
+    private final UniqueTaxonSubtreeHashes uniqueTaxonHashes;
     private boolean hasPoly = false;   // true once any d>3 (polytomous) partition is stored
 
     /** True iff any extracted partition is polytomous (d > 3). */
@@ -42,8 +46,16 @@ public class PartitionTable {
     // -------------------------------------------------------------------------
 
     public PartitionTable(List<Tree> trees, PrefixHashArrays pref) {
+        this(trees, pref, null);
+    }
+
+    /** STELAR-Pro entry point with duplicate-invariant partition hashes. */
+    public PartitionTable(List<Tree> trees, PrefixHashArrays pref,
+                          UniqueTaxonSubtreeHashes uniqueTaxonHashes) {
         long t0 = System.nanoTime();
-        this.m = pref.numSeeds();
+        this.uniqueTaxonHashes = uniqueTaxonHashes;
+        this.m = uniqueTaxonHashes == null
+            ? pref.numSeeds() : uniqueTaxonHashes.numSeeds();
 
         int totalCandidates = 0;
         int treesDone = 0;
@@ -93,14 +105,17 @@ public class PartitionTable {
             int[] partEnds   = new int[k];
             for (int i = 0; i < k; i++) {
                 TreeNode c = node.children[i];
-                int cs = c.rangeStart, ce = c.rangeEnd, szi = ce - cs;
-                partStarts[i] = cs; partEnds[i] = ce; sizes[i] = szi;
-                hashes[i] = buildHash(ti, cs, ce, false, szi, pref);
+                int cs = c.rangeStart, ce = c.rangeEnd;
+                partStarts[i] = cs;
+                partEnds[i] = ce;
+                hashes[i] = childHash(ti, node, i, c, pref);
+                sizes[i] = hashes[i].size;
             }
-            int szC = L - (node.rangeEnd - node.rangeStart);   // complement (Lg-relative)
+            ClusterHash complement = complementHash(ti, node, L, pref);
+            int szC = complement.size;
             if (szC == 0) return;                               // root only — already skipped
             sizes[d - 1]  = szC;
-            hashes[d - 1] = buildHash(ti, node.rangeStart, node.rangeEnd, true, szC, pref);
+            hashes[d - 1] = complement;
 
             PartitionHash ph = new PartitionHash(hashes);
             Entry existing = table.get(ph);
@@ -115,23 +130,16 @@ public class PartitionTable {
             return;
         }
 
-        // ── Binary node (unchanged) ──
+        // ── Binary node ──
         int lStart = node.left.rangeStart,  lEnd = node.left.rangeEnd;
         int rStart = node.right.rangeStart, rEnd = node.right.rangeEnd;
-        // part3 is the complement of node's full range [node.rangeStart, node.rangeEnd)
-        int pStart = node.rangeStart, pEnd = node.rangeEnd;
 
-        int sz1 = lEnd - lStart;
-        int sz2 = rEnd - rStart;
-        int sz3 = L - (pEnd - pStart);   // complement size
-
-        // sz3 == 0 identifies the supplied root. Root child bipartitions are
-        // essential to the rooted-triplet objective and are retained.
-
-        // Build ClusterHash for each part
-        ClusterHash h1 = buildHash(ti, lStart, lEnd, false, sz1, pref);
-        ClusterHash h2 = buildHash(ti, rStart, rEnd, false, sz2, pref);
-        ClusterHash h3 = buildHash(ti, pStart, pEnd, true,  sz3, pref); // complement
+        ClusterHash h1 = childHash(ti, node, 0, node.left, pref);
+        ClusterHash h2 = childHash(ti, node, 1, node.right, pref);
+        ClusterHash h3 = complementHash(ti, node, L, pref);
+        int sz1 = h1.size;
+        int sz2 = h2.size;
+        int sz3 = h3.size;
 
         PartitionHash ph = new PartitionHash(h1, h2, h3);
 
@@ -159,9 +167,27 @@ public class PartitionTable {
         return new ClusterHash(rawSums, rawXors, size, m);
     }
 
+    private ClusterHash childHash(int treeIndex, TreeNode speciationRoot,
+                                  int childIndex, TreeNode child,
+                                  PrefixHashArrays pref) {
+        return uniqueTaxonHashes == null
+            ? buildHash(treeIndex, child.rangeStart, child.rangeEnd, false,
+                child.rangeSize(), pref)
+            : uniqueTaxonHashes.getChild(treeIndex, speciationRoot, childIndex);
+    }
+
+    private ClusterHash complementHash(int treeIndex, TreeNode node, int leafCount,
+                                       PrefixHashArrays pref) {
+        return uniqueTaxonHashes == null
+            ? buildHash(treeIndex, node.rangeStart, node.rangeEnd, true,
+                leafCount - node.rangeSize(), pref)
+            : uniqueTaxonHashes.getComplement(treeIndex, node);
+    }
+
     // -------------------------------------------------------------------------
 
     public Entry get(PartitionHash ph) { return table.get(ph); }
     public int size()                  { return table.size(); }
     public Collection<Entry> entries() { return table.values(); }
+    public boolean isDuplicateInvariant() { return uniqueTaxonHashes != null; }
 }

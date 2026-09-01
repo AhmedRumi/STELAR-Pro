@@ -394,7 +394,9 @@ public class TreeParser {
     private static class RawNode {
         int taxonId = -1;                          // leaf: taxon ID; internal: -1
         final List<RawNode> children = new ArrayList<>();
-        boolean hasBiologicalEvent = false;        // false for leaves/artificial refinements
+        // False only for leaves and in-memory fallback refinements that were not
+        // serialized and passed through the normal root/tag stage.
+        boolean hasBiologicalEvent = false;
         boolean duplication = false;               // meaningful when hasBiologicalEvent
         boolean isLeaf() { return children.isEmpty(); }
     }

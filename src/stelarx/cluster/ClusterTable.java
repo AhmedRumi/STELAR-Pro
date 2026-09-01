@@ -14,8 +14,9 @@ import java.util.*;
  * The cluster set X: all unique clusters extracted from gene trees.
  *
  * For each rooted gene tree, we register leaves and descendant clusters rooted
- * at biological speciation nodes. Duplication and untagged parser-refinement
- * nodes are traversed but do not contribute candidate clusters.
+ * at nodes tagged as speciation. This is origin-agnostic: a node introduced by
+ * polytomy resolution contributes when rooting/tagging classifies it as
+ * speciation. Other internal nodes are traversed but contribute no candidates.
  *
  * Also registers the all-taxa cluster (DP root) separately.
  * Singleton clusters (size 1) are included -- they are DP base cases.
@@ -232,7 +233,9 @@ public class ClusterTable {
         if (!node.isLeaf() && !node.isSpeciation()) return;
 
         int lo = node.rangeStart, hi = node.rangeEnd;
-        ClusterHash knownHash = uniqueTaxonHashes == null
+        // The Pro index intentionally stores only speciation-rooted candidates.
+        // A leaf is already unique, so its legacy one-position hash is safe.
+        ClusterHash knownHash = uniqueTaxonHashes == null || node.isLeaf()
             ? null : uniqueTaxonHashes.get(ti, node);
         registerCluster(ti, lo, hi, false, hi - lo, L, pref, numTaxa, knownHash);
         count[0]++;

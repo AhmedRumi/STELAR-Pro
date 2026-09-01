@@ -23,10 +23,11 @@ public class TreeNode {
     public int taxonId = -1;
 
     /**
-     * Gene-tree event tags retained from ASTRAL-Pro3 output. Exactly one flag is
-     * true for an original biological internal node: {@code D} sets duplication;
-     * an unlabeled internal node sets speciation. Leaves and parser-created
-     * refinement nodes have both flags false.
+     * Gene-tree event tags retained from ASTRAL-Pro3 output. {@code D} sets
+     * duplication and an unlabeled serialized internal node sets speciation.
+     * This includes nodes introduced by pre-tagging polytomy resolution. Leaves
+     * and only in-memory fallback refinements created after parsing have both
+     * flags false.
      */
     public boolean isDuplicationNode = false;
     public boolean isSpeciationNode = false;

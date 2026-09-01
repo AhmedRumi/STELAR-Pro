@@ -42,8 +42,8 @@ Use `--gene-species-map FILE` when gene-copy labels require an explicit two-colu
 gene-to-species mapping. `--astral-pro-executable FILE` overrides the bundled
 `ASTER-Linux/bin/astral-pro3`. Tag-only mode suppresses backend messages and emits
 only brief STELAR-Pro status lines. Normal inference currently stops explicitly
-before weight calculation: the S1 candidate DP is duplicate-aware, while the
-per-tree multi-copy index maps and scoring path are the next implementation stage.
+before weight calculation: S1 subtree/partition hashing and candidate DP are
+duplicate-aware, while per-tree multi-copy index maps and scoring are next.
 
 SimPhy datasets default to `$PHYLOGENY_DATA_DIR/simphy/data`. The simulation,
 testing, bulk-transfer, and statistics scripts create that directory when it is

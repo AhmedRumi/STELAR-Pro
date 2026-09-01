@@ -124,7 +124,8 @@ public class DPTable {
         emit(u.left,  ti, anchorPos, pref);
         emit(u.right, ti, anchorPos, pref);
 
-        // Duplication and untagged parser-refinement nodes emit no candidates.
+        // Admission depends only on the event tag. Resolver-created nodes tagged
+        // as speciation are therefore handled exactly like original nodes.
         if (!u.isSpeciation()) return;
 
         // In anchor-free mode, sub(u) contains the anchor iff the anchor's position in
@@ -136,8 +137,10 @@ public class DPTable {
         ClusterHash hRight;
         if (uniqueTaxonHashes != null) {
             hU = uniqueTaxonHashes.get(ti, u);
-            hLeft = uniqueTaxonHashes.get(ti, u.left);
-            hRight = uniqueTaxonHashes.get(ti, u.right);
+            // Child hashes belong to u's speciation-driven bipartition record;
+            // duplication-rooted children have no standalone index entries.
+            hLeft = uniqueTaxonHashes.getChild(ti, u, 0);
+            hRight = uniqueTaxonHashes.getChild(ti, u, 1);
             if (hLeft.size + hRight.size != hU.size) {
                 overlappingSpeciationNodes++;
                 return;

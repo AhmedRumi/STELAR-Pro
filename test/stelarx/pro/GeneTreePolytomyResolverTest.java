@@ -64,9 +64,11 @@ public final class GeneTreePolytomyResolverTest {
 
         TaxonHasher hasher = new TaxonHasher(registry.size(), 2, 23L);
         PrefixHashArrays pref = new PrefixHashArrays(trees, hasher);
-        ClusterTable clusters = new ClusterTable(trees, pref, registry.size());
-        PartitionTable partitions = new PartitionTable(trees, pref);
-        DPTable dp = new DPTable(trees, pref, clusters);
+        UniqueTaxonSubtreeHashes unique = new UniqueTaxonSubtreeHashes(trees, hasher);
+        ClusterTable clusters = new ClusterTable(
+            trees, pref, registry.size(), unique);
+        PartitionTable partitions = new PartitionTable(trees, pref, unique);
+        DPTable dp = new DPTable(trees, pref, clusters, unique);
         check(clusters.size() == 6, "inserted speciation cluster count");
         check(partitions.size() == 3, "inserted speciation partition count");
         check(dp.numEmitted() == 3, "inserted speciation transition count");

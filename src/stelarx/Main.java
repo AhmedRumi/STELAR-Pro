@@ -308,9 +308,11 @@ public class Main {
 
             // ── Phase 3: duplicate-invariant cluster extraction -> X ─────────
             boolean anchorFreeX = cfg.isAnchorOutgroup();
+            long t3 = PhaseLogger.begin("Phase 3  Cluster extraction", false);
+            // Candidate ranges are only rooted subtrees, so postorder
+            // small-to-large set merging replaces arbitrary-range structures.
             UniqueTaxonSubtreeHashes candidateHashes =
                 new UniqueTaxonSubtreeHashes(trees, hasher);
-            long t3 = PhaseLogger.begin("Phase 3  Cluster extraction", false);
             ClusterTable clusterTable = new ClusterTable(
                 trees, pref, registry.size(), candidateHashes);
             PhaseLogger.end("Phase 3  Cluster extraction", t3, false);
@@ -424,17 +426,22 @@ public class Main {
             // ── Phase 4: Gene-tree tripartition extraction (from ORIGINAL trees) ──
             // Uses originalTrees so tripartitions reflect actual gene-tree signal.
             long t4 = PhaseLogger.begin("Phase 4  Rooted child-partition extraction", false);
-            PartitionTable partTable = new PartitionTable(originalTrees, prefParts);
+            PartitionTable partTable = new PartitionTable(
+                originalTrees, prefParts, candidateHashes);
             PhaseLogger.end("Phase 4  Rooted child-partition extraction", t4, false);
 
             if (cfg.isVerifyPartitions()) {
-                Phase4Verifier.dump(originalTrees, registry, prefParts, partTable, cfg.getOutputFile());
+                Phase4Verifier.dump(originalTrees, registry, hasher, prefParts,
+                    partTable, cfg.getOutputFile());
                 return;
             }
 
             // ── Phase 5: DP search space (from COMPLETED trees) ───────────────
             long t5 = PhaseLogger.begin("Phase 5  DP local transitions", false);
             DPTable dpTable = new DPTable(trees, pref, clusterTable, candidateHashes);
+            // X, rooted partitions, and DP transitions now own every canonical
+            // hash they need; discard the much larger per-node lookup indexes.
+            candidateHashes.release();
             PhaseLogger.end("Phase 5  DP local transitions", t5, false);
 
             // ── Phase 5b: Cross-tree transitions (Mode 2, optional) ───────────
@@ -1298,8 +1305,9 @@ public class Main {
     /** Weight indexing remains occurrence-based until the next implementation step. */
     private static void rejectRepeatedSpeciesBeforeWeights(String repeatedSpecies) {
         throw new UnsupportedOperationException(
-            "STELAR-Pro duplicate-aware candidate DP is ready, but duplicate-aware "
-            + "weight indexing is the next implementation stage (" + repeatedSpecies + ")");
+            "STELAR-Pro duplicate-aware hashing, rooted partitions, and candidate "
+            + "DP are ready; per-tree multicopy weight indexes are the next "
+            + "implementation stage (" + repeatedSpecies + ")");
     }
 
     /** Keep incomplete STELAR-Pro paths from being selected accidentally. */

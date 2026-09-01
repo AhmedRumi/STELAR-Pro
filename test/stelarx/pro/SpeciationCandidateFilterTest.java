@@ -23,7 +23,10 @@ public final class SpeciationCandidateFilterTest {
 
         checkTree(work.resolve("duplication.tre"),
             "(((A,B)D,(C,D)),(E,F));\n", 9, 4, 4, 0, 2);
-        checkTree(work.resolve("parser-refinement.tre"),
+        // This directly exercises TreeParser's legacy in-memory fallback. Normal
+        // Pro inference resolves before tagging, so those serialized refinement
+        // nodes receive event tags and are covered by GeneTreePolytomyResolverTest.
+        checkTree(work.resolve("untagged-parser-fallback.tre"),
             "((A,B,C),(D,E));\n", 7, 3, 3, 0, 2);
 
         System.out.println("STELAR-Pro speciation candidate filter: PASS");
@@ -48,7 +51,7 @@ public final class SpeciationCandidateFilterTest {
                 && entry.exemplar.right == skippedEnd);
         check(!skippedClusterPresent, "non-speciation cluster was retained");
 
-        PartitionTable partitions = new PartitionTable(trees, pref);
+        PartitionTable partitions = new PartitionTable(trees, pref, unique);
         int partitionOccurrences = partitions.entries().stream()
             .mapToInt(entry -> entry.frequency).sum();
         check(partitions.size() == expectedPartitions, "partition count");

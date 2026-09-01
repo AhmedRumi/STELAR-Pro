@@ -36,8 +36,8 @@ public class GPUDPBuilder {
     /**
      * Find all cross-tree DP transitions on GPU.
      *
-     * @param clusterSums  [N*m] cluster sums, clusterSums[c*m+s] = sum of cluster c under seed s
-     * @param clusterXors  [N*m] cluster XORs, same layout
+     * @param clusterSums  [N*m] host-built distinct-taxon set sums
+     * @param clusterXors  [N*m] host-built distinct-taxon set XORs
      * @param clusterSizes [N]   cluster sizes
      * @param numClusters  N
      * @param m            number of hash seeds
