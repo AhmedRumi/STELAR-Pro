@@ -5,6 +5,13 @@ import re
 import sys
 import shutil
 
+SIMPHY_LEAF_COPY = re.compile(r"(?<=[(,])([^():,;]+?)_\d+_\d+(?=:)")
+
+
+def collapse_copy_labels(newick: str) -> str:
+    """Map each SimPhy species_copy_individual leaf label to its species."""
+    return SIMPHY_LEAF_COPY.sub(r"\1", newick)
+
 def natural_key(p: Path):
     """Extract numeric part from path for sorting"""
     m = re.search(r'(\d+)', p.stem)
@@ -52,9 +59,9 @@ def reorganize_trees(root_dir: Path):
         # Create R directory if it doesn't exist
         r_dir_path.mkdir(exist_ok=True)
         
-        # Copy and clean the gene tree file (remove _0_0 patterns)
+        # STELAR-Pro needs repeated species labels, not SimPhy's copy IDs.
         gene_content = gene_tree_file.read_text(encoding="utf-8")
-        cleaned_gene_content = gene_content.replace("_0_0", "")
+        cleaned_gene_content = collapse_copy_labels(gene_content)
         (r_dir_path / "all_gt.tre").write_text(cleaned_gene_content, encoding="utf-8")
         
         # Copy the species tree file as-is

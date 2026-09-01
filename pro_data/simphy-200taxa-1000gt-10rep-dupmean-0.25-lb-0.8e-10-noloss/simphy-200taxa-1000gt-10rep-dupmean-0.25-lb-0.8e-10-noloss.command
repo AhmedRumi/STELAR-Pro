@@ -1,0 +1,1 @@
+/home/rumi/Documents/STELAR-Pro/simphy/simphy_lnx64 -sb f:0.000001 -ld f:0 -lb f:0.8e-10 -lt f:0 -rs 10 -rl f:1000 -rg 1 -o pro_data/simphy-200taxa-1000gt-10rep-dupmean-0.25-lb-0.8e-10-noloss -sp u:500000,1500000 -su ln:-17.27461,0.6931472 -sg f:1 -sl f:200 -st ln:16.2,1 -om 1 -v 2 -od 1 -op 1 -oc 1 -on 1 -cs 42 

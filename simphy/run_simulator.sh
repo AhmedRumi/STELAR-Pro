@@ -10,6 +10,9 @@ PYTHON_BIN="${STELAR_PRO_PYTHON:-${SCRIPT_DIR}/../.venv/bin/python}"
 sb="0.000001"
 spmin="500000"
 spmax="1500000"
+lb="0"
+ld="0"
+seed="42"
 out_dir=""
 data_base_dir=""
 replicates="10"  # Default number of replicates
@@ -33,6 +36,9 @@ Optional:
       --sb          Substitution/birthrate parameter (default: ${sb})
       --spmin       Population size minimum (default: ${spmin})
       --spmax       Population size maximum (default: ${spmax})
+      --lb          Gene-duplication rate per generation (default: ${lb})
+      --ld          Gene-loss rate per generation (default: ${ld})
+      --seed        SimPhy random seed (default: ${seed})
   -h, --help        Show this help and exit
 
 Example:
@@ -41,7 +47,7 @@ EOF
 }
 
 # Use GNU getopt for long options
-OPTS=$(getopt -o t:g:o:d:h --long taxa_num:,gene_trees:,out_dir:,data_dir:,replicates:,sb:,spmin:,spmax:,help -n 'run_simulator.sh' -- "$@")
+OPTS=$(getopt -o t:g:o:d:h --long taxa_num:,gene_trees:,out_dir:,data_dir:,replicates:,sb:,spmin:,spmax:,lb:,ld:,seed:,help -n 'run_simulator.sh' -- "$@")
 if [ $? != 0 ] ; then
   echo "Failed parsing options." >&2
   exit 1
@@ -58,6 +64,9 @@ while true; do
     --sb) sb="$2"; shift 2 ;;
     --spmin) spmin="$2"; shift 2 ;;
     --spmax) spmax="$2"; shift 2 ;;
+    --lb) lb="$2"; shift 2 ;;
+    --ld) ld="$2"; shift 2 ;;
+    --seed) seed="$2"; shift 2 ;;
     -h|--help) print_usage; exit 0 ;;
     --) shift; break ;;
     *) echo "Unexpected argument to run_simulator.sh: $1, Internal error while parsing options!"; exit 1 ;;
@@ -91,6 +100,9 @@ echo "  replicates  = ${replicates}"
 echo "  sb          = ${sb}"
 echo "  spmin       = ${spmin}"
 echo "  spmax       = ${spmax}"
+echo "  lb          = ${lb}"
+echo "  ld          = ${ld}"
+echo "  seed        = ${seed}"
 echo "  data_base_dir = ${data_base_dir}"
 echo "  out_dir     = ${out_dir}"
 echo ""
@@ -122,8 +134,8 @@ echo ""
 # Run SimPhy (adjust path to simphy_lnx64 if necessary)
 "${SCRIPT_DIR}/simphy_lnx64" \
   -sb f:${sb} \
-  -ld f:0 \
-  -lb f:0 \
+  -ld f:${ld} \
+  -lb f:${lb} \
   -lt f:0 \
   -rs ${replicates} \
   -rl f:${gene_trees} \
@@ -140,7 +152,7 @@ echo ""
   -op 1 \
   -oc 1 \
   -on 1 \
-  -cs 42
+  -cs ${seed}
 
 
 # Canonicalize directory names by removing leading zeros
