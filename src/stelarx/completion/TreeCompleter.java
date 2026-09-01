@@ -27,7 +27,7 @@ import java.util.concurrent.atomic.AtomicInteger;
  * Different trees are completed in parallel using the thread pool.
  *
  * The similarity ranking and packed/dense matrix implementations are retained
- * from STELAR-X; only the topology mutation is root-aware.
+ * from STELAR-Pro; only the topology mutation is root-aware.
  */
 public class TreeCompleter {
 
@@ -102,7 +102,7 @@ public class TreeCompleter {
     }
 
     /**
-     * Root-aware completion used by STELAR-X. A missing taxon is attached as the
+     * Root-aware completion used by STELAR-Pro. A missing taxon is attached as the
      * sibling of its most similar present taxon. Replacing that leaf by a new
      * binary parent never reverses an edge and therefore preserves the input root.
      */

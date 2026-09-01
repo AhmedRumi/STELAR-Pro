@@ -743,7 +743,7 @@ public final class PolytomyResolver {
     //
     // Instead of storing a long[⌈d/64⌉] bitmap per distinct induced clade (the
     // dominant RAM term for big polytomies), we identify each clade by a 128-bit
-    // (sum,xor) hash of its arm-group set — the same hashing principle STELAR-X uses
+    // (sum,xor) hash of its arm-group set — the same hashing principle STELAR-Pro uses
     // for every cluster (ClusterHash); dedup reliability is the identical 2⁻¹²⁸ level.
     // We keep only frequency + a compact provenance (treeIdx, [lo,hi] interval of the
     // position-sorted reps that produced it) and a small per-tree grp[] cache, then

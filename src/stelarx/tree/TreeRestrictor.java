@@ -27,7 +27,7 @@ public final class TreeRestrictor {
         for (Tree source : sourceTrees) {
             Tree tree = restrictOne(source, sourceRegistry, targetRegistry,
                 targetIds, restricted.size());
-            if (tree == null || tree.leafCount < 3) {
+            if (tree == null || tree.distinctTaxonCount < 3) {
                 dropped++;
             } else {
                 restricted.add(tree);
@@ -46,11 +46,12 @@ public final class TreeRestrictor {
                                            TaxonRegistry targetRegistry) {
         Map<String, Integer> targetIds = targetIdMap(targetRegistry);
         Tree restricted = restrictOne(source, sourceRegistry, targetRegistry, targetIds, 0);
-        if (restricted == null || restricted.leafCount < 3) {
+        if (restricted == null || restricted.distinctTaxonCount < 3) {
             throw new IllegalArgumentException(
                 "Species tree retains fewer than three scoring taxa after applying the taxa file");
         }
-        if (restricted.leafCount != targetRegistry.size()) {
+        if (restricted.distinctTaxonCount != targetRegistry.size()
+                || restricted.leafCount != targetRegistry.size()) {
             throw new IllegalArgumentException("Restricted species tree contains "
                 + restricted.leafCount + " of " + targetRegistry.size()
                 + " effective scoring taxa");
@@ -68,7 +69,8 @@ public final class TreeRestrictor {
         root.parent = null;
 
         int n = targetRegistry.size();
-        int[] order = new int[n];
+        // A restricted multicopy gene tree may still contain more than n leaves.
+        int[] order = new int[source.leafCount];
         int[] counter = {0};
         assignRanges(root, order, counter);
         int leafCount = counter[0];
@@ -76,15 +78,7 @@ public final class TreeRestrictor {
 
         int[] positions = new int[n];
         Arrays.fill(positions, -1);
-        for (int pos = 0; pos < leafCount; pos++) {
-            int taxon = order[pos];
-            if (positions[taxon] >= 0) {
-                throw new IllegalArgumentException("Tree " + source.treeIndex
-                    + " contains duplicate taxon after restriction: "
-                    + targetRegistry.getName(taxon));
-            }
-            positions[taxon] = pos;
-        }
+        for (int pos = 0; pos < leafCount; pos++) positions[order[pos]] = pos;
         return new Tree(newTreeIndex, root, order, positions, leafCount, n,
             containsPolytomy(root));
     }

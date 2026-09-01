@@ -3,7 +3,7 @@ set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 source "${SCRIPT_DIR}/../scripts/phylogeny-data-dir.sh"
-PYTHON_BIN="${STELARX_PYTHON:-${SCRIPT_DIR}/../.venv/bin/python}"
+PYTHON_BIN="${STELAR_PRO_PYTHON:-${SCRIPT_DIR}/../.venv/bin/python}"
 [[ -x "$PYTHON_BIN" ]] || PYTHON_BIN="python3"
 
 # Default values
@@ -72,7 +72,7 @@ if [ -z "${taxa_num}" ] || [ -z "${gene_trees}" ]; then
 fi
 
 # Resolve and create the data base directory.
-data_base_dir="$(stelarx_prepare_simphy_data_dir "$data_base_dir")"
+data_base_dir="$(stelar_pro_prepare_simphy_data_dir "$data_base_dir")"
 
 # Construct output folder if not provided
 if [ -z "${out_dir}" ]; then

@@ -1,12 +1,12 @@
 #!/usr/bin/env python3
 """
-compare_simmat.py — Head-to-head similarity matrix comparison between STELAR-X and ASTRAL-MP.
+compare_simmat.py — Head-to-head similarity matrix comparison between STELAR-Pro and ASTRAL-MP.
 
 Usage:
   python3 compare_simmat.py <input.tre> [--tol 1e-5] [--verbose]
 
 What it does:
-  1. Run STELAR-X --verify-similarity-matrix on input.tre, parse matrix from stdout.
+  1. Run STELAR-Pro --verify-similarity-matrix on input.tre, parse matrix from stdout.
   2. Run ASTRAL-MP with ASTRAL_JVM_OPTS=-DdumpSimMatrix=1, parse matrix from stderr.
   3. Build name→index maps for each tool.
   4. Compare sim[i][j] values by name pair, within tolerance.
@@ -16,8 +16,8 @@ What it does:
 Both tools now use the same algorithm: for each tree T containing both a and b,
   num_T(a,b) = same_side_T(a,b)   // # quartets where a,b are on the same side
   den_T(a,b) = C2(k_t − 2)
-STELAR-X (CPU) replicates ASTRAL-MP's scatter exactly via the (left, right,
-others) component decomposition. STELAR-X (GPU) uses the validated bridge
+STELAR-Pro (CPU) replicates ASTRAL-MP's scatter exactly via the (left, right,
+others) component decomposition. STELAR-Pro (GPU) uses the validated bridge
 identity same_side = C2(kt-2) - QD with an O(1) Euler-tour + RMQ kernel.
 Matrices match byte-for-byte modulo float vs double rounding (max diff ~1e-8).
 """
@@ -29,10 +29,10 @@ import argparse
 
 # Paths (resolved relative to this script's location)
 SCRIPT_DIR   = os.path.dirname(os.path.abspath(__file__))
-STELARX_ROOT = os.path.normpath(os.path.join(SCRIPT_DIR, "..", ".."))
-ASTRALMP_DIR = os.path.join(STELARX_ROOT, "astral-my")
+STELAR_PRO_ROOT = os.path.normpath(os.path.join(SCRIPT_DIR, "..", ".."))
+ASTRALMP_DIR = os.path.join(STELAR_PRO_ROOT, "astral-my")
 
-STELARX_RUN  = os.path.join(STELARX_ROOT, "run.sh")
+STELAR_PRO_RUN  = os.path.join(STELAR_PRO_ROOT, "run.sh")
 ASTRALMP_DEV = os.path.join(ASTRALMP_DIR, "dev.sh")
 
 
@@ -40,7 +40,7 @@ ASTRALMP_DEV = os.path.join(ASTRALMP_DIR, "dev.sh")
 
 def parse_stelarx_matrix(stdout_text):
     """
-    Parse STELAR-X similarity matrix output from stdout.
+    Parse STELAR-Pro similarity matrix output from stdout.
     Expected format:
       SIMILARITY_MATRIX
       n=<count>
@@ -72,7 +72,7 @@ def parse_stelarx_matrix(stdout_text):
             rows.append(vals)
 
     if taxa is None or len(rows) == 0:
-        raise ValueError("Could not parse STELAR-X similarity matrix from stdout.")
+        raise ValueError("Could not parse STELAR-Pro similarity matrix from stdout.")
     return taxa, rows
 
 
@@ -121,17 +121,17 @@ def parse_astralmp_matrix(stderr_text):
 
 # ── Runners ───────────────────────────────────────────────────────────────────
 
-def run_stelarx(input_path, verbose=False, mode="cpu"):
-    """Run STELAR-X with --verify-similarity-matrix and return parsed matrix."""
+def run_stelar_pro(input_path, verbose=False, mode="cpu"):
+    """Run STELAR-Pro with --verify-similarity-matrix and return parsed matrix."""
     cmd = [
-        "bash", STELARX_RUN,
+        "bash", STELAR_PRO_RUN,
         "-i", input_path,
         "--verify-similarity-matrix",
         "--" + mode,
         "--no-build",
     ]
     if verbose:
-        print(f"  [STELAR-X] Running: {' '.join(cmd)}")
+        print(f"  [STELAR-Pro] Running: {' '.join(cmd)}")
     result = subprocess.run(cmd, capture_output=True, text=True)
     if verbose:
         stderr_lines = [l for l in result.stderr.splitlines() if l.strip()]
@@ -171,14 +171,14 @@ def compare(taxa_x, mat_x, taxa_mp, mat_mp, tol, verbose=False):
     # Intersection of taxa names
     common = sorted(set(taxa_x) & set(taxa_mp))
     if not common:
-        raise ValueError(f"No common taxa between STELAR-X ({taxa_x}) and ASTRAL-MP ({taxa_mp}).")
+        raise ValueError(f"No common taxa between STELAR-Pro ({taxa_x}) and ASTRAL-MP ({taxa_mp}).")
 
     missing_x  = set(taxa_mp) - set(taxa_x)
     missing_mp = set(taxa_x) - set(taxa_mp)
     if missing_x:
-        print(f"  WARNING: Taxa in ASTRAL-MP but not STELAR-X: {sorted(missing_x)}")
+        print(f"  WARNING: Taxa in ASTRAL-MP but not STELAR-Pro: {sorted(missing_x)}")
     if missing_mp:
-        print(f"  WARNING: Taxa in STELAR-X but not ASTRAL-MP: {sorted(missing_mp)}")
+        print(f"  WARNING: Taxa in STELAR-Pro but not ASTRAL-MP: {sorted(missing_mp)}")
 
     n = len(common)
     diffs = []
@@ -201,7 +201,7 @@ def compare(taxa_x, mat_x, taxa_mp, mat_mp, tol, verbose=False):
 
     if verbose and failures:
         print(f"\n  Pairs exceeding tolerance (tol={tol}):")
-        hdr = f"  {'taxon_i':>12}  {'taxon_j':>12}  {'stelarx':>12}  {'astralmp':>12}  {'abs_diff':>12}  status"
+        hdr = f"  {'taxon_i':>12}  {'taxon_j':>12}  {'stelar-pro':>12}  {'astralmp':>12}  {'abs_diff':>12}  status"
         print(hdr)
         print("  " + "-" * (len(hdr) - 2))
         for ni, nj, vx, vmp, d in failures[:50]:
@@ -216,11 +216,11 @@ def compare(taxa_x, mat_x, taxa_mp, mat_mp, tol, verbose=False):
 # ── Main ─────────────────────────────────────────────────────────────────────
 
 def main():
-    parser = argparse.ArgumentParser(description="STELAR-X vs ASTRAL-MP similarity matrix comparison")
+    parser = argparse.ArgumentParser(description="STELAR-Pro vs ASTRAL-MP similarity matrix comparison")
     parser.add_argument("input", help="Input gene tree file (.tre)")
     parser.add_argument("--tol", type=float, default=1e-5, help="Tolerance for float comparison (default: 1e-5)")
     parser.add_argument("--verbose", "-v", action="store_true", help="Print detailed output")
-    parser.add_argument("--mode", choices=["cpu", "gpu"], default="cpu", help="STELAR-X compute mode (default: cpu)")
+    parser.add_argument("--mode", choices=["cpu", "gpu"], default="cpu", help="STELAR-Pro compute mode (default: cpu)")
     args = parser.parse_args()
 
     input_path = os.path.abspath(args.input)
@@ -235,10 +235,10 @@ def main():
     print(f"  Input:     {input_path}")
     print(f"  Tolerance: {tol:.1e}")
 
-    # Run STELAR-X
-    print(f"\n  Running STELAR-X ({args.mode.upper()})...", end=" ", flush=True)
+    # Run STELAR-Pro
+    print(f"\n  Running STELAR-Pro ({args.mode.upper()})...", end=" ", flush=True)
     try:
-        taxa_x, mat_x = run_stelarx(input_path, verbose=verbose, mode=args.mode)
+        taxa_x, mat_x = run_stelar_pro(input_path, verbose=verbose, mode=args.mode)
         print(f"OK  (n={len(taxa_x)}, taxa: {','.join(taxa_x[:4])}{',...' if len(taxa_x) > 4 else ''})")
     except Exception as e:
         print(f"FAILED\n  Error: {e}", file=sys.stderr)
@@ -298,7 +298,7 @@ def main():
     print(f"  Max absolute diff:     {max_diff:.2e}")
     print(f"  Mean absolute diff:    {mean_diff:.2e}")
     print(f"  Pairs exceeding tol:   {fail_count}")
-    print(f"\n  NOTE: Systematic differences are EXPECTED between STELAR-X and ASTRAL-MP")
+    print(f"\n  NOTE: Systematic differences are EXPECTED between STELAR-Pro and ASTRAL-MP")
     print(f"        because they use different similarity formulas (see module docstring).")
 
     if all_pass:

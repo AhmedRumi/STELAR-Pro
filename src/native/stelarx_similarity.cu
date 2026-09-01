@@ -207,9 +207,9 @@ static void sim_print_progress(int work_done, int total_work, double elapsed,
         if (_e != cudaSuccess) { \
             char _msg[768]; \
             snprintf(_msg, sizeof(_msg), \
-                     "STELAR-X similarity CUDA error in %s at %s:%d: %s", \
+                     "STELAR-Pro similarity CUDA error in %s at %s:%d: %s", \
                      #call, __FILE__, __LINE__, cudaGetErrorString(_e)); \
-            fprintf(stderr, "[STELAR-X sim] %s\n", _msg); \
+            fprintf(stderr, "[STELAR-Pro sim] %s\n", _msg); \
             jclass _ex = env->FindClass("java/lang/RuntimeException"); \
             if (_ex != nullptr) env->ThrowNew(_ex, _msg); \
             return; \
@@ -541,11 +541,11 @@ Java_stelarx_gpu_GPUSimilarityMatrix_computeSimilarityGPU(
     int num_tiles      = num_tiles_side * (num_tiles_side + 1) / 2;
 
     fprintf(stderr,
-        "\n[STELAR-X sim] GPU similarity matrix: n=%d  k=%d  "
+        "\n[STELAR-Pro sim] GPU similarity matrix: n=%d  k=%d  "
         "tile B=%d  tree-batch Δ=%d  (%d batches × %d tiles)\n",
         n, numTrees, B, delta, num_batches, num_tiles);
     fprintf(stderr,
-        "[STELAR-X sim] GPU VRAM: tile %.1f MB  tree-data %.1f MB  "
+        "[STELAR-Pro sim] GPU VRAM: tile %.1f MB  tree-data %.1f MB  "
         "(cap %d MiB; free %.0f MB / total %.0f MB)\n",
         tile_vram / 1e6,
         (double)delta * per_tree / 1e6,
@@ -553,7 +553,7 @@ Java_stelarx_gpu_GPUSimilarityMatrix_computeSimilarityGPU(
         free_vram / 1e6, total_vram / 1e6);
     if (num_batches > 1) {
         fprintf(stderr,
-            "[STELAR-X sim] NOTE: similarity tree-data is bounded to %d MiB (%d batches). "
+            "[STELAR-Pro sim] NOTE: similarity tree-data is bounded to %d MiB (%d batches). "
             "If this phase is a bottleneck, raise --gpu-sim-vram-cap-mb to use fewer batches; "
             "results are unchanged.\n",
             treeVramCapMiB, num_batches);
@@ -805,11 +805,11 @@ Java_stelarx_gpu_GPUSimilarityMatrix_computeSimilarityGPUWide(
     int num_tiles_side = (n + B - 1) / B;
     int num_tiles = num_tiles_side * (num_tiles_side + 1) / 2;
     fprintf(stderr,
-        "\n[STELAR-X sim] GPU similarity matrix (wide blocked RMQ): n=%d  k=%d  "
+        "\n[STELAR-Pro sim] GPU similarity matrix (wide blocked RMQ): n=%d  k=%d  "
         "tile B=%d  tree-batch Δ=%d  (%d batches × %d tiles)\n",
         n, numTrees, B, delta, num_batches, num_tiles);
     fprintf(stderr,
-        "[STELAR-X sim] GPU VRAM: tile %.1f MB  tree-data %.1f MB  "
+        "[STELAR-Pro sim] GPU VRAM: tile %.1f MB  tree-data %.1f MB  "
         "(cap %d MiB; free %.0f MB / total %.0f MB)\n",
         tile_vram / 1e6, (double)delta * per_tree / 1e6,
         treeVramCapMiB, free_vram / 1e6, total_vram / 1e6);

@@ -4,7 +4,7 @@ set -euo pipefail
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 source "${ROOT}/scripts/phylogeny-data-dir.sh"
 
-WORK="$(mktemp -d "${TMPDIR:-/tmp}/stelarx-data-dir-test.XXXXXX")"
+WORK="$(mktemp -d "${TMPDIR:-/tmp}/stelar-pro-data-dir-test.XXXXXX")"
 trap 'rm -rf -- "$WORK"' EXIT
 
 fail() {
@@ -13,20 +13,20 @@ fail() {
 }
 
 DEFAULT_BASE="${WORK}/phylogeny data"
-RESOLVED="$(PHYLOGENY_DATA_DIR="${DEFAULT_BASE}/" stelarx_prepare_simphy_data_dir "")"
+RESOLVED="$(PHYLOGENY_DATA_DIR="${DEFAULT_BASE}/" stelar_pro_prepare_simphy_data_dir "")"
 [[ "$RESOLVED" == "${DEFAULT_BASE}/simphy/data" ]] || fail "unexpected default path: $RESOLVED"
 [[ -d "${DEFAULT_BASE}/simphy/data" ]] || fail "default directory was not created"
 
 OVERRIDE="${WORK}/explicit data"
 RESOLVED="$(env -u PHYLOGENY_DATA_DIR bash -c \
-  'source "$1/scripts/phylogeny-data-dir.sh"; stelarx_prepare_simphy_data_dir "$2"' \
+  'source "$1/scripts/phylogeny-data-dir.sh"; stelar_pro_prepare_simphy_data_dir "$2"' \
   _ "$ROOT" "$OVERRIDE")"
 [[ "$RESOLVED" == "$OVERRIDE" ]] || fail "explicit override was not preserved"
 [[ -d "$OVERRIDE" ]] || fail "override directory was not created"
 
 CONFLICT="${WORK}/not-a-directory"
 touch "$CONFLICT"
-if PHYLOGENY_DATA_DIR="$CONFLICT" stelarx_prepare_simphy_data_dir "$CONFLICT" >"${WORK}/conflict.out" 2>&1; then
+if PHYLOGENY_DATA_DIR="$CONFLICT" stelar_pro_prepare_simphy_data_dir "$CONFLICT" >"${WORK}/conflict.out" 2>&1; then
   fail "a file was accepted as the SimPhy data directory"
 fi
 grep -q "not a directory" "${WORK}/conflict.out" || fail "file-conflict error was unclear"
@@ -37,7 +37,7 @@ touch "${DEFAULT_DATASET}/stat-sim.csv"
 PHYLOGENY_DATA_DIR="$DEFAULT_BASE" "${ROOT}/sim.sh" -t 1 -g 1 >"${WORK}/default-sim.out"
 grep -Fq "SKIPPING: ${DEFAULT_DATASET}/stat-sim.csv" "${WORK}/default-sim.out" || \
   fail "sim.sh did not use the environment-derived checkpoint path"
-PHYLOGENY_DATA_DIR="$DEFAULT_BASE" "${ROOT}/stelar-x-artifacts/sim.sh" -t 1 -g 1 \
+PHYLOGENY_DATA_DIR="$DEFAULT_BASE" "${ROOT}/stelar-pro-artifacts/sim.sh" -t 1 -g 1 \
   >"${WORK}/artifact-sim.out"
 grep -Fq "SKIPPING: ${DEFAULT_DATASET}/stat-sim.csv" "${WORK}/artifact-sim.out" || \
   fail "artifact sim.sh did not use the environment-derived checkpoint path"

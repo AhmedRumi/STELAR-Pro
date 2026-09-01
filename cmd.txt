@@ -6,22 +6,22 @@ source ~/.bashrc
 
 # setting as normally inside
 
-mkdir -p ~/phylogeny/STELAR-X-2/simphy/data
-echo 'export PHYLOGENY_DATA_DIR="~/phylogeny/STELAR-X-2/simphy/data"' >> ~/.bashrc
+mkdir -p ~/phylogeny/STELAR-Pro-2/simphy/data
+echo 'export PHYLOGENY_DATA_DIR="~/phylogeny/STELAR-Pro-2/simphy/data"' >> ~/.bashrc
 source ~/.bashrc
 echo $PHYLOGENY_DATA_DIR
 
 
 
 
-# STELAR-X research command sheet
+# STELAR-Pro research command sheet
 #
 # Notes:
 # - Use generic algorithm option flags everywhere: --opts / --opts-list
-# - For STELAR-X, result-affecting settings are stored under:
-#     stelarx_outputs/<setting>/...
+# - For STELAR-Pro, result-affecting settings are stored under:
+#     stelar-pro-outputs/<setting>/...
 #   or for A10K:
-#     stelarx_outputs/<tree_type>/<setting>/...
+#     stelar-pro-outputs/<tree_type>/<setting>/...
 # - Verbosity flags such as -v / -vv do not affect the setting name
 # - Common setting names:
 #     --opts "--search-mode local"  -> search-mode_local
@@ -33,17 +33,17 @@ echo $PHYLOGENY_DATA_DIR
 
 
 
-./run-stelarx-with-monitor.sh -i data/1kp-og-rhodophyta.tre -o data/out-1kp-og-rhodophyta.tre --opts "--search-mode local -vv" --reference-species-tree data/1kp-st-5-astral.tre
+./run-stelar-pro-with-monitor.sh -i data/1kp-og-rhodophyta.tre -o data/out-1kp-og-rhodophyta.tre --opts "--search-mode local -vv" --reference-species-tree data/1kp-st-5-astral.tre
 
 
 
 
-./run-stelarx-with-monitor.sh -i data/avian-14k-og-strca.tre -o data/out-stelarx-avian-14k-og-strca-complete-full.tre --opts "--search-mode full -vv --autocomplete-incomplete-gene-trees"
+./run-stelar-pro-with-monitor.sh -i data/avian-14k-og-strca.tre -o data/out-stelar-pro-avian-14k-og-strca-complete-full.tre --opts "--search-mode full -vv --autocomplete-incomplete-gene-trees"
 
 
 
 # angio complete full with consensus
-./run-stelarx-with-monitor.sh -i data/all_gt_angio.tre -o data/out-stelarx-angio-complete-full.tre --opts "--search-mode full -vv --autocomplete-incomplete-gene-trees --consensus-experimental" --reference-species-tree data/s_tree_angio.tre
+./run-stelar-pro-with-monitor.sh -i data/all_gt_angio.tre -o data/out-stelar-pro-angio-complete-full.tre --opts "--search-mode full -vv --autocomplete-incomplete-gene-trees --consensus-experimental" --reference-species-tree data/s_tree_angio.tre
 
 
 
@@ -51,26 +51,26 @@ echo $PHYLOGENY_DATA_DIR
 ############ angio 
 
 # complete local
-./run-stelarx-with-monitor.sh -i data/all_gt_angio.tre -o data/out-stelarx-angio-complete-local.tre --opts "--search-mode local -vv --autocomplete-incomplete-gene-trees" --reference-species-tree data/s_tree_angio.tre
+./run-stelar-pro-with-monitor.sh -i data/all_gt_angio.tre -o data/out-stelar-pro-angio-complete-local.tre --opts "--search-mode local -vv --autocomplete-incomplete-gene-trees" --reference-species-tree data/s_tree_angio.tre
 
 # complete full
-./run-stelarx-with-monitor.sh -i data/all_gt_angio.tre -o data/out-stelarx-angio-complete-full.tre --opts "--search-mode full -vv --autocomplete-incomplete-gene-trees" --reference-species-tree data/s_tree_angio.tre
+./run-stelar-pro-with-monitor.sh -i data/all_gt_angio.tre -o data/out-stelar-pro-angio-complete-full.tre --opts "--search-mode full -vv --autocomplete-incomplete-gene-trees" --reference-species-tree data/s_tree_angio.tre
 
 # incomplete local
-./run-stelarx-with-monitor.sh -i data/all_gt_angio.tre -o data/out-stelarx-angio-incomplete-local.tre --opts "--search-mode local -vv" --reference-species-tree data/s_tree_angio.tre
+./run-stelar-pro-with-monitor.sh -i data/all_gt_angio.tre -o data/out-stelar-pro-angio-incomplete-local.tre --opts "--search-mode local -vv" --reference-species-tree data/s_tree_angio.tre
 
 # incomplete full
-./run-stelarx-with-monitor.sh -i data/all_gt_angio.tre -o data/out-stelarx-angio-incomplete-full.tre --opts "--search-mode full -vv" --reference-species-tree data/s_tree_angio.tre
+./run-stelar-pro-with-monitor.sh -i data/all_gt_angio.tre -o data/out-stelar-pro-angio-incomplete-full.tre --opts "--search-mode full -vv" --reference-species-tree data/s_tree_angio.tre
 
 
 
 # angio complete full with consensus, prefix sum and anchor 
-./run-stelarx-with-monitor.sh -i data/angio/all_gt_angio.tre -o data/angio/out-stelarx-angio-complete-full.tre --opts "--search-mode full -vv --autocomplete-incomplete-gene-trees --consensus-experimental --stepb-quadratic-nn-balls --stepb-random-leftover-resolution --stepb-process-large-polytomies" --reference-species-tree data/angio/s_tree_angio.tre
+./run-stelar-pro-with-monitor.sh -i data/angio/all_gt_angio.tre -o data/angio/out-stelar-pro-angio-complete-full.tre --opts "--search-mode full -vv --autocomplete-incomplete-gene-trees --consensus-experimental --stepb-quadratic-nn-balls --stepb-random-leftover-resolution --stepb-process-large-polytomies" --reference-species-tree data/angio/s_tree_angio.tre
 
 
 
 # angio complete full with consensus and anchor and simple-tree-walk 
-./run-stelarx-with-monitor.sh -i data/angio/all_gt_angio.tre -o data/angio/out-stelarx-angio-complete-full.tre --opts "--search-mode full -vv --autocomplete-incomplete-gene-trees --consensus-experimental --stepb-quadratic-nn-balls --stepb-random-leftover-resolution --stepb-process-large-polytomies --weight-intersection-method simple-tree-walk" --reference-species-tree data/angio/s_tree_angio.tre
+./run-stelar-pro-with-monitor.sh -i data/angio/all_gt_angio.tre -o data/angio/out-stelar-pro-angio-complete-full.tre --opts "--search-mode full -vv --autocomplete-incomplete-gene-trees --consensus-experimental --stepb-quadratic-nn-balls --stepb-random-leftover-resolution --stepb-process-large-polytomies --weight-intersection-method simple-tree-walk" --reference-species-tree data/angio/s_tree_angio.tre
 
 
 
@@ -80,94 +80,94 @@ echo $PHYLOGENY_DATA_DIR
 ############ avian-48
 
 # complete local
-./run-stelarx-with-monitor.sh \
+./run-stelar-pro-with-monitor.sh \
   -i data/avian-48/avian-14k-og-strca.tre \
-  -o data/avian-48/out-stelarx-avian-48-complete-local.tre \
+  -o data/avian-48/out-stelar-pro-avian-48-complete-local.tre \
   --opts "--search-mode local -vv --autocomplete-incomplete-gene-trees" \
   --reference-species-tree data/avian-48/avian14k_astral.tre
 
 # complete full
-./run-stelarx-with-monitor.sh \
+./run-stelar-pro-with-monitor.sh \
   -i data/avian-48/avian-14k-og-strca.tre \
-  -o data/avian-48/out-stelarx-avian-48-complete-full.tre \
+  -o data/avian-48/out-stelar-pro-avian-48-complete-full.tre \
   --opts "--search-mode full -vv --autocomplete-incomplete-gene-trees" \
   --reference-species-tree data/avian-48/avian14k_astral.tre
 
 
 # complete full
-./run-stelarx-with-monitor.sh \
+./run-stelar-pro-with-monitor.sh \
   -i data/avian-48/avian-14k-og-strca.tre \
-  -o data/avian-48/out-stelarx-avian-48-complete-full.tre \
-  --opts "--search-mode full -vv --autocomplete-incomplete-gene-trees" \
-  --reference-species-tree data/avian-48/avian14k_astral.tre
-
-
-
-# complete full
-./run-stelarx-with-monitor.sh \
-  -i data/avian-48/avian-14k-og-strca.tre \
-  -o data/avian-48/out-stelarx-avian-48-complete-full.tre \
+  -o data/avian-48/out-stelar-pro-avian-48-complete-full.tre \
   --opts "--search-mode full -vv --autocomplete-incomplete-gene-trees" \
   --reference-species-tree data/avian-48/avian14k_astral.tre
 
 
 
 # complete full
-./run-stelarx-with-monitor.sh \
+./run-stelar-pro-with-monitor.sh \
   -i data/avian-48/avian-14k-og-strca.tre \
-  -o data/avian-48/out-stelarx-avian-48-complete-full.tre \
+  -o data/avian-48/out-stelar-pro-avian-48-complete-full.tre \
+  --opts "--search-mode full -vv --autocomplete-incomplete-gene-trees" \
+  --reference-species-tree data/avian-48/avian14k_astral.tre
+
+
+
+# complete full
+./run-stelar-pro-with-monitor.sh \
+  -i data/avian-48/avian-14k-og-strca.tre \
+  -o data/avian-48/out-stelar-pro-avian-48-complete-full.tre \
   --opts "--search-mode full -vv --autocomplete-incomplete-gene-trees --weight-intersection-method smaller-side-traversal" \
   --reference-species-tree data/avian-48/avian14k_astral.tre
 
 
 # complete full
-./run-stelarx-with-monitor.sh \
+./run-stelar-pro-with-monitor.sh \
   -i data/avian-48/avian-14k-og-strca.tre \
-  -o data/avian-48/out-stelarx-avian-48-complete-full.tre \
+  -o data/avian-48/out-stelar-pro-avian-48-complete-full.tre \
   --opts "--search-mode full -vv --autocomplete-incomplete-gene-trees --weight-intersection-method bitset" \
   --reference-species-tree data/avian-48/avian14k_astral.tre
 
 
 # complete full with bitset - 3 mins - best Q score 
-./run-stelarx-with-monitor.sh \
+./run-stelar-pro-with-monitor.sh \
   -i data/avian-48/avian-14k-og-strca.tre \
-  -o data/avian-48/out-stelarx-avian-48-complete-full.tre \
+  -o data/avian-48/out-stelar-pro-avian-48-complete-full.tre \
   --opts "--search-mode full -vv --autocomplete-incomplete-gene-trees --weight-intersection-method bitset" \
   --reference-species-tree data/avian-48/avian14k_astral.tre
 
 
 
 # incomplete local
-./run-stelarx-with-monitor.sh \
+./run-stelar-pro-with-monitor.sh \
   -i data/avian-48/avian-14k-og-strca.tre \
-  -o data/avian-48/out-stelarx-avian-48-incomplete-local.tre \
+  -o data/avian-48/out-stelar-pro-avian-48-incomplete-local.tre \
   --opts "--search-mode local -vv" \
   --reference-species-tree data/avian-48/avian14k_astral.tre
 
 
 
 # incomplete local with anchor outgroup 
-./run-stelarx-with-monitor.sh \
+./run-stelar-pro-with-monitor.sh \
   -i data/avian-48/avian-14k-og-strca.tre \
-  -o data/avian-48/out-stelarx-avian-48-incomplete-local.tre \
+  -o data/avian-48/out-stelar-pro-avian-48-incomplete-local.tre \
   --opts "--search-mode local -vv" \
   --reference-species-tree data/avian-48/avian14k_astral.tre
 
 
 
 # incomplete full
-./run-stelarx-with-monitor.sh \
+./run-stelar-pro-with-monitor.sh \
   -i data/avian-48/avian-14k-og-strca.tre \
-  -o data/avian-48/out-stelarx-avian-48-incomplete-full.tre \
+  -o data/avian-48/out-stelar-pro-avian-48-incomplete-full.tre \
   --opts "--search-mode full -vv" \
   --reference-species-tree data/avian-48/avian14k_astral.tre
 
 
 
 # incomplete full with anchor outgroup 
-./run-stelarx-with-monitor.sh \
+./run-stelar-pro-with-monitor.sh \
   -i data/avian-48/avian-14k-og-strca.tre \
-  -o data/avian-48/out-stelarx-avian-48-incomplete-full.tre \
+  -o data/avian-48/out-stelar-pro-avian-48-incomplete-full.tre \
   --opts "--search-mode full -vv" \
   --reference-species-tree data/avian-48/avian14k_astral.tre
 
@@ -175,9 +175,9 @@ echo $PHYLOGENY_DATA_DIR
 
 
 # incomplete full with anchor outgroup 
-./run-stelarx-with-monitor.sh \
+./run-stelar-pro-with-monitor.sh \
   -i data/avian-48/avian-14k-og-strca.tre \
-  -o data/avian-48/out-stelarx-avian-48-incomplete-full.tre \
+  -o data/avian-48/out-stelar-pro-avian-48-incomplete-full.tre \
   --opts "--search-mode full -vv --weight-intersection-method smaller-side-traversal" \
   --reference-species-tree data/avian-48/avian14k_astral.tre
 
@@ -190,32 +190,32 @@ echo $PHYLOGENY_DATA_DIR
 ############ avian-363
 
 # complete local
-./run-stelarx-with-monitor.sh \
+./run-stelar-pro-with-monitor.sh \
   -i data/avian-363/63430.gene.trees \
-  -o data/avian-363/out-stelarx-avian-363-complete-local.tre \
+  -o data/avian-363/out-stelar-pro-avian-363-complete-local.tre \
   --opts "--search-mode local -vv --autocomplete-incomplete-gene-trees" \
   --reference-species-tree data/avian-363/ref-paper-st-63K.tre
 
 
 # complete local - with prefix sum and anchoring 
-./run-stelarx-with-monitor.sh \
+./run-stelar-pro-with-monitor.sh \
   -i data/avian-363/63430.gene.trees \
-  -o data/avian-363/out-stelarx-avian-363-complete-local.tre \
+  -o data/avian-363/out-stelar-pro-avian-363-complete-local.tre \
   --opts "--search-mode local -vv --autocomplete-incomplete-gene-trees" \
   --reference-species-tree data/avian-363/ref-paper-st-63K.tre
 
 
 # complete local - with simple tree walk 
-./run-stelarx-with-monitor.sh \
+./run-stelar-pro-with-monitor.sh \
   -i data/avian-363/63430.gene.trees \
-  -o data/avian-363/out-stelarx-avian-363-complete-local.tre \
+  -o data/avian-363/out-stelar-pro-avian-363-complete-local.tre \
   --opts "--search-mode local -vv --autocomplete-incomplete-gene-trees --weight-intersection-method simple-tree-walk" \
   --reference-species-tree data/avian-363/ref-paper-st-63K.tre
 
 # complete local - with simple tree walk and anchoring 
-./run-stelarx-with-monitor.sh \
+./run-stelar-pro-with-monitor.sh \
   -i data/avian-363/63430.gene.trees \
-  -o data/avian-363/out-stelarx-avian-363-complete-local.tre \
+  -o data/avian-363/out-stelar-pro-avian-363-complete-local.tre \
   --opts "--search-mode local -vv --autocomplete-incomplete-gene-trees --weight-intersection-method simple-tree-walk" \
   --reference-species-tree data/avian-363/ref-paper-st-63K.tre
 
@@ -228,25 +228,25 @@ echo $PHYLOGENY_DATA_DIR
 
 
 # complete full
-./run-stelarx-with-monitor.sh \
+./run-stelar-pro-with-monitor.sh \
   -i data/avian-363/63430.gene.trees \
-  -o data/avian-363/out-stelarx-avian-363-complete-full.tre \
+  -o data/avian-363/out-stelar-pro-avian-363-complete-full.tre \
   --opts "--search-mode full -vv --autocomplete-incomplete-gene-trees" \
   --reference-species-tree data/avian-363/ref-paper-st-63K.tre
 
 
 # complete full
-./run-stelarx-with-monitor.sh \
+./run-stelar-pro-with-monitor.sh \
   -i data/avian-363/63430.gene.trees \
-  -o data/avian-363/out-stelarx-avian-363-complete-full.tre \
+  -o data/avian-363/out-stelar-pro-avian-363-complete-full.tre \
   --opts "--search-mode full -vv --autocomplete-incomplete-gene-trees" \
   --reference-species-tree data/avian-363/ref-paper-st-63K.tre
 
 
 # complete full with simple tree walk and anchor outgroup 
-./run-stelarx-with-monitor.sh \
+./run-stelar-pro-with-monitor.sh \
   -i data/avian-363/63430.gene.trees \
-  -o data/avian-363/out-stelarx-avian-363-complete-full.tre \
+  -o data/avian-363/out-stelar-pro-avian-363-complete-full.tre \
   --opts "--search-mode full -vv --autocomplete-incomplete-gene-trees --weight-intersection-method simple-tree-walk" \
   --reference-species-tree data/avian-363/ref-paper-st-63K.tre
 
@@ -255,9 +255,9 @@ echo $PHYLOGENY_DATA_DIR
 
 
 # incomplete local
-./run-stelarx-with-monitor.sh \
+./run-stelar-pro-with-monitor.sh \
   -i data/avian-363/63430.gene.trees \
-  -o data/avian-363/out-stelarx-avian-363-incomplete-local.tre \
+  -o data/avian-363/out-stelar-pro-avian-363-incomplete-local.tre \
   --opts "--search-mode local -vv" \
   --reference-species-tree data/avian-363/ref-paper-st-63K.tre
 
@@ -265,9 +265,9 @@ echo $PHYLOGENY_DATA_DIR
 
 
 # incomplete full
-./run-stelarx-with-monitor.sh \
+./run-stelar-pro-with-monitor.sh \
   -i data/avian-363/63430.gene.trees \
-  -o data/avian-363/out-stelarx-avian-363-incomplete-full.tre \
+  -o data/avian-363/out-stelar-pro-avian-363-incomplete-full.tre \
   --opts "--search-mode full -vv --weight-intersection-method bitset" \
   --reference-species-tree data/avian-363/ref-paper-st-63K.tre
 
@@ -277,18 +277,18 @@ echo $PHYLOGENY_DATA_DIR
 
 
 # incomplete full
-./run-stelarx-with-monitor.sh \
+./run-stelar-pro-with-monitor.sh \
   -i data/avian-363/63430.gene.trees \
-  -o data/avian-363/out-stelarx-avian-363-incomplete-full.tre \
+  -o data/avian-363/out-stelar-pro-avian-363-incomplete-full.tre \
   --opts "--search-mode full -vv --weight-intersection-method simple-tree-walk" \
   --reference-species-tree data/avian-363/ref-paper-st-63K.tre
 
 
 
 # incomplete full - simple tree walk with anchor (maybe around 6 hrs)
-./run-stelarx-with-monitor.sh \
+./run-stelar-pro-with-monitor.sh \
   -i data/avian-363/63430.gene.trees \
-  -o data/avian-363/out-stelarx-avian-363-incomplete-full.tre \
+  -o data/avian-363/out-stelar-pro-avian-363-incomplete-full.tre \
   --opts "--search-mode full -vv --weight-intersection-method simple-tree-walk" \
   --reference-species-tree data/avian-363/ref-paper-st-63K.tre
 
@@ -296,9 +296,9 @@ echo $PHYLOGENY_DATA_DIR
 
 
 # incomplete full
-./run-stelarx-with-monitor.sh \
+./run-stelar-pro-with-monitor.sh \
   -i data/avian-363/63430.gene.trees \
-  -o data/avian-363/out-stelarx-avian-363-incomplete-full.tre \
+  -o data/avian-363/out-stelar-pro-avian-363-incomplete-full.tre \
   --opts "--search-mode full -vv" \
   --reference-species-tree data/avian-363/ref-paper-st-63K.tre
 
@@ -307,31 +307,31 @@ echo $PHYLOGENY_DATA_DIR
 ############ 1kp
 
 # complete local
-./run-stelarx-with-monitor.sh \
+./run-stelar-pro-with-monitor.sh \
   -i data/1kp/Best.33.FAA_cleaned-og-33.tre \
-  -o data/1kp/out-stelarx-1kp-33-complete-local.tre \
+  -o data/1kp/out-stelar-pro-1kp-33-complete-local.tre \
   --opts "--search-mode local -vv --autocomplete-incomplete-gene-trees" \
   --reference-species-tree data/1kp/1kp-st-33-astral.tre
 
 # complete full
-./run-stelarx-with-monitor.sh \
+./run-stelar-pro-with-monitor.sh \
   -i data/1kp/Best.33.FAA_cleaned-og-33.tre \
-  -o data/1kp/out-stelarx-1kp-33-complete-full.tre \
+  -o data/1kp/out-stelar-pro-1kp-33-complete-full.tre \
   --opts "--search-mode full -vv --autocomplete-incomplete-gene-trees" \
   --reference-species-tree data/1kp/1kp-st-33-astral.tre
 
 
 # incomplete local
-./run-stelarx-with-monitor.sh \
+./run-stelar-pro-with-monitor.sh \
   -i data/1kp/Best.33.FAA_cleaned-og-33.tre \
-  -o data/1kp/out-stelarx-1kp-33-incomplete-local.tre \
+  -o data/1kp/out-stelar-pro-1kp-33-incomplete-local.tre \
   --opts "--search-mode local -vv" \
   --reference-species-tree data/1kp/1kp-st-33-astral.tre
 
 # incomplete full
-./run-stelarx-with-monitor.sh \
+./run-stelar-pro-with-monitor.sh \
   -i data/1kp/Best.33.FAA_cleaned-og-33.tre \
-  -o data/1kp/out-stelarx-1kp-33-incomplete-full.tre \
+  -o data/1kp/out-stelar-pro-1kp-33-incomplete-full.tre \
   --opts "--search-mode full -vv" \
   --reference-species-tree data/1kp/1kp-st-33-astral.tre
 
@@ -410,20 +410,20 @@ echo $PHYLOGENY_DATA_DIR
 
 # test on custom input and output 
 
-./run-stelarx-with-monitor.sh -i all_gt_bs_rooted_37.tre -o out-37-stelarx.tre --opts "--search-mode local -vv --autocomplete-incomplete-gene-trees" --reference-species-tree true_37.tre
+./run-stelar-pro-with-monitor.sh -i all_gt_bs_rooted_37.tre -o out-37-stelar-pro.tre --opts "--search-mode local -vv --autocomplete-incomplete-gene-trees" --reference-species-tree true_37.tre
 
 
 
 
 # testing on simulated incomplete trees 
-./test-stelarx-simulated.sh --incomplete -t 200 -g 100 --sb 0.000001 --spmin 100000 --spmax 200000 -r R1 --stelarx-opts "--search-mode local -vv --xmx 12g --autocomplete-incomplete-gene-trees"
+./test-stelar-pro-simulated.sh --incomplete -t 200 -g 100 --sb 0.000001 --spmin 100000 --spmax 200000 -r R1 --stelar-pro-opts "--search-mode local -vv --xmx 12g --autocomplete-incomplete-gene-trees"
  
-./test-stelarx-simulated.sh -t 200 -g 100 --sb 0.000001 --spmin 100000 --spmax 200000 -r R1 --stelarx-opts "--search-mode local -vv --xmx 12g --autocomplete-incomplete-gene-trees"
+./test-stelar-pro-simulated.sh -t 200 -g 100 --sb 0.000001 --spmin 100000 --spmax 200000 -r R1 --stelar-pro-opts "--search-mode local -vv --xmx 12g --autocomplete-incomplete-gene-trees"
  
  
-./run-bulk-simulated.sh --method stelarx --num-replicates 5 --opts-list "--search-mode local;--search-mode full"
+./run-bulk-simulated.sh --method stelar-pro --num-replicates 5 --opts-list "--search-mode local;--search-mode full"
 
-./collect-stats-simulated.sh --simphy-dir ./simphy --out stelarx-scale-taxa.csv
+./collect-stats-simulated.sh --simphy-dir ./simphy --out stelar-pro-scale-taxa.csv
 
 
 ./run.sh -i all_gt_bs_rooted_37.tre --gpu --gpu-batches 10 -vv --search-mode full
@@ -573,10 +573,10 @@ done
 ./run.sh -i all_gt_bs_rooted_37.tre -o /tmp/stelarx37_full.tre --search-mode full -vv
 
 # Wrapper alias
-./run-stelarx.sh -i all_gt_bs_rooted_37.tre -o /tmp/stelarx37_full_wrapper.tre --search-mode full -vv
+./run-stelar-pro.sh -i all_gt_bs_rooted_37.tre -o /tmp/stelarx37_full_wrapper.tre --search-mode full -vv
 
 # Monitored run
-./run-stelarx-with-monitor.sh -i all_gt_bs_rooted_37.tre -o /tmp/stelarx37_monitored.tre --opts "--search-mode full -vv" --no-notify --no-build
+./run-stelar-pro-with-monitor.sh -i all_gt_bs_rooted_37.tre -o /tmp/stelarx37_monitored.tre --opts "--search-mode full -vv" --no-notify --no-build
 
 
 ###############################################################################
@@ -591,17 +591,17 @@ done
 
 
 ###############################################################################
-# Simulated STELAR-X testing
+# Simulated STELAR-Pro testing
 ###############################################################################
 
 # Single simulated replicate, local search
-./test-stelarx-simulated.sh -t 100 -g 100 --sb 0.000001 --spmin 100000 --spmax 200000 -r R1 --fresh --opts "--search-mode local"
+./test-stelar-pro-simulated.sh -t 100 -g 100 --sb 0.000001 --spmin 100000 --spmax 200000 -r R1 --fresh --opts "--search-mode local"
 
 # Single simulated replicate, full search
-./test-stelarx-simulated.sh -t 100 -g 100 --sb 0.000001 --spmin 100000 --spmax 200000 -r R1 --fresh --opts "--search-mode full"
+./test-stelar-pro-simulated.sh -t 100 -g 100 --sb 0.000001 --spmin 100000 --spmax 200000 -r R1 --fresh --opts "--search-mode full"
 
 # Larger simulated case
-./test-stelarx-simulated.sh -t 1000 -g 1000 --sb 0.000001 --spmin 100000 --spmax 200000 -r R1 --fresh --opts "--search-mode full"
+./test-stelar-pro-simulated.sh -t 1000 -g 1000 --sb 0.000001 --spmin 100000 --spmax 200000 -r R1 --fresh --opts "--search-mode full"
 
 # The script can auto-run sim.sh if the matching simulated dataset is missing
 
@@ -612,10 +612,10 @@ done
 # Simulated stats collection
 ###############################################################################
 
-./collect-stats-simulated.sh --simphy-dir ./simphy --out /tmp/stelarx-simulated-stats.csv
+./collect-stats-simulated.sh --simphy-dir ./simphy --out /tmp/stelar-pro-simulated-stats.csv
 
 ./run-bulk-simulated.sh \
-  --method stelarx \
+  --method stelar-pro \
   --num-replicates 3 \
   --opts-list "--search-mode local --weight-intersection-method smaller-side-traversal"
 
@@ -624,7 +624,7 @@ done
 # for small cases 
 
 ./run-bulk-simulated.sh \
-  --method stelarx \
+  --method stelar-pro \
   --num-replicates 5 \
   --opts-list "--search-mode local --weight-intersection-method smaller-side-traversal; --search-mode full --weight-intersection-method smaller-side-traversal;"
 
@@ -637,32 +637,32 @@ done
 
 
 ./run-bulk-simulated.sh \
-  --method stelarx \
+  --method stelar-pro \
   --num-replicates 3 \
   --opts-list "--search-mode local --weight-intersection-method smaller-side-traversal"
 
 
 ./run-bulk-simulated.sh \
-  --method stelarx \
+  --method stelar-pro \
   --num-replicates 5 \
   --opts-list "--search-space S1 --intersection-method I1;--search-space S2 --intersection-method I1;--search-space S3 --intersection-method I1"
 
 ./run-bulk-simulated.sh \
-  --method stelarx \
+  --method stelar-pro \
   --num-replicates 5 \
   --opts-list "--search-space S1 --intersection-method I1;" --no-notify
 
 
 
 
-./run-bulk-simulated.sh --method stelarx --num-replicates 5 --opts-list "--search-mode local --weight-intersection-method smaller-side-traversal;--search-mode full --weight-intersection-method smaller-side-traversal"
+./run-bulk-simulated.sh --method stelar-pro --num-replicates 5 --opts-list "--search-mode local --weight-intersection-method smaller-side-traversal;--search-mode full --weight-intersection-method smaller-side-traversal"
 
 
 # One setting only
-./run-bulk-simulated.sh --method stelarx --num-replicates 1 --opts "--search-mode full"
+./run-bulk-simulated.sh --method stelar-pro --num-replicates 1 --opts "--search-mode full"
 
 # Sweep over both main search modes
-./run-bulk-simulated.sh --method stelarx --num-replicates 1 --opts-list "--search-mode local;--search-mode full"
+./run-bulk-simulated.sh --method stelar-pro --num-replicates 1 --opts-list "--search-mode local;--search-mode full"
 
 
 ###############################################################################
@@ -683,23 +683,23 @@ done
 
 
 ./run-bulk-standard.sh \
-  --method stelarx \
+  --method stelar-pro \
   --opts-list "--search-mode local --weight-intersection-method smaller-side-traversal;--search-mode full --weight-intersection-method smaller-side-traversal"
 
 
 ./run-bulk-standard.sh \
-  --method stelarx \
+  --method stelar-pro \
   --opts-list "--search-mode local --weight-intersection-method smaller-side-traversal;--search-mode full --weight-intersection-method smaller-side-traversal"
 
 
 ./run-bulk-standard.sh \
-  --method stelarx \
+  --method stelar-pro \
   --opts-list "--search-space S1 --intersection-method I1;--search-space S2 --intersection-method I1;--search-space S3 --intersection-method I1"
 
 
 # for local 
 ./run-bulk-standard.sh \
-  --method stelarx \
+  --method stelar-pro \
   --dataset-dir ~/research/phylogeny/datasets/phylo-standard-datasets \
   --opts-list "--search-space S1 --intersection-method I1;--search-space S2 --intersection-method I1;--search-space S3 --intersection-method I1"
 
@@ -709,7 +709,7 @@ done
 
 
 ./run-bulk-standard.sh \
-  --method stelarx \
+  --method stelar-pro \
   --opts-list "--search-mode full -vv --autocomplete-incomplete-gene-trees --consensus-experimental --stepb-quadratic-nn-balls --stepb-random-leftover-resolution --stepb-process-large-polytomies"
 
 
@@ -719,17 +719,17 @@ done
 
 
 # All configured standard folders with one setting
-./run-bulk-standard.sh --method "stelarx" --opts "--search-mode full"
+./run-bulk-standard.sh --method "stelar-pro" --opts "--search-mode full"
 
 # All configured standard folders with both local and full search
-./run-bulk-standard.sh --method "stelarx" --opts-list "--search-mode local;--search-mode full"
+./run-bulk-standard.sh --method "stelar-pro" --opts-list "--search-mode local;--search-mode full"
 
 # One standard folder only, both settings, force rerun
-./run-bulk-standard.sh --method "stelarx" --folder "37-taxon" --opts-list "--search-mode local;--search-mode full" --fresh
+./run-bulk-standard.sh --method "stelar-pro" --folder "37-taxon" --opts-list "--search-mode local;--search-mode full" --fresh
 
 
 ./clear-bulk-standard.sh \
-  --method stelarx \
+  --method stelar-pro \
   --all-results \
   --yes
 
@@ -748,7 +748,7 @@ done
 ./collect-stats-standard.sh
 
 # for local 
-./collect-stats-standard.sh --dataset-dir ~/research/phylogeny/datasets/phylo-standard-datasets --output /tmp/stelarx-standard-stats.csv
+./collect-stats-standard.sh --dataset-dir ~/research/phylogeny/datasets/phylo-standard-datasets --output /tmp/stelar-pro-standard-stats.csv
 
 
 ###############################################################################
@@ -835,14 +835,14 @@ done
 ###############################################################################
 
 # Simulated
-$PHYLOGENY_DATA_DIR/simphy/data/t_100_g_100_sb_0.000001_spmin_100000_spmax_200000/R1/stelarx_outputs/search-mode_full/out-stelarx.tre
-$PHYLOGENY_DATA_DIR/simphy/data/t_100_g_100_sb_0.000001_spmin_100000_spmax_200000/R1/stelarx_outputs/search-mode_full/out-stelarx_stats.csv
-$PHYLOGENY_DATA_DIR/simphy/data/t_100_g_100_sb_0.000001_spmin_100000_spmax_200000/R1/stelarx_outputs/search-mode_full/stat-stelarx.csv
-$PHYLOGENY_DATA_DIR/simphy/data/t_100_g_100_sb_0.000001_spmin_100000_spmax_200000/R1/stelarx_outputs/search-mode_local/stat-stelarx.csv
+$PHYLOGENY_DATA_DIR/simphy/data/t_100_g_100_sb_0.000001_spmin_100000_spmax_200000/R1/stelar-pro-outputs/search-mode_full/out-stelar-pro.tre
+$PHYLOGENY_DATA_DIR/simphy/data/t_100_g_100_sb_0.000001_spmin_100000_spmax_200000/R1/stelar-pro-outputs/search-mode_full/out-stelarx_stats.csv
+$PHYLOGENY_DATA_DIR/simphy/data/t_100_g_100_sb_0.000001_spmin_100000_spmax_200000/R1/stelar-pro-outputs/search-mode_full/stat-stelar-pro.csv
+$PHYLOGENY_DATA_DIR/simphy/data/t_100_g_100_sb_0.000001_spmin_100000_spmax_200000/R1/stelar-pro-outputs/search-mode_local/stat-stelar-pro.csv
 
 # A10K
-data/10k-astral-dataset/10k-simphy/R1/stelarx_outputs/estimated/search-mode_full/stat-stelarx.csv
-data/10k-astral-dataset/10k-simphy/R1/stelarx_outputs/estimated/search-mode_local/stat-stelarx.csv
+data/10k-astral-dataset/10k-simphy/R1/stelar-pro-outputs/estimated/search-mode_full/stat-stelar-pro.csv
+data/10k-astral-dataset/10k-simphy/R1/stelar-pro-outputs/estimated/search-mode_local/stat-stelar-pro.csv
 
 
 
@@ -851,7 +851,7 @@ data/10k-astral-dataset/10k-simphy/R1/stelarx_outputs/estimated/search-mode_loca
 
 ./run.sh -i gene_trees.tre --score-species-tree species_tree.tre --gpu
 
-./run.sh -i all_gt_bs_rooted_37.tre --score-species-tree out-37-stelarx.tre --gpu
+./run.sh -i all_gt_bs_rooted_37.tre --score-species-tree out-37-stelar-pro.tre --gpu
 
 
 ./run.sh -i data/all_gt_angio.tre --score-species-tree data/s_tree_angio.tre --gpu
@@ -868,8 +868,8 @@ CPU ONLY RUNS
 ===========================================================================
 
 ./run-bulk-simulated.sh \
-  -m stelarx \
-  --stelarx-opts "--cpu --threads 32 --search-mode local --weight-intersection-method smaller-side-traversal" \
+  -m stelar-pro \
+  --stelar-pro-opts "--cpu --threads 32 --search-mode local --weight-intersection-method smaller-side-traversal" \
   --num-replicates 5
 
 ===========================================================================

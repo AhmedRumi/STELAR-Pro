@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # run-bulk-simulated.sh
 #
-# Runs sim.sh and test-stelarx-simulated.sh or test-baseline-simulated.sh
+# Runs sim.sh and test-stelar-pro-simulated.sh or test-baseline-simulated.sh
 # over all combinations of parameter lists.
 #
 # Usage:
@@ -10,12 +10,12 @@
 
 set -euo pipefail
 
-STELARX_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-source "${STELARX_ROOT}/scripts/phylogeny-data-dir.sh"
+STELAR_PRO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+source "${STELAR_PRO_ROOT}/scripts/phylogeny-data-dir.sh"
 
 BASE_DIR=""
 BASE_DIR_PROVIDED=false
-METHOD="stelarx"  # default method
+METHOD="stelar-pro"  # default method
 FRESH=false
 NO_NOTIFY=false
 GPU_MONITOR=true
@@ -31,7 +31,7 @@ SB_LIST=(0.000001)
 SPMIN_LIST=(100000)
 SPMAX_LIST=(200000)
 
-# Configurations that must not run through STELAR-X. Each entry is an exact
+# Configurations that must not run through STELAR-Pro. Each entry is an exact
 # TAXA,GENE_TREES,SB,SPMIN,SPMAX,REPLICATE tuple. Keep replicate names in R<n>
 # form. sim.sh may still prepare the surrounding dataset batch; only the listed
 # per-replicate inference/result run is purposefully skipped.
@@ -81,7 +81,7 @@ IS_SIMULATED_CONFIG_EXCLUDED() {
 ASTER_OPTS=""
 ASTER_BIN=""
 ASTRAL_OPTS=""
-STELARX_OPTS_LIST_RAW=""
+STELAR_PRO_OPTS_LIST_RAW=""
 ASTRAL_XMS=""
 ASTRAL_XMX=""
 TREEQMC_OPTS=""
@@ -99,11 +99,11 @@ print_help() {
   cat <<EOF
 run-bulk-simulated.sh
 
-Runs sim.sh and test-stelarx-simulated.sh or test-baseline-simulated.sh for all combinations of parameter lists.
+Runs sim.sh and test-stelar-pro-simulated.sh or test-baseline-simulated.sh for all combinations of parameter lists.
 
 Options:
-  --method, -m      Method to use: stelarx (default: stelarx)
-  --project-root    STELAR-X checkout root (default: this script's directory)
+  --method, -m      Method to use: stelar-pro (default: stelar-pro)
+  --project-root    STELAR-Pro checkout root (default: this script's directory)
   --base-dir, -b    Compatibility alias for --project-root
   --num-replicates, -n  Number of replicates to run (default: 1)
   --taxa-list LIST       Comma/space-separated taxon counts (default: 10)
@@ -116,9 +116,9 @@ Options:
   --fresh           Pass --fresh to sim.sh and test scripts (recreate outputs)
   --no-gpu-monitor  Disable GPU-memory sampling
   --no-notify, -nn  Disable completion notifications
-  --opts, --alg-opts       Extra options for one STELAR-X simulated setting
+  --opts, --alg-opts       Extra options for one STELAR-Pro simulated setting
   --opts-list, --alg-opts-list
-                         Semicolon-separated list of STELAR-X option strings to loop over
+                         Semicolon-separated list of STELAR-Pro option strings to loop over
   --help, -h        Show this message
 
 Examples:
@@ -140,10 +140,10 @@ while [[ $# -gt 0 ]]; do
     --spmin-list) read -r -a SPMIN_LIST <<< "${2//,/ }"; shift 2 ;;
     --spmax-list) read -r -a SPMAX_LIST <<< "${2//,/ }"; shift 2 ;;
     --simphy-data-dir) SIMPHY_DATA_DIR="$2"; shift 2 ;;
-    --opts|--alg-opts|--stelarx-opts) ASTRAL_OPTS="$2"; shift 2 ;;
-    --opts=*|--alg-opts=*|--stelarx-opts=*) ASTRAL_OPTS="${1#*=}"; shift ;;
-    --opts-list|--alg-opts-list|--stelarx-opts-list) STELARX_OPTS_LIST_RAW="$2"; shift 2 ;;
-    --opts-list=*|--alg-opts-list=*|--stelarx-opts-list=*) STELARX_OPTS_LIST_RAW="${1#*=}"; shift ;;
+    --opts|--alg-opts|--stelar-pro-opts) ASTRAL_OPTS="$2"; shift 2 ;;
+    --opts=*|--alg-opts=*|--stelar-pro-opts=*) ASTRAL_OPTS="${1#*=}"; shift ;;
+    --opts-list|--alg-opts-list|--stelar-pro-opts-list) STELAR_PRO_OPTS_LIST_RAW="$2"; shift 2 ;;
+    --opts-list=*|--alg-opts-list=*|--stelar-pro-opts-list=*) STELAR_PRO_OPTS_LIST_RAW="${1#*=}"; shift ;;
     --fresh) FRESH=true; shift ;;
     --no-gpu-monitor) GPU_MONITOR=false; shift ;;
     --no-notify|-nn) NO_NOTIFY=true; shift ;;
@@ -154,9 +154,9 @@ done
 
 # Validate method
 case "$METHOD" in
-  stelarx|astral-x|stelar) METHOD="stelarx" ;;
+  stelar-pro|astral-x|stelar) METHOD="stelar-pro" ;;
   *)
-    echo "Error: --method must be stelarx."
+    echo "Error: --method must be stelar-pro."
     exit 1
     ;;
 esac
@@ -177,7 +177,7 @@ if [[ ! "$NUM_REPLICATES" =~ ^[1-9][0-9]*$ ]]; then
   exit 1
 fi
 
-SIMPHY_DATA_DIR="$(stelarx_prepare_simphy_data_dir "$SIMPHY_DATA_DIR")"
+SIMPHY_DATA_DIR="$(stelar_pro_prepare_simphy_data_dir "$SIMPHY_DATA_DIR")"
 
 # -------------------------------
 # execution
@@ -189,7 +189,7 @@ if $BASE_DIR_PROVIDED; then
   BASE_DIR_ARGS=(--project-root "$BASE_DIR")
   echo "Project root: $BASE_DIR"
 else
-  echo "Project root: $STELARX_ROOT"
+  echo "Project root: $STELAR_PRO_ROOT"
 fi
 
 # Build fresh argument if provided
@@ -212,16 +212,16 @@ echo "Method:   $METHOD"
 echo "Replicates: $NUM_REPLICATES"
 echo "SimPhy data: $SIMPHY_DATA_DIR"
 
-STELARX_OPTS_LIST=()
-if [[ -n "$STELARX_OPTS_LIST_RAW" ]]; then
-  IFS=';' read -r -a raw_opts_list <<< "$STELARX_OPTS_LIST_RAW"
+STELAR_PRO_OPTS_LIST=()
+if [[ -n "$STELAR_PRO_OPTS_LIST_RAW" ]]; then
+  IFS=';' read -r -a raw_opts_list <<< "$STELAR_PRO_OPTS_LIST_RAW"
   for opts in "${raw_opts_list[@]}"; do
     opts="$(echo "$opts" | sed 's/^ *//;s/ *$//')"
-    [[ -n "$opts" ]] && STELARX_OPTS_LIST+=("$opts")
+    [[ -n "$opts" ]] && STELAR_PRO_OPTS_LIST+=("$opts")
   done
 fi
-if [[ ${#STELARX_OPTS_LIST[@]} -eq 0 ]]; then
-  STELARX_OPTS_LIST+=("${ASTRAL_OPTS}")
+if [[ ${#STELAR_PRO_OPTS_LIST[@]} -eq 0 ]]; then
+  STELAR_PRO_OPTS_LIST+=("${ASTRAL_OPTS}")
 fi
 
 echo "Starting bulk runs..."
@@ -246,10 +246,10 @@ for t in "${T_LIST[@]}"; do
             fi
             echo "  Running replicate $REPLICATE_NAME with $METHOD"
             
-            for STELARX_OPTS_ITEM in "${STELARX_OPTS_LIST[@]}"; do
-              TEST_CMD=("${STELARX_ROOT}/test-stelarx-simulated.sh" -r "$REPLICATE_NAME" "${BASE_DIR_ARGS[@]}" "${SHARED_TEST_ARGS[@]}" -t "$t" -g "$g" --sb "$sb" --spmin "$spmin" --spmax "$spmax" "${FRESH_ARGS[@]}")
-              if [[ -n "$STELARX_OPTS_ITEM" ]]; then
-                TEST_CMD+=(--opts "$STELARX_OPTS_ITEM")
+            for STELAR_PRO_OPTS_ITEM in "${STELAR_PRO_OPTS_LIST[@]}"; do
+              TEST_CMD=("${STELAR_PRO_ROOT}/test-stelar-pro-simulated.sh" -r "$REPLICATE_NAME" "${BASE_DIR_ARGS[@]}" "${SHARED_TEST_ARGS[@]}" -t "$t" -g "$g" --sb "$sb" --spmin "$spmin" --spmax "$spmax" "${FRESH_ARGS[@]}")
+              if [[ -n "$STELAR_PRO_OPTS_ITEM" ]]; then
+                TEST_CMD+=(--opts "$STELAR_PRO_OPTS_ITEM")
               fi
               "${TEST_CMD[@]}"
             done
@@ -315,10 +315,10 @@ for t in "${T_LIST[@]}"; do
             fi
             echo "  Running replicate $REPLICATE_NAME with $METHOD"
             
-            for STELARX_OPTS_ITEM in "${STELARX_OPTS_LIST[@]}"; do
-              TEST_CMD=("${STELARX_ROOT}/test-stelarx-simulated.sh" -r "$REPLICATE_NAME" "${BASE_DIR_ARGS[@]}" "${SHARED_TEST_ARGS[@]}" -t "$t" -g "$g" --sb "$sb" --spmin "$spmin" --spmax "$spmax" "${FRESH_ARGS[@]}")
-              if [[ -n "$STELARX_OPTS_ITEM" ]]; then
-                TEST_CMD+=(--opts "$STELARX_OPTS_ITEM")
+            for STELAR_PRO_OPTS_ITEM in "${STELAR_PRO_OPTS_LIST[@]}"; do
+              TEST_CMD=("${STELAR_PRO_ROOT}/test-stelar-pro-simulated.sh" -r "$REPLICATE_NAME" "${BASE_DIR_ARGS[@]}" "${SHARED_TEST_ARGS[@]}" -t "$t" -g "$g" --sb "$sb" --spmin "$spmin" --spmax "$spmax" "${FRESH_ARGS[@]}")
+              if [[ -n "$STELAR_PRO_OPTS_ITEM" ]]; then
+                TEST_CMD+=(--opts "$STELAR_PRO_OPTS_ITEM")
               fi
               "${TEST_CMD[@]}"
             done

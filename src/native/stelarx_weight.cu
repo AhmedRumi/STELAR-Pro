@@ -1,5 +1,5 @@
 /**
- * STELAR-X GPU weight calculation kernel (CUDA + JNI).
+ * STELAR-Pro GPU weight calculation kernel (CUDA + JNI).
  *
  * PREFIX-SUM TREE-DP FORMULATION
  * ------------------------------
@@ -743,42 +743,80 @@ __global__ void computeWeightsKernelI128(
 // — no shared/global prefix memory is touched here.
 // ===========================================================================
 
-// Range intersection: count taxa in [loA,hiA) of tree tA that also appear in
-// [loB,hiB) of tree tB.  Iterates the SMALLER range for efficiency.
+// Multicopy index. taxonOffsets has one sorted position-vector row for every
+// (tree,taxon); treeOffsets locates each variable-length postorder array.
+struct SsTaxonIndex {
+    const int* orderings;
+    const int* treeOffsets;
+    const int* taxonOffsets;
+    const int* taxonPositions;
+    int numTaxa;
+};
+
+__device__ inline int ssLowerBound(const int* values, int lo, int hi, int key) {
+    while (lo < hi) {
+        int mid = (lo + hi) >> 1;
+        if (values[mid] < key) lo = mid + 1;
+        else hi = mid;
+    }
+    return lo;
+}
+
+__device__ inline bool ssContainsInRange(
+    const SsTaxonIndex& index, int tree, int taxon, int lo, int hi)
+{
+    size_t row = (size_t)tree * index.numTaxa + taxon;
+    int begin = index.taxonOffsets[row];
+    int end   = index.taxonOffsets[row + 1];
+    int found = ssLowerBound(index.taxonPositions, begin, end, lo);
+    return found < end && index.taxonPositions[found] < hi;
+}
+
+__device__ inline bool ssFirstCopyInRange(
+    const SsTaxonIndex& index, int tree, int taxon, int pos, int lo)
+{
+    size_t row = (size_t)tree * index.numTaxa + taxon;
+    int begin = index.taxonOffsets[row];
+    int end   = index.taxonOffsets[row + 1];
+    int first = ssLowerBound(index.taxonPositions, begin, end, lo);
+    return first < end && index.taxonPositions[first] == pos;
+}
+
+__device__ int ssScanUnique(
+    int sourceTree, int sourceLo, int sourceHi,
+    int targetTree, int targetLo, int targetHi,
+    const SsTaxonIndex& index)
+{
+    int count = 0;
+    int orderBase = index.treeOffsets[sourceTree];
+    for (int pos = sourceLo; pos < sourceHi; pos++) {
+        int taxon = index.orderings[orderBase + pos];
+        if (!ssFirstCopyInRange(index, sourceTree, taxon, pos, sourceLo)) continue;
+        if (ssContainsInRange(index, targetTree, taxon, targetLo, targetHi)) count++;
+    }
+    return count;
+}
+
+// Count distinct taxa shared by two ranges. Iterate the smaller occurrence
+// range, suppress duplicate source copies, and binary-search the target vector.
 __device__ int ssCoreIntersect(
     int tA, int loA, int hiA,
     int tB, int loB, int hiB,
-    const int* __restrict__ orderings,
-    const int* __restrict__ invIndex,
-    int numTaxa)
+    const SsTaxonIndex& index)
 {
     int szA = hiA - loA, szB = hiB - loB;
-    int count = 0;
-    if (szA <= szB) {
-        for (int pos = loA; pos < hiA; pos++) {
-            int taxon = orderings[(size_t)tA * numTaxa + pos];
-            int posB  = invIndex [(size_t)tB * numTaxa + taxon];
-            if (posB >= loB && posB < hiB) count++;
-        }
-    } else {
-        for (int pos = loB; pos < hiB; pos++) {
-            int taxon = orderings[(size_t)tB * numTaxa + pos];
-            int posA  = invIndex [(size_t)tA * numTaxa + taxon];
-            if (posA >= loA && posA < hiA) count++;
-        }
-    }
-    return count;
+    return szA <= szB
+        ? ssScanUnique(tA, loA, hiA, tB, loB, hiB, index)
+        : ssScanUnique(tB, loB, hiB, tA, loA, hiA, index);
 }
 
 // Intersection with optional complement of the cluster side.
 __device__ int ssIntersect(
     int tGT, int loGT, int hiGT,
     int tC,  int loC,  int hiC, int cComp, int szGTRange,
-    const int* __restrict__ orderings,
-    const int* __restrict__ invIndex,
-    int numTaxa)
+    const SsTaxonIndex& index)
 {
-    int raw = ssCoreIntersect(tGT, loGT, hiGT, tC, loC, hiC, orderings, invIndex, numTaxa);
+    int raw = ssCoreIntersect(tGT, loGT, hiGT, tC, loC, hiC, index);
     return cComp ? (szGTRange - raw) : raw;
 }
 
@@ -788,15 +826,25 @@ __device__ int ssIntersectSide(
     int tGT, int loGT, int hiGT,
     int cTree, int cLo, int cHi, int cComp, int szGTRange,
     int rOff, int rCnt, const int* __restrict__ rangeData,
-    const int* __restrict__ orderings, const int* __restrict__ invIndex, int numTaxa)
+    const SsTaxonIndex& index)
 {
     if (rCnt == 0)
-        return ssIntersect(tGT, loGT, hiGT, cTree, cLo, cHi, cComp, szGTRange, orderings, invIndex, numTaxa);
+        return ssIntersect(tGT, loGT, hiGT, cTree, cLo, cHi, cComp, szGTRange, index);
+    // Scan the gene-tree part once so a taxon present in several cluster ranges
+    // still contributes exactly one to the union intersection.
     int core = 0;
-    for (int r = 0; r < rCnt; r++) {
-        int rlo = rangeData[2 * (rOff + r)];
-        int rhi = rangeData[2 * (rOff + r) + 1];
-        core += ssCoreIntersect(tGT, loGT, hiGT, cTree, rlo, rhi, orderings, invIndex, numTaxa);
+    int orderBase = index.treeOffsets[tGT];
+    for (int pos = loGT; pos < hiGT; pos++) {
+        int taxon = index.orderings[orderBase + pos];
+        if (!ssFirstCopyInRange(index, tGT, taxon, pos, loGT)) continue;
+        for (int r = 0; r < rCnt; r++) {
+            int rlo = rangeData[2 * (rOff + r)];
+            int rhi = rangeData[2 * (rOff + r) + 1];
+            if (ssContainsInRange(index, cTree, taxon, rlo, rhi)) {
+                core++;
+                break;
+            }
+        }
     }
     return cComp ? (szGTRange - core) : core;
 }
@@ -805,17 +853,15 @@ __device__ int ssIntersectSide(
 __device__ int ssRowSum(
     int tGT, int L_GT, int cTree, int cLo, int cHi, int cComp,
     int rOff, int rCnt, const int* __restrict__ rangeData,
-    const int* __restrict__ orderings, const int* __restrict__ invIndex, int numTaxa)
+    const SsTaxonIndex& index)
 {
+    int leafCount = index.treeOffsets[tGT + 1] - index.treeOffsets[tGT];
     int core = 0;
     if (rCnt == 0) {
-        core = ssCoreIntersect(tGT, 0, L_GT, cTree, cLo, cHi, orderings, invIndex, numTaxa);
+        core = ssCoreIntersect(tGT, 0, leafCount, cTree, cLo, cHi, index);
     } else {
-        for (int r = 0; r < rCnt; r++) {
-            int rlo = rangeData[2 * (rOff + r)];
-            int rhi = rangeData[2 * (rOff + r) + 1];
-            core += ssCoreIntersect(tGT, 0, L_GT, cTree, rlo, rhi, orderings, invIndex, numTaxa);
-        }
+        core = ssIntersectSide(tGT, 0, leafCount, cTree, cLo, cHi, 0,
+            L_GT, rOff, rCnt, rangeData, index);
     }
     return cComp ? (L_GT - core) : core;
 }
@@ -838,9 +884,8 @@ __device__ ACC ssScorePoly(
     const int* __restrict__ ssPolyMeta,
     const int* __restrict__ ssPolyBoundOffset,
     const int* __restrict__ ssPolyBounds,
-    const int* __restrict__ orderings,
-    const int* __restrict__ invIndex,
-    int numPolyParts, int numTaxa, int totalN)
+    const SsTaxonIndex& index,
+    int numPolyParts, int totalN)
 {
     ACC twoScore = (ACC) 0;
     int cachedTree = -1, cachedLgA = 0, cachedLgB = 0;
@@ -857,14 +902,14 @@ __device__ ACC ssScorePoly(
         if (L_GT == totalN) { lgA = sizeA; lgB = sizeB; }
         else {
             if (CACHE_ROWS && tGT != cachedTree) {
-                cachedLgA = ssRowSum(tGT, L_GT, loTree, loLeft, loRight, loComp, aRngOff, aRngCnt, rangeData, orderings, invIndex, numTaxa);
-                cachedLgB = ssRowSum(tGT, L_GT, hiTree, hiLeft, hiRight, hiComp, bRngOff, bRngCnt, rangeData, orderings, invIndex, numTaxa);
+                cachedLgA = ssRowSum(tGT, L_GT, loTree, loLeft, loRight, loComp, aRngOff, aRngCnt, rangeData, index);
+                cachedLgB = ssRowSum(tGT, L_GT, hiTree, hiLeft, hiRight, hiComp, bRngOff, bRngCnt, rangeData, index);
                 cachedTree = tGT;
             }
             if (CACHE_ROWS) { lgA = cachedLgA; lgB = cachedLgB; }
             else {
-                lgA = ssRowSum(tGT, L_GT, loTree, loLeft, loRight, loComp, aRngOff, aRngCnt, rangeData, orderings, invIndex, numTaxa);
-                lgB = ssRowSum(tGT, L_GT, hiTree, hiLeft, hiRight, hiComp, bRngOff, bRngCnt, rangeData, orderings, invIndex, numTaxa);
+                lgA = ssRowSum(tGT, L_GT, loTree, loLeft, loRight, loComp, aRngOff, aRngCnt, rangeData, index);
+                lgB = ssRowSum(tGT, L_GT, hiTree, hiLeft, hiRight, hiComp, bRngOff, bRngCnt, rangeData, index);
             }
         }
 
@@ -873,8 +918,8 @@ __device__ ACC ssScorePoly(
         int sumA = 0, sumB = 0;
         for (int i = 0; i < d - 1; i++) {
             int lo = ssPolyBounds[base + i], hi = ssPolyBounds[base + i + 1], sz = hi - lo;
-            int ai = ssIntersectSide(tGT, lo, hi, loTree, loLeft, loRight, loComp, sz, aRngOff, aRngCnt, rangeData, orderings, invIndex, numTaxa);
-            int bi = ssIntersectSide(tGT, lo, hi, hiTree, hiLeft, hiRight, hiComp, sz, bRngOff, bRngCnt, rangeData, orderings, invIndex, numTaxa);
+            int ai = ssIntersectSide(tGT, lo, hi, loTree, loLeft, loRight, loComp, sz, aRngOff, aRngCnt, rangeData, index);
+            int bi = ssIntersectSide(tGT, lo, hi, hiTree, hiLeft, hiRight, hiComp, sz, bRngOff, bRngCnt, rangeData, index);
             Sa += ai; Sb += bi;
             sumA += ai; sumB += bi;
         }
@@ -884,8 +929,8 @@ __device__ ACC ssScorePoly(
         ACC twoQI = (ACC) 0;
         for (int i = 0; i < d - 1; i++) {
             int lo = ssPolyBounds[base + i], hi = ssPolyBounds[base + i + 1], sz = hi - lo;
-            ACC A = ssIntersectSide(tGT, lo, hi, loTree, loLeft, loRight, loComp, sz, aRngOff, aRngCnt, rangeData, orderings, invIndex, numTaxa);
-            ACC B = ssIntersectSide(tGT, lo, hi, hiTree, hiLeft, hiRight, hiComp, sz, bRngOff, bRngCnt, rangeData, orderings, invIndex, numTaxa);
+            ACC A = ssIntersectSide(tGT, lo, hi, loTree, loLeft, loRight, loComp, sz, aRngOff, aRngCnt, rangeData, index);
+            ACC B = ssIntersectSide(tGT, lo, hi, hiTree, hiLeft, hiRight, hiComp, sz, bRngOff, bRngCnt, rangeData, index);
             twoQI += A * (A - 1) * (Sb - B);
             twoQI += B * (B - 1) * (Sa - A);
         }
@@ -903,9 +948,8 @@ __device__ I128 ssScorePolyI128(
     const int* __restrict__ ssPolyMeta,
     const int* __restrict__ ssPolyBoundOffset,
     const int* __restrict__ ssPolyBounds,
-    const int* __restrict__ orderings,
-    const int* __restrict__ invIndex,
-    int numPolyParts, int numTaxa, int totalN)
+    const SsTaxonIndex& index,
+    int numPolyParts, int totalN)
 {
     I128 twoScore = i128_zero();
     int cachedTree = -1, cachedLgA = 0, cachedLgB = 0;
@@ -922,14 +966,14 @@ __device__ I128 ssScorePolyI128(
         if (L_GT == totalN) { lgA = sizeA; lgB = sizeB; }
         else {
             if (CACHE_ROWS && tGT != cachedTree) {
-                cachedLgA = ssRowSum(tGT, L_GT, loTree, loLeft, loRight, loComp, aRngOff, aRngCnt, rangeData, orderings, invIndex, numTaxa);
-                cachedLgB = ssRowSum(tGT, L_GT, hiTree, hiLeft, hiRight, hiComp, bRngOff, bRngCnt, rangeData, orderings, invIndex, numTaxa);
+                cachedLgA = ssRowSum(tGT, L_GT, loTree, loLeft, loRight, loComp, aRngOff, aRngCnt, rangeData, index);
+                cachedLgB = ssRowSum(tGT, L_GT, hiTree, hiLeft, hiRight, hiComp, bRngOff, bRngCnt, rangeData, index);
                 cachedTree = tGT;
             }
             if (CACHE_ROWS) { lgA = cachedLgA; lgB = cachedLgB; }
             else {
-                lgA = ssRowSum(tGT, L_GT, loTree, loLeft, loRight, loComp, aRngOff, aRngCnt, rangeData, orderings, invIndex, numTaxa);
-                lgB = ssRowSum(tGT, L_GT, hiTree, hiLeft, hiRight, hiComp, bRngOff, bRngCnt, rangeData, orderings, invIndex, numTaxa);
+                lgA = ssRowSum(tGT, L_GT, loTree, loLeft, loRight, loComp, aRngOff, aRngCnt, rangeData, index);
+                lgB = ssRowSum(tGT, L_GT, hiTree, hiLeft, hiRight, hiComp, bRngOff, bRngCnt, rangeData, index);
             }
         }
 
@@ -937,8 +981,8 @@ __device__ I128 ssScorePolyI128(
         int sumA = 0, sumB = 0;
         for (int i = 0; i < d - 1; i++) {
             int lo = ssPolyBounds[base + i], hi = ssPolyBounds[base + i + 1], sz = hi - lo;
-            int ai = ssIntersectSide(tGT, lo, hi, loTree, loLeft, loRight, loComp, sz, aRngOff, aRngCnt, rangeData, orderings, invIndex, numTaxa);
-            int bi = ssIntersectSide(tGT, lo, hi, hiTree, hiLeft, hiRight, hiComp, sz, bRngOff, bRngCnt, rangeData, orderings, invIndex, numTaxa);
+            int ai = ssIntersectSide(tGT, lo, hi, loTree, loLeft, loRight, loComp, sz, aRngOff, aRngCnt, rangeData, index);
+            int bi = ssIntersectSide(tGT, lo, hi, hiTree, hiLeft, hiRight, hiComp, sz, bRngOff, bRngCnt, rangeData, index);
             Sa += ai; Sb += bi;
             sumA += ai; sumB += bi;
         }
@@ -947,8 +991,8 @@ __device__ I128 ssScorePolyI128(
         I128 twoQI = i128_zero();
         for (int i = 0; i < d - 1; i++) {
             int lo = ssPolyBounds[base + i], hi = ssPolyBounds[base + i + 1], sz = hi - lo;
-            long long ai = ssIntersectSide(tGT, lo, hi, loTree, loLeft, loRight, loComp, sz, aRngOff, aRngCnt, rangeData, orderings, invIndex, numTaxa);
-            long long bi = ssIntersectSide(tGT, lo, hi, hiTree, hiLeft, hiRight, hiComp, sz, bRngOff, bRngCnt, rangeData, orderings, invIndex, numTaxa);
+            long long ai = ssIntersectSide(tGT, lo, hi, loTree, loLeft, loRight, loComp, sz, aRngOff, aRngCnt, rangeData, index);
+            long long bi = ssIntersectSide(tGT, lo, hi, hiTree, hiLeft, hiRight, hiComp, sz, bRngOff, bRngCnt, rangeData, index);
             long long brA = Sb - bi, brB = Sa - ai;
             long long wA = ai * (ai - 1), wB = bi * (bi - 1);
             if (wA > 0 && brA > 0) twoQI = i128_add(twoQI, i128_mul_u64((unsigned long long) wA, (unsigned long long) brA));
@@ -969,8 +1013,10 @@ __global__ void computeWeightsSmallerSideKernel(
     const int* __restrict__ ssPolyMeta,        // numPolyParts * 3 {treeIdx,L_GT,freq}
     const int* __restrict__ ssPolyBoundOffset, // numPolyParts + 1
     const int* __restrict__ ssPolyBounds,      // Σ d boundary positions
-    const int* __restrict__ orderings, // numGpuTrees * numTaxa
-    const int* __restrict__ invIndex,  // numGpuTrees * numTaxa
+    const int* __restrict__ orderings,
+    const int* __restrict__ treeOffsets,
+    const int* __restrict__ taxonOffsets,
+    const int* __restrict__ taxonPositions,
     int curBatch,
     int numParts,
     int numPolyParts,
@@ -982,6 +1028,10 @@ __global__ void computeWeightsSmallerSideKernel(
     int idx = blockIdx.x * blockDim.x + threadIdx.x;
     if (idx >= curBatch) return;
 
+    SsTaxonIndex index = {
+        orderings, treeOffsets, taxonOffsets, taxonPositions, numTaxa
+    };
+
     const int* sp = splits + (size_t)idx * 10;
     int loTree = sp[0], loLeft = sp[1], loRight = sp[2], loComp = sp[3], sizeA = sp[4];
     int hiTree = sp[5], hiLeft = sp[6], hiRight = sp[7], hiComp = sp[8], sizeB = sp[9];
@@ -992,49 +1042,23 @@ __global__ void computeWeightsSmallerSideKernel(
     if (sizeC < 0) { twoScores[idx] = 0LL; return; }   // 0LL == bits of +0.0 in both modes
 
     ACC twoScore = (ACC) 0;
-    int cachedTree = -1, cachedLgA = 0, cachedLgB = 0;
 
     for (int j = 0; j < numParts; j++) {
         const int* pt = parts + (size_t)j * 9;
         int tGT = pt[0];
         int lo1 = pt[1], hi1 = pt[2];
         int lo2 = pt[3], hi2 = pt[4];
-        int sz1 = pt[5], sz2 = pt[6], sz3 = pt[7];
+        int sz1 = pt[5], sz2 = pt[6];
         int freq = pt[8];
 
-        int a0 = ssIntersectSide(tGT, lo1, hi1, loTree, loLeft, loRight, loComp, sz1, aRngOff, aRngCnt, rangeData, orderings, invIndex, numTaxa);
-        int a1 = ssIntersectSide(tGT, lo2, hi2, loTree, loLeft, loRight, loComp, sz2, aRngOff, aRngCnt, rangeData, orderings, invIndex, numTaxa);
-        int b0 = ssIntersectSide(tGT, lo1, hi1, hiTree, hiLeft, hiRight, hiComp, sz1, bRngOff, bRngCnt, rangeData, orderings, invIndex, numTaxa);
-        int b1 = ssIntersectSide(tGT, lo2, hi2, hiTree, hiLeft, hiRight, hiComp, sz2, bRngOff, bRngCnt, rangeData, orderings, invIndex, numTaxa);
+        int a0 = ssIntersectSide(tGT, lo1, hi1, loTree, loLeft, loRight, loComp, sz1, aRngOff, aRngCnt, rangeData, index);
+        int a1 = ssIntersectSide(tGT, lo2, hi2, loTree, loLeft, loRight, loComp, sz2, aRngOff, aRngCnt, rangeData, index);
+        int b0 = ssIntersectSide(tGT, lo1, hi1, hiTree, hiLeft, hiRight, hiComp, sz1, bRngOff, bRngCnt, rangeData, index);
+        int b1 = ssIntersectSide(tGT, lo2, hi2, hiTree, hiLeft, hiRight, hiComp, sz2, bRngOff, bRngCnt, rangeData, index);
 
-        int L_GT = sz1 + sz2 + sz3;
-        int lgA, lgB;
-        if (L_GT == totalN) {
-            lgA = sizeA;
-            lgB = sizeB;
-        } else {
-            if (CACHE_ROWS && tGT != cachedTree) {
-                cachedLgA = ssRowSum(tGT, L_GT, loTree, loLeft, loRight, loComp, aRngOff, aRngCnt, rangeData, orderings, invIndex, numTaxa);
-                cachedLgB = ssRowSum(tGT, L_GT, hiTree, hiLeft, hiRight, hiComp, bRngOff, bRngCnt, rangeData, orderings, invIndex, numTaxa);
-                cachedTree = tGT;
-            }
-            if (CACHE_ROWS) { lgA = cachedLgA; lgB = cachedLgB; }
-            else {
-                lgA = ssRowSum(tGT, L_GT, loTree, loLeft, loRight, loComp, aRngOff, aRngCnt, rangeData, orderings, invIndex, numTaxa);
-                lgB = ssRowSum(tGT, L_GT, hiTree, hiLeft, hiRight, hiComp, bRngOff, bRngCnt, rangeData, orderings, invIndex, numTaxa);
-            }
-        }
-
-        int a2 = lgA - a0 - a1;
-        int b2 = lgB - b0 - b1;
-        int c0 = sz1 - a0 - b0;
-        int c1 = sz2 - a1 - b1;
-        int c2 = sz3 - a2 - b2;
-
-        if (a2 < 0 || b2 < 0 || c0 < 0 || c1 < 0 || c2 < 0) continue;
-
+        // STELAR's rooted-bipartition weight uses only these four intersections.
         ACC twoQI = binaryTwoQI<ACC, false>(
-            a0, a1, a2, b0, b1, b2, c0, c1, c2);
+            a0, a1, 0, b0, b1, 0, 0, 0, 0);
         twoScore += (ACC) freq * twoQI;
     }
 
@@ -1044,7 +1068,7 @@ __global__ void computeWeightsSmallerSideKernel(
             loTree, loLeft, loRight, loComp, sizeA, aRngOff, aRngCnt,
             hiTree, hiLeft, hiRight, hiComp, sizeB, bRngOff, bRngCnt,
             rangeData, ssPolyMeta, ssPolyBoundOffset, ssPolyBounds,
-            orderings, invIndex, numPolyParts, numTaxa, totalN);
+            index, numPolyParts, totalN);
 
     storeTwoScore(twoScores, idx, twoScore);
 
@@ -1066,7 +1090,9 @@ __global__ void computeWeightsSmallerSideKernelI128(
     const int* __restrict__ ssPolyBoundOffset,
     const int* __restrict__ ssPolyBounds,
     const int* __restrict__ orderings,
-    const int* __restrict__ invIndex,
+    const int* __restrict__ treeOffsets,
+    const int* __restrict__ taxonOffsets,
+    const int* __restrict__ taxonPositions,
     int curBatch,
     int numParts,
     int numPolyParts,
@@ -1078,6 +1104,10 @@ __global__ void computeWeightsSmallerSideKernelI128(
     int idx = blockIdx.x * blockDim.x + threadIdx.x;
     if (idx >= curBatch) return;
 
+    SsTaxonIndex index = {
+        orderings, treeOffsets, taxonOffsets, taxonPositions, numTaxa
+    };
+
     const int* sp = splits + (size_t)idx * 10;
     int loTree = sp[0], loLeft = sp[1], loRight = sp[2], loComp = sp[3], sizeA = sp[4];
     int hiTree = sp[5], hiLeft = sp[6], hiRight = sp[7], hiComp = sp[8], sizeB = sp[9];
@@ -1088,46 +1118,19 @@ __global__ void computeWeightsSmallerSideKernelI128(
     if (sizeC < 0) { storeTwoScoreI128(twoScores, idx, i128_zero()); return; }
 
     I128 twoScore = i128_zero();
-    int cachedTree = -1, cachedLgA = 0, cachedLgB = 0;
 
     for (int j = 0; j < numParts; j++) {
         const int* pt = parts + (size_t)j * 9;
         int tGT = pt[0];
         int lo1 = pt[1], hi1 = pt[2];
         int lo2 = pt[3], hi2 = pt[4];
-        int sz1 = pt[5], sz2 = pt[6], sz3 = pt[7];
+        int sz1 = pt[5], sz2 = pt[6];
         int freq = pt[8];
 
-        int a0 = ssIntersectSide(tGT, lo1, hi1, loTree, loLeft, loRight, loComp, sz1, aRngOff, aRngCnt, rangeData, orderings, invIndex, numTaxa);
-        int a1 = ssIntersectSide(tGT, lo2, hi2, loTree, loLeft, loRight, loComp, sz2, aRngOff, aRngCnt, rangeData, orderings, invIndex, numTaxa);
-        int b0 = ssIntersectSide(tGT, lo1, hi1, hiTree, hiLeft, hiRight, hiComp, sz1, bRngOff, bRngCnt, rangeData, orderings, invIndex, numTaxa);
-        int b1 = ssIntersectSide(tGT, lo2, hi2, hiTree, hiLeft, hiRight, hiComp, sz2, bRngOff, bRngCnt, rangeData, orderings, invIndex, numTaxa);
-
-        int L_GT = sz1 + sz2 + sz3;
-        int lgA, lgB;
-        if (L_GT == totalN) {
-            lgA = sizeA;
-            lgB = sizeB;
-        } else {
-            if (CACHE_ROWS && tGT != cachedTree) {
-                cachedLgA = ssRowSum(tGT, L_GT, loTree, loLeft, loRight, loComp, aRngOff, aRngCnt, rangeData, orderings, invIndex, numTaxa);
-                cachedLgB = ssRowSum(tGT, L_GT, hiTree, hiLeft, hiRight, hiComp, bRngOff, bRngCnt, rangeData, orderings, invIndex, numTaxa);
-                cachedTree = tGT;
-            }
-            if (CACHE_ROWS) { lgA = cachedLgA; lgB = cachedLgB; }
-            else {
-                lgA = ssRowSum(tGT, L_GT, loTree, loLeft, loRight, loComp, aRngOff, aRngCnt, rangeData, orderings, invIndex, numTaxa);
-                lgB = ssRowSum(tGT, L_GT, hiTree, hiLeft, hiRight, hiComp, bRngOff, bRngCnt, rangeData, orderings, invIndex, numTaxa);
-            }
-        }
-
-        int a2 = lgA - a0 - a1;
-        int b2 = lgB - b0 - b1;
-        int c0 = sz1 - a0 - b0;
-        int c1 = sz2 - a1 - b1;
-        int c2 = sz3 - a2 - b2;
-
-        if (a2 < 0 || b2 < 0 || c0 < 0 || c1 < 0 || c2 < 0) continue;
+        int a0 = ssIntersectSide(tGT, lo1, hi1, loTree, loLeft, loRight, loComp, sz1, aRngOff, aRngCnt, rangeData, index);
+        int a1 = ssIntersectSide(tGT, lo2, hi2, loTree, loLeft, loRight, loComp, sz2, aRngOff, aRngCnt, rangeData, index);
+        int b0 = ssIntersectSide(tGT, lo1, hi1, hiTree, hiLeft, hiRight, hiComp, sz1, bRngOff, bRngCnt, rangeData, index);
+        int b1 = ssIntersectSide(tGT, lo2, hi2, hiTree, hiLeft, hiRight, hiComp, sz2, bRngOff, bRngCnt, rangeData, index);
 
         I128 twoQI = i128_zero();
         long long x = (long long)a0 * b1, sx = a0 + b1 - 2;
@@ -1143,7 +1146,7 @@ __global__ void computeWeightsSmallerSideKernelI128(
             loTree, loLeft, loRight, loComp, sizeA, aRngOff, aRngCnt,
             hiTree, hiLeft, hiRight, hiComp, sizeB, bRngOff, bRngCnt,
             rangeData, ssPolyMeta, ssPolyBoundOffset, ssPolyBounds,
-            orderings, invIndex, numPolyParts, numTaxa, totalN));
+            index, numPolyParts, totalN));
 
     storeTwoScoreI128(twoScores, idx, twoScore);
 
@@ -1655,14 +1658,14 @@ static void wb_build_bar(char* buf, int done, int total) {
 // update stays on screen; collapses on a terminal even through `tee`).  Coloured by
 // default ([GPU] green, count cyan, percent yellow); set NO_COLOR to disable.
 // Cadence default: 1 s; override precedence is
-// --gpu-progress-interval > STELARX_GPU_PROGRESS_SEC > default.  Returns the kernel's
+// --gpu-progress-interval > STELAR_PRO_GPU_PROGRESS_SEC > default.  Returns the kernel's
 // terminal cudaStreamQuery status (cudaSuccess once finished).
 // ---------------------------------------------------------------------------
 static cudaError_t wb_poll_progress(cudaStream_t kStream, cudaStream_t pollStream,
                                     const int* dProgress, int* hPinned, int total,
                                     const char* label, double flagSec) {
     double interval = 1.0;                                     // default report cadence (s)
-    const char* ev = getenv("STELARX_GPU_PROGRESS_SEC");       // env override
+    const char* ev = getenv("STELAR_PRO_GPU_PROGRESS_SEC");       // env override
     if (ev) { double v = atof(ev); if (v > 0.0) interval = v; }
     if (flagSec > 0.0) interval = flagSec;                     // --gpu-progress-interval wins
 
@@ -1718,13 +1721,19 @@ static cudaError_t wb_poll_progress(cudaStream_t kStream, cudaStream_t pollStrea
 
 extern "C" {
 
-#ifndef STELARX_MIN_CUDA_CC
-#define STELARX_MIN_CUDA_CC 0
+#ifndef STELAR_PRO_MIN_CUDA_CC
+#define STELAR_PRO_MIN_CUDA_CC 0
 #endif
 
 // ---------------------------------------------------------------------------
 // queryVRAMMiB: lightweight VRAM probe for Java-side phase logging
 // ---------------------------------------------------------------------------
+JNIEXPORT jint JNICALL
+Java_stelarx_gpu_GPUWeightCalculator_queryWeightApiVersion(JNIEnv* env, jclass cls)
+{
+    return 2;
+}
+
 JNIEXPORT jstring JNICALL
 Java_stelarx_gpu_GPUWeightCalculator_queryGPUStatus(JNIEnv* env, jclass cls)
 {
@@ -1765,12 +1774,12 @@ Java_stelarx_gpu_GPUWeightCalculator_queryGPUStatus(JNIEnv* env, jclass cls)
     }
 
     const int deviceCc = prop.major * 10 + prop.minor;
-    if (STELARX_MIN_CUDA_CC > 0 && deviceCc < STELARX_MIN_CUDA_CC) {
+    if (STELAR_PRO_MIN_CUDA_CC > 0 && deviceCc < STELAR_PRO_MIN_CUDA_CC) {
         snprintf(buf, sizeof(buf),
             "ERROR;devices=%d;name=%s;ccMajor=%d;ccMinor=%d;driver=%d;runtime=%d;"
             "detail=GPU compute capability %d.%d is older than this artifact's minimum %d.%d; use CPU fallback",
             deviceCount, prop.name, prop.major, prop.minor, driverVersion, runtimeVersion,
-            prop.major, prop.minor, STELARX_MIN_CUDA_CC / 10, STELARX_MIN_CUDA_CC % 10);
+            prop.major, prop.minor, STELAR_PRO_MIN_CUDA_CC / 10, STELAR_PRO_MIN_CUDA_CC % 10);
         return env->NewStringUTF(buf);
     }
 
@@ -1785,7 +1794,7 @@ Java_stelarx_gpu_GPUWeightCalculator_queryGPUStatus(JNIEnv* env, jclass cls)
         deviceCount, name, prop.major, prop.minor, driverVersion, runtimeVersion,
         (unsigned long long)(freeBytes / (1024ULL * 1024ULL)),
         (unsigned long long)(totalBytes / (1024ULL * 1024ULL)),
-        STELARX_MIN_CUDA_CC / 10, STELARX_MIN_CUDA_CC % 10);
+        STELAR_PRO_MIN_CUDA_CC / 10, STELAR_PRO_MIN_CUDA_CC % 10);
     return env->NewStringUTF(buf);
 }
 
@@ -1821,7 +1830,7 @@ Java_stelarx_gpu_GPUWeightCalculator_computeWeightsGPU(
     bool useDouble = (scoreMode == 1);
     bool useI128   = (scoreMode == 2);
     int  scoresPerSplit = useI128 ? 2 : 1;   // INT128 transports two longs per split
-    fprintf(stderr, "[STELAR-X GPU] weight accumulator: %s\n",
+    fprintf(stderr, "[STELAR-Pro GPU] weight accumulator: %s\n",
             useI128   ? "INT128 (exact 128-bit integer)"
           : useDouble ? "DOUBLE (64-bit float, overflow-safe)"
                       : "LONG (exact 64-bit integer)");
@@ -1864,7 +1873,7 @@ Java_stelarx_gpu_GPUWeightCalculator_computeWeightsGPU(
     bool useShared = (sharedBytesShared + redBytes) <= (size_t)maxOptin;
     // Debug override: force the large-L global path even when shared would fit,
     // so the global path can be validated on small inputs.
-    if (getenv("STELARX_WEIGHT_FORCE_GLOBAL")) useShared = false;
+    if (getenv("STELAR_PRO_WEIGHT_FORCE_GLOBAL")) useShared = false;
     size_t sharedBytes = useShared ? sharedBytesShared : sharedBytesGlobal;
 
     if (useShared && sharedBytesShared > 49152) {
@@ -1941,7 +1950,7 @@ Java_stelarx_gpu_GPUWeightCalculator_computeWeightsGPU(
         size_t freeAfterStatic = 0, totalVRAM = 0;
         cudaMemGetInfo(&freeAfterStatic, &totalVRAM);
         fprintf(stderr,
-            "[STELAR-X GPU] weight static data uploaded (prefix-sum tree-DP):\n"
+            "[STELAR-Pro GPU] weight static data uploaded (prefix-sum tree-DP):\n"
             "  orderings   : %6.1f MB\n"
             "  invIndex    : %6.1f MB\n"
             "  nodeData    : %6.1f MB  (%d unique tripartitions × 3 ints + freq)\n"
@@ -1993,7 +2002,7 @@ Java_stelarx_gpu_GPUWeightCalculator_computeWeightsGPU(
             maxResident /= 2;
         }
         if (dPrefix == NULL) {
-            fprintf(stderr, "[STELAR-X GPU] weight: FATAL — cannot allocate global prefix pool\n");
+            fprintf(stderr, "[STELAR-Pro GPU] weight: FATAL — cannot allocate global prefix pool\n");
             cudaFree(dNodeData); cudaFree(dNodeFreq); cudaFree(dNodeOffset);
             cudaFree(dPartLeafCount); cudaFree(dOrderings); cudaFree(dInvIndex);
             cudaFree(dRangeData);
@@ -2014,7 +2023,7 @@ Java_stelarx_gpu_GPUWeightCalculator_computeWeightsGPU(
             return NULL;   // truly infeasible → Java CPU fallback
         }
         fprintf(stderr,
-            "[STELAR-X GPU] weight: GLOBAL prefix path — shared needed %.1f KB > %.1f KB cap; "
+            "[STELAR-Pro GPU] weight: GLOBAL prefix path — shared needed %.1f KB > %.1f KB cap; "
             "resident blocks=%d, global pool=%.1f MB\n",
             sharedBytesShared / 1024.0, maxOptin / 1024.0, maxResident,
             (double)maxResident * slotInts * sizeof(int) / 1e6);
@@ -2028,11 +2037,11 @@ Java_stelarx_gpu_GPUWeightCalculator_computeWeightsGPU(
 
     if (batchSizeHint == -1) {
         batchSize = numSplits;
-        fprintf(stderr, "[STELAR-X GPU] batching disabled — single launch, %d splits\n",
+        fprintf(stderr, "[STELAR-Pro GPU] batching disabled — single launch, %d splits\n",
                 numSplits);
     } else if (batchSizeHint > 0) {
         batchSize = (batchSizeHint < numSplits) ? batchSizeHint : numSplits;
-        fprintf(stderr, "[STELAR-X GPU] manual batch size: %d  (numSplits=%d)\n",
+        fprintf(stderr, "[STELAR-Pro GPU] manual batch size: %d  (numSplits=%d)\n",
                 batchSize, numSplits);
     } else {
         size_t freeVRAM = 0, totalVRAM = 0;
@@ -2044,7 +2053,7 @@ Java_stelarx_gpu_GPUWeightCalculator_computeWeightsGPU(
         if (autoSize > (long long)numSplits) autoSize = (long long)numSplits;
         batchSize = (int)autoSize;
         fprintf(stderr,
-            "[STELAR-X GPU] adaptive batch: freeVRAM=%.2f GB, occupancy=%.0f%%, "
+            "[STELAR-Pro GPU] adaptive batch: freeVRAM=%.2f GB, occupancy=%.0f%%, "
             "usable=%.2f GB, perSplit=%zu B → batchSize=%d  (numSplits=%d, numBatches=%d)\n",
             freeVRAM / 1e9, (double)vramFraction * 100.0, usable / 1e9,
             perSplitBytes, batchSize, numSplits,
@@ -2070,11 +2079,11 @@ Java_stelarx_gpu_GPUWeightCalculator_computeWeightsGPU(
         if (dTwoScores)      { cudaFree(dTwoScores);      dTwoScores      = NULL; }
         if (dSplitRangeMeta) { cudaFree(dSplitRangeMeta); dSplitRangeMeta = NULL; }
         batchSize /= 2;
-        fprintf(stderr, "[STELAR-X GPU] cudaMalloc failed, retrying with batchSize=%d\n",
+        fprintf(stderr, "[STELAR-Pro GPU] cudaMalloc failed, retrying with batchSize=%d\n",
                 batchSize);
     }
     if (batchSize <= 0 || dSplits == NULL || dTwoScores == NULL) {
-        fprintf(stderr, "[STELAR-X GPU] FATAL: cannot allocate GPU batch buffers\n");
+        fprintf(stderr, "[STELAR-Pro GPU] FATAL: cannot allocate GPU batch buffers\n");
         cudaFree(dNodeData); cudaFree(dNodeFreq); cudaFree(dNodeOffset);
         cudaFree(dPartLeafCount); cudaFree(dOrderings); cudaFree(dInvIndex);
         cudaFree(dRangeData); if (dSplitRangeMeta) cudaFree(dSplitRangeMeta);
@@ -2101,7 +2110,7 @@ Java_stelarx_gpu_GPUWeightCalculator_computeWeightsGPU(
         size_t splitBufMB = (size_t)batchSize * 10 * sizeof(int);
         size_t scoreBufMB = (size_t)batchSize * sizeof(long long);
         fprintf(stderr,
-            "[STELAR-X GPU] weight batch buffers:\n"
+            "[STELAR-Pro GPU] weight batch buffers:\n"
             "  splits buf  : %6.1f MB  (%d splits × 40 B)\n"
             "  scores buf  : %6.1f MB  (%d splits × 8 B)\n"
             "  batches     : %d  (batchSize=%d, numSplits=%d)\n",
@@ -2216,7 +2225,7 @@ Java_stelarx_gpu_GPUWeightCalculator_computeWeightsGPU(
         cudaError_t serr = cudaStreamSynchronize(wbStream);
         if (err == cudaErrorNotReady || err == cudaSuccess) err = serr;
         if (err != cudaSuccess) {
-            fprintf(stderr, "[STELAR-X GPU] kernel error (batch %d/%d): %s\n",
+            fprintf(stderr, "[STELAR-Pro GPU] kernel error (batch %d/%d): %s\n",
                     b + 1, numBatches, cudaGetErrorString(err));
         }
 
@@ -2309,14 +2318,15 @@ Java_stelarx_gpu_GPUWeightCalculator_computeWeightsSmallerSideGPU(
     jintArray jSplits, jintArray jSplitRangeMeta, jintArray jRangeData,
     jintArray jParts,
     jintArray jSsPolyMeta, jintArray jSsPolyBoundOffset, jintArray jSsPolyBounds,
-    jintArray jOrderings, jintArray jInvIndex,
+    jintArray jOrderings, jintArray jTreeOffsets,
+    jintArray jTaxonOffsets, jintArray jTaxonPositions,
     jint numSplits, jint numParts, jint numPolyParts, jint numGpuTrees, jint numTaxa, jint totalN,
     jint batchSizeHint, jdouble vramFraction, jint scoreMode, jdouble progressIntervalSec)
 {
     bool useDouble = (scoreMode == 1);
     bool useI128   = (scoreMode == 2);
     int  scoresPerSplit = useI128 ? 2 : 1;
-    fprintf(stderr, "[STELAR-X GPU] weight accumulator: %s\n",
+    fprintf(stderr, "[STELAR-Pro GPU] weight accumulator: %s\n",
             useI128   ? "INT128 (exact 128-bit integer)"
           : useDouble ? "DOUBLE (64-bit float, overflow-safe)"
                       : "LONG (exact 64-bit integer)");
@@ -2327,10 +2337,16 @@ Java_stelarx_gpu_GPUWeightCalculator_computeWeightsSmallerSideGPU(
     jint* hSsPolyMeta       = env->GetIntArrayElements(jSsPolyMeta,       NULL);
     jint* hSsPolyBoundOffset= env->GetIntArrayElements(jSsPolyBoundOffset,NULL);
     jint* hSsPolyBounds     = env->GetIntArrayElements(jSsPolyBounds,     NULL);
-    jint* hOrderings = env->GetIntArrayElements(jOrderings, NULL);
-    jint* hInvIndex  = env->GetIntArrayElements(jInvIndex,  NULL);
+    jint* hOrderings     = env->GetIntArrayElements(jOrderings,     NULL);
+    jint* hTreeOffsets   = env->GetIntArrayElements(jTreeOffsets,   NULL);
+    jint* hTaxonOffsets  = env->GetIntArrayElements(jTaxonOffsets,  NULL);
+    jint* hTaxonPositions= env->GetIntArrayElements(jTaxonPositions,NULL);
     jsize rangeDataLen   = env->GetArrayLength(jRangeData);
     jsize ssPolyBoundsLen= env->GetArrayLength(jSsPolyBounds);
+    jsize orderingsLen   = env->GetArrayLength(jOrderings);
+    jsize treeOffsetsLen = env->GetArrayLength(jTreeOffsets);
+    jsize taxonOffsetsLen= env->GetArrayLength(jTaxonOffsets);
+    jsize taxonPositionsLen = env->GetArrayLength(jTaxonPositions);
 
     bool cacheRows = false;
     for (int j = 0; j < numParts && !cacheRows; j++) {
@@ -2339,13 +2355,16 @@ Java_stelarx_gpu_GPUWeightCalculator_computeWeightsSmallerSideGPU(
     }
     for (int p = 0; p < numPolyParts && !cacheRows; p++)
         cacheRows = (hSsPolyMeta[(size_t)p * 3 + 1] != totalN);
-    if (getenv("STELARX_WEIGHT_DISABLE_ROW_CACHE")) cacheRows = false;
+    if (getenv("STELAR_PRO_WEIGHT_DISABLE_ROW_CACHE")) cacheRows = false;
 
-    // --- Upload static data once (parts, poly CSR, orderings, invIndex, rangeData) ---
-    int *dParts, *dOrderings, *dInvIndex, *dRangeData;
+    // --- Upload static data once (parts, poly CSR, multicopy index, rangeData) ---
+    int *dParts, *dOrderings, *dTreeOffsets, *dTaxonOffsets, *dTaxonPositions, *dRangeData;
     int *dSsPolyMeta, *dSsPolyBoundOffset, *dSsPolyBounds;
     size_t partsSz    = (size_t)numParts  * 9 * sizeof(int);
-    size_t orderingSz = (size_t)numGpuTrees * numTaxa * sizeof(int);
+    size_t orderingSz = (size_t)orderingsLen * sizeof(int);
+    size_t treeOffsetSz = (size_t)treeOffsetsLen * sizeof(int);
+    size_t taxonOffsetSz = (size_t)taxonOffsetsLen * sizeof(int);
+    size_t taxonPositionSz = (size_t)taxonPositionsLen * sizeof(int);
     size_t rangeDataSz = (size_t)(rangeDataLen > 0 ? rangeDataLen : 1) * sizeof(int);
     size_t ssPolyMetaSz   = (size_t)(numPolyParts > 0 ? numPolyParts * 3 : 1) * sizeof(int);
     size_t ssPolyBoundOffSz = (size_t)(numPolyParts + 1) * sizeof(int);
@@ -2353,14 +2372,18 @@ Java_stelarx_gpu_GPUWeightCalculator_computeWeightsSmallerSideGPU(
 
     cudaMalloc(&dParts,     partsSz);
     cudaMalloc(&dOrderings, orderingSz);
-    cudaMalloc(&dInvIndex,  orderingSz);
+    cudaMalloc(&dTreeOffsets, treeOffsetSz);
+    cudaMalloc(&dTaxonOffsets, taxonOffsetSz);
+    cudaMalloc(&dTaxonPositions, taxonPositionSz);
     cudaMalloc(&dRangeData, rangeDataSz);
     cudaMalloc(&dSsPolyMeta,       ssPolyMetaSz);
     cudaMalloc(&dSsPolyBoundOffset,ssPolyBoundOffSz);
     cudaMalloc(&dSsPolyBounds,     ssPolyBoundsSz);
     cudaMemcpy(dParts,     hParts,     partsSz,    cudaMemcpyHostToDevice);
     cudaMemcpy(dOrderings, hOrderings, orderingSz, cudaMemcpyHostToDevice);
-    cudaMemcpy(dInvIndex,  hInvIndex,  orderingSz, cudaMemcpyHostToDevice);
+    cudaMemcpy(dTreeOffsets, hTreeOffsets, treeOffsetSz, cudaMemcpyHostToDevice);
+    cudaMemcpy(dTaxonOffsets, hTaxonOffsets, taxonOffsetSz, cudaMemcpyHostToDevice);
+    cudaMemcpy(dTaxonPositions, hTaxonPositions, taxonPositionSz, cudaMemcpyHostToDevice);
     if (rangeDataLen > 0)
         cudaMemcpy(dRangeData, hRangeData, (size_t)rangeDataLen * sizeof(int), cudaMemcpyHostToDevice);
     if (numPolyParts > 0) {
@@ -2370,17 +2393,20 @@ Java_stelarx_gpu_GPUWeightCalculator_computeWeightsSmallerSideGPU(
     cudaMemcpy(dSsPolyBoundOffset, hSsPolyBoundOffset, ssPolyBoundOffSz, cudaMemcpyHostToDevice);
 
     {
-        size_t staticTotal = partsSz + 2 * orderingSz;
+        size_t indexSz = orderingSz + treeOffsetSz + taxonOffsetSz + taxonPositionSz;
+        size_t staticTotal = partsSz + indexSz;
         size_t freeAfterStatic = 0, totalVRAM = 0;
         cudaMemGetInfo(&freeAfterStatic, &totalVRAM);
         fprintf(stderr,
-            "[STELAR-X GPU] weight static data uploaded (smaller-side traversal, no prefix sums):\n"
-            "  orderings : %6.1f MB\n"
-            "  invIndex  : %6.1f MB\n"
+            "[STELAR-Pro GPU] weight static data uploaded (smaller-side traversal, no prefix sums):\n"
+            "  orderings       : %6.1f MB\n"
+            "  position vectors: %6.1f MB\n"
+            "  CSR offsets     : %6.1f MB\n"
             "  parts     : %6.1f MB  (%d unique tripartitions × 9 ints)\n"
             "  ─────────────────────\n"
             "  static total : %6.1f MB   (VRAM free after: %.1f MB / %.1f MB)\n",
-            orderingSz / 1e6, orderingSz / 1e6, partsSz / 1e6, numParts,
+            orderingSz / 1e6, taxonPositionSz / 1e6,
+            (treeOffsetSz + taxonOffsetSz) / 1e6, partsSz / 1e6, numParts,
             staticTotal / 1e6, freeAfterStatic / 1e6, totalVRAM / 1e6);
         fflush(stderr);
     }
@@ -2389,10 +2415,10 @@ Java_stelarx_gpu_GPUWeightCalculator_computeWeightsSmallerSideGPU(
     int batchSize;
     if (batchSizeHint == -1) {
         batchSize = numSplits;
-        fprintf(stderr, "[STELAR-X GPU] batching disabled — single launch, %d splits\n", numSplits);
+        fprintf(stderr, "[STELAR-Pro GPU] batching disabled — single launch, %d splits\n", numSplits);
     } else if (batchSizeHint > 0) {
         batchSize = (batchSizeHint < numSplits) ? batchSizeHint : numSplits;
-        fprintf(stderr, "[STELAR-X GPU] manual batch size: %d  (numSplits=%d)\n", batchSize, numSplits);
+        fprintf(stderr, "[STELAR-Pro GPU] manual batch size: %d  (numSplits=%d)\n", batchSize, numSplits);
     } else {
         size_t freeVRAM = 0, totalVRAM = 0;
         cudaMemGetInfo(&freeVRAM, &totalVRAM);
@@ -2403,7 +2429,7 @@ Java_stelarx_gpu_GPUWeightCalculator_computeWeightsSmallerSideGPU(
         if (autoSize > (long long)numSplits) autoSize = (long long)numSplits;
         batchSize = (int)autoSize;
         fprintf(stderr,
-            "[STELAR-X GPU] adaptive batch: freeVRAM=%.2f GB, occupancy=%.0f%%, usable=%.2f GB, "
+            "[STELAR-Pro GPU] adaptive batch: freeVRAM=%.2f GB, occupancy=%.0f%%, usable=%.2f GB, "
             "perSplit=%zu B → batchSize=%d  (numSplits=%d, numBatches=%d)\n",
             freeVRAM / 1e9, (double)vramFraction * 100.0, usable / 1e9,
             perSplitBytes, batchSize, numSplits, (numSplits + batchSize - 1) / batchSize);
@@ -2424,11 +2450,12 @@ Java_stelarx_gpu_GPUWeightCalculator_computeWeightsSmallerSideGPU(
         if (dTwoScores)      { cudaFree(dTwoScores);      dTwoScores      = NULL; }
         if (dSplitRangeMeta) { cudaFree(dSplitRangeMeta); dSplitRangeMeta = NULL; }
         batchSize /= 2;
-        fprintf(stderr, "[STELAR-X GPU] cudaMalloc failed, retrying with batchSize=%d\n", batchSize);
+        fprintf(stderr, "[STELAR-Pro GPU] cudaMalloc failed, retrying with batchSize=%d\n", batchSize);
     }
     if (batchSize <= 0 || dSplits == NULL || dTwoScores == NULL) {
-        fprintf(stderr, "[STELAR-X GPU] FATAL: cannot allocate GPU batch buffers\n");
-        cudaFree(dParts); cudaFree(dOrderings); cudaFree(dInvIndex); cudaFree(dRangeData);
+        fprintf(stderr, "[STELAR-Pro GPU] FATAL: cannot allocate GPU batch buffers\n");
+        cudaFree(dParts); cudaFree(dOrderings); cudaFree(dTreeOffsets);
+        cudaFree(dTaxonOffsets); cudaFree(dTaxonPositions); cudaFree(dRangeData);
         cudaFree(dSsPolyMeta); cudaFree(dSsPolyBoundOffset); cudaFree(dSsPolyBounds);
         if (dSplitRangeMeta) cudaFree(dSplitRangeMeta);
         env->ReleaseIntArrayElements(jSplits,    hSplits,    JNI_ABORT);
@@ -2438,8 +2465,10 @@ Java_stelarx_gpu_GPUWeightCalculator_computeWeightsSmallerSideGPU(
         env->ReleaseIntArrayElements(jSsPolyMeta,       hSsPolyMeta,       JNI_ABORT);
         env->ReleaseIntArrayElements(jSsPolyBoundOffset,hSsPolyBoundOffset,JNI_ABORT);
         env->ReleaseIntArrayElements(jSsPolyBounds,     hSsPolyBounds,     JNI_ABORT);
-        env->ReleaseIntArrayElements(jOrderings, hOrderings, JNI_ABORT);
-        env->ReleaseIntArrayElements(jInvIndex,  hInvIndex,  JNI_ABORT);
+        env->ReleaseIntArrayElements(jOrderings,      hOrderings,      JNI_ABORT);
+        env->ReleaseIntArrayElements(jTreeOffsets,    hTreeOffsets,    JNI_ABORT);
+        env->ReleaseIntArrayElements(jTaxonOffsets,   hTaxonOffsets,   JNI_ABORT);
+        env->ReleaseIntArrayElements(jTaxonPositions, hTaxonPositions, JNI_ABORT);
         return NULL;
     }
 
@@ -2475,32 +2504,38 @@ Java_stelarx_gpu_GPUWeightCalculator_computeWeightsSmallerSideGPU(
         if (useI128 && cacheRows)
             computeWeightsSmallerSideKernelI128<true><<<gridSize, blockSize, 0, wbStream>>>(
                 dSplits, dSplitRangeMeta, dRangeData, dParts,
-                dSsPolyMeta, dSsPolyBoundOffset, dSsPolyBounds, dOrderings, dInvIndex,
+                dSsPolyMeta, dSsPolyBoundOffset, dSsPolyBounds,
+                dOrderings, dTreeOffsets, dTaxonOffsets, dTaxonPositions,
                 curBatch, numParts, numPolyParts, numTaxa, totalN, dTwoScores, dProgress);
         else if (useI128)
             computeWeightsSmallerSideKernelI128<false><<<gridSize, blockSize, 0, wbStream>>>(
                 dSplits, dSplitRangeMeta, dRangeData, dParts,
-                dSsPolyMeta, dSsPolyBoundOffset, dSsPolyBounds, dOrderings, dInvIndex,
+                dSsPolyMeta, dSsPolyBoundOffset, dSsPolyBounds,
+                dOrderings, dTreeOffsets, dTaxonOffsets, dTaxonPositions,
                 curBatch, numParts, numPolyParts, numTaxa, totalN, dTwoScores, dProgress);
         else if (useDouble && cacheRows)
             computeWeightsSmallerSideKernel<double, true><<<gridSize, blockSize, 0, wbStream>>>(
                 dSplits, dSplitRangeMeta, dRangeData, dParts,
-                dSsPolyMeta, dSsPolyBoundOffset, dSsPolyBounds, dOrderings, dInvIndex,
+                dSsPolyMeta, dSsPolyBoundOffset, dSsPolyBounds,
+                dOrderings, dTreeOffsets, dTaxonOffsets, dTaxonPositions,
                 curBatch, numParts, numPolyParts, numTaxa, totalN, dTwoScores, dProgress);
         else if (useDouble)
             computeWeightsSmallerSideKernel<double, false><<<gridSize, blockSize, 0, wbStream>>>(
                 dSplits, dSplitRangeMeta, dRangeData, dParts,
-                dSsPolyMeta, dSsPolyBoundOffset, dSsPolyBounds, dOrderings, dInvIndex,
+                dSsPolyMeta, dSsPolyBoundOffset, dSsPolyBounds,
+                dOrderings, dTreeOffsets, dTaxonOffsets, dTaxonPositions,
                 curBatch, numParts, numPolyParts, numTaxa, totalN, dTwoScores, dProgress);
         else if (cacheRows)
             computeWeightsSmallerSideKernel<long long, true><<<gridSize, blockSize, 0, wbStream>>>(
                 dSplits, dSplitRangeMeta, dRangeData, dParts,
-                dSsPolyMeta, dSsPolyBoundOffset, dSsPolyBounds, dOrderings, dInvIndex,
+                dSsPolyMeta, dSsPolyBoundOffset, dSsPolyBounds,
+                dOrderings, dTreeOffsets, dTaxonOffsets, dTaxonPositions,
                 curBatch, numParts, numPolyParts, numTaxa, totalN, dTwoScores, dProgress);
         else
             computeWeightsSmallerSideKernel<long long, false><<<gridSize, blockSize, 0, wbStream>>>(
                 dSplits, dSplitRangeMeta, dRangeData, dParts,
-                dSsPolyMeta, dSsPolyBoundOffset, dSsPolyBounds, dOrderings, dInvIndex,
+                dSsPolyMeta, dSsPolyBoundOffset, dSsPolyBounds,
+                dOrderings, dTreeOffsets, dTaxonOffsets, dTaxonPositions,
                 curBatch, numParts, numPolyParts, numTaxa, totalN, dTwoScores, dProgress);
 
         char wbLabel[64];
@@ -2510,7 +2545,7 @@ Java_stelarx_gpu_GPUWeightCalculator_computeWeightsSmallerSideGPU(
         cudaError_t serr = cudaStreamSynchronize(wbStream);
         if (err == cudaErrorNotReady || err == cudaSuccess) err = serr;
         if (err != cudaSuccess) {
-            fprintf(stderr, "[STELAR-X GPU] kernel error (batch %d/%d): %s\n",
+            fprintf(stderr, "[STELAR-Pro GPU] kernel error (batch %d/%d): %s\n",
                     b + 1, numBatches, cudaGetErrorString(err));
         }
 
@@ -2550,7 +2585,9 @@ Java_stelarx_gpu_GPUWeightCalculator_computeWeightsSmallerSideGPU(
     cudaFree(dTwoScores);
     cudaFree(dParts);
     cudaFree(dOrderings);
-    cudaFree(dInvIndex);
+    cudaFree(dTreeOffsets);
+    cudaFree(dTaxonOffsets);
+    cudaFree(dTaxonPositions);
     cudaFree(dRangeData);
     cudaFree(dSsPolyMeta);
     cudaFree(dSsPolyBoundOffset);
@@ -2567,8 +2604,10 @@ Java_stelarx_gpu_GPUWeightCalculator_computeWeightsSmallerSideGPU(
     env->ReleaseIntArrayElements(jSsPolyMeta,       hSsPolyMeta,       JNI_ABORT);
     env->ReleaseIntArrayElements(jSsPolyBoundOffset,hSsPolyBoundOffset,JNI_ABORT);
     env->ReleaseIntArrayElements(jSsPolyBounds,     hSsPolyBounds,     JNI_ABORT);
-    env->ReleaseIntArrayElements(jOrderings, hOrderings, JNI_ABORT);
-    env->ReleaseIntArrayElements(jInvIndex,  hInvIndex,  JNI_ABORT);
+    env->ReleaseIntArrayElements(jOrderings,      hOrderings,      JNI_ABORT);
+    env->ReleaseIntArrayElements(jTreeOffsets,    hTreeOffsets,    JNI_ABORT);
+    env->ReleaseIntArrayElements(jTaxonOffsets,   hTaxonOffsets,   JNI_ABORT);
+    env->ReleaseIntArrayElements(jTaxonPositions, hTaxonPositions, JNI_ABORT);
 
     return result;
 }
@@ -2592,7 +2631,7 @@ Java_stelarx_gpu_GPUWeightCalculator_computeWeightsBitsetGPU(
     int  scoresPerSplit = useI128 ? 2 : 1;
     int  W = wordsPerSet;
     int  totalN = numTaxa;
-    fprintf(stderr, "[STELAR-X GPU] weight accumulator: %s  (bitset, W=%d words)\n",
+    fprintf(stderr, "[STELAR-Pro GPU] weight accumulator: %s  (bitset, W=%d words)\n",
             useI128   ? "INT128 (exact 128-bit integer)"
           : useDouble ? "DOUBLE (64-bit float, overflow-safe)"
                       : "LONG (exact 64-bit integer)", W);
@@ -2659,7 +2698,7 @@ Java_stelarx_gpu_GPUWeightCalculator_computeWeightsBitsetGPU(
         size_t freeAfterStatic = 0, totalVRAM = 0;
         cudaMemGetInfo(&freeAfterStatic, &totalVRAM);
         fprintf(stderr,
-            "[STELAR-X GPU] weight resident data uploaded (bitset, W=%d):\n"
+            "[STELAR-Pro GPU] weight resident data uploaded (bitset, W=%d):\n"
             "  clusterBits : %6.1f MB  (%d clusters × %d words)\n"
             "  partM1+M2   : %6.1f MB  (%d binary parts)\n"
             "  geneLgBits  : %6.1f MB  (%d gene trees)\n"
@@ -2676,10 +2715,10 @@ Java_stelarx_gpu_GPUWeightCalculator_computeWeightsBitsetGPU(
     int batchSize;
     if (batchSizeHint == -1) {
         batchSize = numSplits;
-        fprintf(stderr, "[STELAR-X GPU] batching disabled — single launch, %d splits\n", numSplits);
+        fprintf(stderr, "[STELAR-Pro GPU] batching disabled — single launch, %d splits\n", numSplits);
     } else if (batchSizeHint > 0) {
         batchSize = (batchSizeHint < numSplits) ? batchSizeHint : numSplits;
-        fprintf(stderr, "[STELAR-X GPU] manual batch size: %d  (numSplits=%d)\n", batchSize, numSplits);
+        fprintf(stderr, "[STELAR-Pro GPU] manual batch size: %d  (numSplits=%d)\n", batchSize, numSplits);
     } else {
         size_t freeVRAM = 0, totalVRAM = 0;
         cudaMemGetInfo(&freeVRAM, &totalVRAM);
@@ -2690,7 +2729,7 @@ Java_stelarx_gpu_GPUWeightCalculator_computeWeightsBitsetGPU(
         if (autoSize > (long long)numSplits) autoSize = (long long)numSplits;
         batchSize = (int)autoSize;
         fprintf(stderr,
-            "[STELAR-X GPU] adaptive batch: freeVRAM=%.2f GB, occupancy=%.0f%%, usable=%.2f GB, "
+            "[STELAR-Pro GPU] adaptive batch: freeVRAM=%.2f GB, occupancy=%.0f%%, usable=%.2f GB, "
             "perSplit=%zu B → batchSize=%d  (numSplits=%d, numBatches=%d)\n",
             freeVRAM / 1e9, (double)vramFraction * 100.0, usable / 1e9,
             perSplitBytes, batchSize, numSplits, (numSplits + batchSize - 1) / batchSize);
@@ -2707,10 +2746,10 @@ Java_stelarx_gpu_GPUWeightCalculator_computeWeightsBitsetGPU(
         if (dSplits)    { cudaFree(dSplits);    dSplits    = NULL; }
         if (dTwoScores) { cudaFree(dTwoScores); dTwoScores = NULL; }
         batchSize /= 2;
-        fprintf(stderr, "[STELAR-X GPU] cudaMalloc failed, retrying with batchSize=%d\n", batchSize);
+        fprintf(stderr, "[STELAR-Pro GPU] cudaMalloc failed, retrying with batchSize=%d\n", batchSize);
     }
     if (batchSize <= 0 || dSplits == NULL || dTwoScores == NULL) {
-        fprintf(stderr, "[STELAR-X GPU] FATAL: cannot allocate GPU batch buffers (bitset)\n");
+        fprintf(stderr, "[STELAR-Pro GPU] FATAL: cannot allocate GPU batch buffers (bitset)\n");
         cudaFree(dClusterBits); cudaFree(dPartM1); cudaFree(dPartM2); cudaFree(dGeneLgBits);
         cudaFree(dPolyChildBits); cudaFree(dPartMeta); cudaFree(dPolyMeta);
         cudaFree(dPolyChildOffset); cudaFree(dPolyChildSize);
@@ -2775,7 +2814,7 @@ Java_stelarx_gpu_GPUWeightCalculator_computeWeightsBitsetGPU(
         cudaError_t serr = cudaStreamSynchronize(wbStream);
         if (err == cudaErrorNotReady || err == cudaSuccess) err = serr;
         if (err != cudaSuccess) {
-            fprintf(stderr, "[STELAR-X GPU] kernel error (bitset batch %d/%d): %s\n",
+            fprintf(stderr, "[STELAR-Pro GPU] kernel error (bitset batch %d/%d): %s\n",
                     b + 1, numBatches, cudaGetErrorString(err));
         }
 
@@ -2849,7 +2888,7 @@ Java_stelarx_gpu_GPUWeightCalculator_computeWeightsTreeWalkGPU(
     // maximum before dispatching the smallest fitting private-array variant.
     if (maxFrontier < 1 || maxFrontier > WB_TW_STACK_CAP) {
         fprintf(stderr,
-                "[STELAR-X GPU] tree-walk: measured frontier=%d outside stack cap %d → CPU fallback\n",
+                "[STELAR-Pro GPU] tree-walk: measured frontier=%d outside stack cap %d → CPU fallback\n",
                 maxFrontier, WB_TW_STACK_CAP);
         return NULL;
     }
@@ -2859,7 +2898,7 @@ Java_stelarx_gpu_GPUWeightCalculator_computeWeightsTreeWalkGPU(
     int  scoresPerSplit = useI128 ? 2 : 1;
     int  W = wordsPerSet;
     int  totalN = numTaxa;
-    fprintf(stderr, "[STELAR-X GPU] weight accumulator: %s  (simple-tree-walk, W=%d words)\n",
+    fprintf(stderr, "[STELAR-Pro GPU] weight accumulator: %s  (simple-tree-walk, W=%d words)\n",
             useI128   ? "INT128 (exact 128-bit integer)"
           : useDouble ? "DOUBLE (64-bit float, overflow-safe)"
                       : "LONG (exact 64-bit integer)", W);
@@ -2902,7 +2941,7 @@ Java_stelarx_gpu_GPUWeightCalculator_computeWeightsTreeWalkGPU(
         size_t freeAfterStatic = 0, totalVRAM = 0;
         cudaMemGetInfo(&freeAfterStatic, &totalVRAM);
         fprintf(stderr,
-            "[STELAR-X GPU] weight resident data uploaded (simple-tree-walk, W=%d):\n"
+            "[STELAR-Pro GPU] weight resident data uploaded (simple-tree-walk, W=%d):\n"
             "  clusterBits : %6.1f MB  (%d clusters × %d words)\n"
             "  geneLgBits  : %6.1f MB  (%d gene trees)\n"
             "  nodeStream  : %6.1f MB  (%zu tokens)\n"
@@ -2918,10 +2957,10 @@ Java_stelarx_gpu_GPUWeightCalculator_computeWeightsTreeWalkGPU(
     int batchSize;
     if (batchSizeHint == -1) {
         batchSize = numSplits;
-        fprintf(stderr, "[STELAR-X GPU] batching disabled — single launch, %d splits\n", numSplits);
+        fprintf(stderr, "[STELAR-Pro GPU] batching disabled — single launch, %d splits\n", numSplits);
     } else if (batchSizeHint > 0) {
         batchSize = (batchSizeHint < numSplits) ? batchSizeHint : numSplits;
-        fprintf(stderr, "[STELAR-X GPU] configured batch size: %d  (numSplits=%d)\n", batchSize, numSplits);
+        fprintf(stderr, "[STELAR-Pro GPU] configured batch size: %d  (numSplits=%d)\n", batchSize, numSplits);
     } else {
         size_t freeVRAM = 0, totalVRAM = 0;
         cudaMemGetInfo(&freeVRAM, &totalVRAM);
@@ -2934,7 +2973,7 @@ Java_stelarx_gpu_GPUWeightCalculator_computeWeightsTreeWalkGPU(
         if (autoSize > (long long)numSplits) autoSize = (long long)numSplits;
         batchSize = (int)autoSize;
         fprintf(stderr,
-            "[STELAR-X GPU] adaptive batch: freeVRAM=%.2f GB, occupancy=%.0f%%, usable=%.2f GB, "
+            "[STELAR-Pro GPU] adaptive batch: freeVRAM=%.2f GB, occupancy=%.0f%%, usable=%.2f GB, "
             "perSplit=%zu B → batchSize=%d  (numSplits=%d, numBatches=%d)\n",
             freeVRAM / 1e9, (double)vramFraction * 100.0, usable / 1e9,
             perSplitBytes, batchSize, numSplits, (numSplits + batchSize - 1) / batchSize);
@@ -2955,10 +2994,10 @@ Java_stelarx_gpu_GPUWeightCalculator_computeWeightsTreeWalkGPU(
         if (dTwoScores) { cudaFree(dTwoScores); dTwoScores = NULL; }
         if (dCandidateBits) { cudaFree(dCandidateBits); dCandidateBits = NULL; }
         batchSize /= 2;
-        fprintf(stderr, "[STELAR-X GPU] cudaMalloc failed, retrying with batchSize=%d\n", batchSize);
+        fprintf(stderr, "[STELAR-Pro GPU] cudaMalloc failed, retrying with batchSize=%d\n", batchSize);
     }
     if (batchSize <= 0 || dSplits == NULL || dTwoScores == NULL || dCandidateBits == NULL) {
-        fprintf(stderr, "[STELAR-X GPU] FATAL: cannot allocate GPU batch buffers (tree-walk)\n");
+        fprintf(stderr, "[STELAR-Pro GPU] FATAL: cannot allocate GPU batch buffers (tree-walk)\n");
         cudaFree(dClusterBits); cudaFree(dGeneLgBits); cudaFree(dNodeStream);
         cudaFree(dTreeNodeOffset); cudaFree(dLeafCount);
         env->ReleaseIntArrayElements(jSplits, hSplits, JNI_ABORT);
@@ -3033,7 +3072,7 @@ Java_stelarx_gpu_GPUWeightCalculator_computeWeightsTreeWalkGPU(
         cudaError_t serr = cudaStreamSynchronize(wbStream);
         if (err == cudaErrorNotReady || err == cudaSuccess) err = serr;
         if (err != cudaSuccess) {
-            fprintf(stderr, "[STELAR-X GPU] kernel error (tree-walk batch %d/%d): %s\n",
+            fprintf(stderr, "[STELAR-Pro GPU] kernel error (tree-walk batch %d/%d): %s\n",
                     b + 1, numBatches, cudaGetErrorString(err));
         }
 

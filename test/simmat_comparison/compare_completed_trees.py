@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """
 compare_completed_trees.py — Head-to-head comparison of completed gene trees:
-STELAR-X vs ASTRAL-MP.
+STELAR-Pro vs ASTRAL-MP.
 
 Usage:
   python3 compare_completed_trees.py <input.tre> [--verbose] [--max-show N]
@@ -24,10 +24,10 @@ import subprocess
 import argparse
 
 SCRIPT_DIR   = os.path.dirname(os.path.abspath(__file__))
-STELARX_ROOT = os.path.normpath(os.path.join(SCRIPT_DIR, "..", ".."))
-ASTRALMP_DIR = os.path.join(STELARX_ROOT, "astral-my")
+STELAR_PRO_ROOT = os.path.normpath(os.path.join(SCRIPT_DIR, "..", ".."))
+ASTRALMP_DIR = os.path.join(STELAR_PRO_ROOT, "astral-my")
 
-STELARX_RUN  = os.path.join(STELARX_ROOT, "run.sh")
+STELAR_PRO_RUN  = os.path.join(STELAR_PRO_ROOT, "run.sh")
 ASTRALMP_DEV = os.path.join(ASTRALMP_DIR, "dev.sh")
 
 
@@ -135,19 +135,19 @@ def rf_distance(bips_a, bips_b):
 
 # ── Runners ───────────────────────────────────────────────────────────────────
 
-def run_stelarx(input_path, out_file, verbose=False):
+def run_stelar_pro(input_path, out_file, verbose=False):
     cmd = [
-        "bash", STELARX_RUN,
+        "bash", STELAR_PRO_RUN,
         "-i", input_path,
         "--autocomplete-incomplete-gene-trees",
         "--dump-completed-gene-trees", out_file,
         "--cpu", "--no-build", "-q",
     ]
     if verbose:
-        print(f"  [STELAR-X] {' '.join(cmd)}")
+        print(f"  [STELAR-Pro] {' '.join(cmd)}")
     r = subprocess.run(cmd, capture_output=True, text=True)
     if r.returncode != 0:
-        raise RuntimeError(f"STELAR-X failed (rc={r.returncode}):\n{r.stderr[-1000:]}")
+        raise RuntimeError(f"STELAR-Pro failed (rc={r.returncode}):\n{r.stderr[-1000:]}")
     trees = []
     with open(out_file) as f:
         for line in f:
@@ -186,7 +186,7 @@ def run_astralmp(input_path, out_base, verbose=False):
 
 def main():
     parser = argparse.ArgumentParser(
-        description="STELAR-X vs ASTRAL-MP completed gene tree comparison")
+        description="STELAR-Pro vs ASTRAL-MP completed gene tree comparison")
     parser.add_argument("input", help="Input gene tree file (.tre)")
     parser.add_argument("--verbose", "-v", action="store_true")
     parser.add_argument("--max-show", type=int, default=10,
@@ -203,9 +203,9 @@ def main():
     tmpx  = "/tmp/stelarx_completed_cmp.tre"
     tmpmp = "/tmp/astralmp_out_cmp.tre"
 
-    print("\n  Running STELAR-X...", end=" ", flush=True)
+    print("\n  Running STELAR-Pro...", end=" ", flush=True)
     try:
-        trees_x = run_stelarx(input_path, tmpx, args.verbose)
+        trees_x = run_stelar_pro(input_path, tmpx, args.verbose)
         print(f"OK  ({len(trees_x)} trees)")
     except Exception as e:
         print(f"FAILED\n  {e}", file=sys.stderr); sys.exit(2)
@@ -218,7 +218,7 @@ def main():
         print(f"FAILED\n  {e}", file=sys.stderr); sys.exit(2)
 
     if len(trees_x) != len(trees_mp):
-        print(f"  ERROR: tree count mismatch: STELAR-X={len(trees_x)}, ASTRAL-MP={len(trees_mp)}")
+        print(f"  ERROR: tree count mismatch: STELAR-Pro={len(trees_x)}, ASTRAL-MP={len(trees_mp)}")
         sys.exit(2)
 
     k = len(trees_x)

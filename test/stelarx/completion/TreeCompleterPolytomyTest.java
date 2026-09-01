@@ -29,16 +29,16 @@ public final class TreeCompleterPolytomyTest {
             }
 
             int n = registry.size();
-            System.clearProperty("stelarx.similarity.forcePacked");
+            System.clearProperty("stelarpro.similarity.forcePacked");
             SimilarityMatrix denseMatrix = SimilarityMatrixBuilder.buildCPU(trees, n);
             List<Tree> dense = TreeCompleter.completeAll(trees, denseMatrix, n);
 
-            System.setProperty("stelarx.similarity.forcePacked", "true");
+            System.setProperty("stelarpro.similarity.forcePacked", "true");
             SimilarityMatrix packedMatrix;
             try {
                 packedMatrix = SimilarityMatrixBuilder.buildCPU(trees, n);
             } finally {
-                System.clearProperty("stelarx.similarity.forcePacked");
+                System.clearProperty("stelarpro.similarity.forcePacked");
             }
             check(packedMatrix.isPacked(), "packed completion path was not selected");
             List<Tree> packed = TreeCompleter.completeAll(trees, packedMatrix, n);
@@ -56,7 +56,7 @@ public final class TreeCompleterPolytomyTest {
             System.out.println("Incomplete polytomy completion: PASS");
         } finally {
             Threading.shutdown();
-            System.clearProperty("stelarx.similarity.forcePacked");
+            System.clearProperty("stelarpro.similarity.forcePacked");
         }
     }
 

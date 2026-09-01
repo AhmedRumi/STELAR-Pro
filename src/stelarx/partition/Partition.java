@@ -5,7 +5,7 @@ import stelarx.cluster.ClusterHash;
 /**
  * A compact rooted gene-tree child partition. The first d-1 groups are the
  * actual children of a node; the last group is a legacy complement slot that
- * may be empty at the supplied root and is ignored by the STELAR-X objective.
+ * may be empty at the supplied root and is ignored by the STELAR-Pro objective.
  *
  * For an internal node u of a rooted gene tree g with k children:
  *   d = k + 1

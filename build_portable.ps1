@@ -33,7 +33,7 @@ if ([int]$Matches[1] -lt 21) {
 
 $VersionSource = Get-Content (Join-Path $PSScriptRoot "src/stelarx/Version.java") -Raw
 if ($VersionSource -notmatch 'DEFAULT\s*=\s*"([^"]+)"') {
-    throw "Could not determine the STELAR-X source version."
+    throw "Could not determine the STELAR-Pro source version."
 }
 $SourceVersion = $Matches[1]
 if (-not $Version) { $Version = $SourceVersion }
@@ -62,17 +62,17 @@ if ($IncludeCuda -and $PlatformArch -ne "x86_64") {
 $Capability = if ($IncludeCuda) { "cuda-with-cpu-fallback" } else { "cpu" }
 # One public artifact per OS/CPU family. The CUDA-enabled image already carries
 # the complete CPU implementation and falls back automatically.
-$Artifact = "stelarx-$Version-windows-$PlatformArch"
+$Artifact = "stelar-pro-$Version-windows-$PlatformArch"
 $VersionDir = Join-Path $OutputDir $Version
 $FinalImage = Join-Path $VersionDir $Artifact
 $Archive = Join-Path $VersionDir "$Artifact.zip"
 $ManifestPath = Join-Path $VersionDir "$Artifact.manifest.json"
 if (-not $Force -and ((Test-Path $FinalImage) -or (Test-Path $Archive) -or
         (Test-Path $ManifestPath))) {
-    throw "Artifact already exists for STELAR-X $Version on windows-$PlatformArch. " +
+    throw "Artifact already exists for STELAR-Pro $Version on windows-$PlatformArch. " +
           "Use -Force to replace only this platform artifact, or choose another -Version."
 }
-$Work = Join-Path ([System.IO.Path]::GetTempPath()) ("stelarx-portable-" + [guid]::NewGuid())
+$Work = Join-Path ([System.IO.Path]::GetTempPath()) ("stelar-pro-portable-" + [guid]::NewGuid())
 
 try {
     New-Item -ItemType Directory -Force -Path $Work, $VersionDir | Out-Null
@@ -82,7 +82,7 @@ try {
     $JpackageOut = Join-Path $Work "jpackage"
     New-Item -ItemType Directory -Force -Path $Build, $InputDir, $JpackageOut | Out-Null
 
-    Write-Host "=== STELAR-X portable build ==="
+    Write-Host "=== STELAR-Pro portable build ==="
     Write-Host "  Version      : $Version"
     Write-Host "  Platform     : windows-$PlatformArch"
     Write-Host "  CUDA bundle  : $IncludeCuda"
@@ -93,12 +93,12 @@ try {
     & javac -d $Build -sourcepath (Join-Path $PSScriptRoot "src") @Sources
     if ($LASTEXITCODE -ne 0) { throw "javac failed (exit $LASTEXITCODE)" }
 
-    $JarPath = Join-Path $InputDir "stelarx.jar"
+    $JarPath = Join-Path $InputDir "stelar-pro.jar"
     $JarManifest = Join-Path $Work "MANIFEST.MF"
     @(
         "Manifest-Version: 1.0",
         "Main-Class: stelarx.Main",
-        "Implementation-Title: STELAR-X",
+        "Implementation-Title: STELAR-Pro",
         "Implementation-Version: $Version",
         ""
     ) | Set-Content -Path $JarManifest -Encoding ASCII
@@ -113,17 +113,17 @@ try {
         --compress=zip-6 --output $Runtime
     if ($LASTEXITCODE -ne 0) { throw "jlink failed (exit $LASTEXITCODE)" }
 
-    & jpackage --type app-image --name stelarx --app-version $Version `
-        --input $InputDir --main-jar stelarx.jar --main-class stelarx.Main `
+    & jpackage --type app-image --name stelar-pro --app-version $Version `
+        --input $InputDir --main-jar stelar-pro.jar --main-class stelarx.Main `
         --runtime-image $Runtime --dest $JpackageOut `
         --java-options '-Djava.library.path=$APPDIR' `
         --java-options '-Dfile.encoding=UTF-8' `
         --java-options '-XX:InitialRAMPercentage=2.0' `
         --java-options '-XX:MaxRAMPercentage=85.0' `
-        --java-options '-XX:ErrorFile=crash_logs/stelarx-hotspot-crash-%p.log'
+        --java-options '-XX:ErrorFile=crash_logs/stelar-pro-hotspot-crash-%p.log'
     if ($LASTEXITCODE -ne 0) { throw "jpackage failed (exit $LASTEXITCODE)" }
 
-    $Image = Join-Path $JpackageOut "stelarx"
+    $Image = Join-Path $JpackageOut "stelar-pro"
     $ExampleDir = Join-Path $Image "example"
     New-Item -ItemType Directory -Force -Path $ExampleDir | Out-Null
     Copy-Item (Join-Path $PSScriptRoot "all_gt_bs_rooted_37.tre") `
@@ -132,15 +132,15 @@ try {
         (Join-Path $ExampleDir "true_37.tre")
 
     $Readme = @"
-STELAR-X $Version - self-contained windows-$PlatformArch build
+STELAR-Pro $Version - self-contained windows-$PlatformArch build
 
 Run in PowerShell or Command Prompt:
-  .\stelarx.exe --help
-  .\stelarx.exe --diagnose
-  .\stelarx.exe -i C:\path\to\rooted_gene_trees.tre -o C:\path\to\output_species_tree.tre
+  .\stelar-pro.exe --help
+  .\stelar-pro.exe --diagnose
+  .\stelar-pro.exe -i C:\path\to\rooted_gene_trees.tre -o C:\path\to\output_species_tree.tre
 
 Ready-made 37-taxon example (run from this directory):
-  .\stelarx.exe -i example\all_gt_37.tre -o example\predicted_st_37.tre --search-space S1 -vv
+  .\stelar-pro.exe -i example\all_gt_37.tre -o example\predicted_st_37.tre --search-space S1 -vv
 
 The example directory initially contains:
   all_gt_37.tre   input gene trees
@@ -148,15 +148,15 @@ The example directory initially contains:
 
 After the command finishes, example\predicted_st_37.tre contains the inferred
 species tree. The reference tree is provided for comparison and is not used by
-STELAR-X during inference.
+STELAR-Pro during inference.
 
 No Java installation is required. This artifact includes CUDA acceleration: $IncludeCuda.
 CUDA still requires a compatible NVIDIA GPU and installed NVIDIA driver. If CUDA cannot
-be used, STELAR-X automatically explains why and falls back to CPU. Use --gpu-strict only
+be used, STELAR-Pro automatically explains why and falls back to CPU. Use --gpu-strict only
 when falling back would be undesirable.
 
 Unexpected failure reports are stored in crash_logs under the directory from
-which you launch STELAR-X. Set STELARX_CRASH_DIR to override Java report storage.
+which you launch STELAR-Pro. Set STELAR_PRO_CRASH_DIR to override Java report storage.
 "@
     Set-Content -Path (Join-Path $Image "README.txt") -Value $Readme -Encoding UTF8
 
@@ -178,7 +178,7 @@ which you launch STELAR-X. Set STELARX_CRASH_DIR to override Java report storage
     }
     Set-Content -Path (Join-Path $Image "BUILD-INFO.txt") -Value $BuildInfo -Encoding UTF8
 
-    $Launcher = Join-Path $Image "stelarx.exe"
+    $Launcher = Join-Path $Image "stelarpro.exe"
     $PreviousNoColor = $env:NO_COLOR
     try {
         $env:NO_COLOR = "1"
@@ -194,8 +194,8 @@ which you launch STELAR-X. Set STELARX_CRASH_DIR to override Java report storage
         }
     }
     if ($VersionExitCode -ne 0 `
-            -or -not $VersionOutput.Contains("STELAR-X  v$Version") `
-            -or -not $VersionOutput.Contains("Welcome to STELAR-X version $Version!")) {
+            -or -not $VersionOutput.Contains("STELAR-Pro  v$Version") `
+            -or -not $VersionOutput.Contains("Welcome to STELAR-Pro version $Version!")) {
         throw "Packaged --version smoke test failed: '$VersionOutput'."
     }
     & $Launcher --cpu --diagnose | Out-Null
@@ -238,7 +238,7 @@ which you launch STELAR-X. Set STELARX_CRASH_DIR to override Java report storage
         sha256 = $ArchiveHash
     } | ConvertTo-Json | Set-Content -Path $ManifestPath -Encoding UTF8
 
-    Write-Host "Portable application ready: $FinalImage\stelarx.exe"
+    Write-Host "Portable application ready: $FinalImage\stelar-pro.exe"
     Write-Host "Release manifest: $ManifestPath"
 }
 finally {

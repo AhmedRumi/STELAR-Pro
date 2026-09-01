@@ -139,7 +139,7 @@ static void dist_print_progress(int work_done, int total_work, double elapsed,
     do { \
         cudaError_t _e = (call); \
         if (_e != cudaSuccess) { \
-            fprintf(stderr, "[STELAR-X dist] CUDA error %s at %s:%d: %s\n", \
+            fprintf(stderr, "[STELAR-Pro dist] CUDA error %s at %s:%d: %s\n", \
                     #call, __FILE__, __LINE__, cudaGetErrorString(_e)); \
             return; \
         } \
@@ -149,7 +149,7 @@ static void dist_print_progress(int work_done, int total_work, double elapsed,
     do { \
         cudaError_t _e = (call); \
         if (_e != cudaSuccess) { \
-            fprintf(stderr, "[STELAR-X dist] CUDA error %s at %s:%d: %s\n", \
+            fprintf(stderr, "[STELAR-Pro dist] CUDA error %s at %s:%d: %s\n", \
                     #call, __FILE__, __LINE__, cudaGetErrorString(_e)); \
             return (retval); \
         } \
@@ -294,11 +294,11 @@ Java_stelarx_gpu_GPUDistanceMatrix_computeDistancesGPU(
     int num_tiles = num_tiles_side * (num_tiles_side + 1) / 2;  // upper-triangle count
 
     fprintf(stderr,
-        "\n[STELAR-X dist] GPU distance matrix: n=%d  k=%d  "
+        "\n[STELAR-Pro dist] GPU distance matrix: n=%d  k=%d  "
         "tile B=%d  tree-batch Δ=%d  (%d batches × %d tiles)\n",
         n, numTrees, B, delta, num_batches, num_tiles);
     fprintf(stderr,
-        "[STELAR-X dist] GPU VRAM budget: tile %.1f MB  tree-data %.1f MB  "
+        "[STELAR-Pro dist] GPU VRAM budget: tile %.1f MB  tree-data %.1f MB  "
         "(free %.0f MB total %.0f MB)\n",
         tile_vram / 1e6,
         (double)delta * per_tree / 1e6,

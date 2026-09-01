@@ -1,8 +1,8 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-STELARX_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-PYTHON_BIN="${STELARX_PYTHON:-${STELARX_ROOT}/.venv/bin/python}"
+STELAR_PRO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+PYTHON_BIN="${STELAR_PRO_PYTHON:-${STELAR_PRO_ROOT}/.venv/bin/python}"
 [[ -x "$PYTHON_BIN" ]] || PYTHON_BIN="python3"
 
 usage() {
@@ -97,14 +97,14 @@ trap cleanup EXIT
 
 # Run rooting
 if [[ -n "$num_workers" ]]; then
-  "$PYTHON_BIN" "${STELARX_ROOT}/root_by_outgroups.py" "${root_args[@]}" -o "$tmpfile" --num-workers "$num_workers"
+  "$PYTHON_BIN" "${STELAR_PRO_ROOT}/root_by_outgroups.py" "${root_args[@]}" -o "$tmpfile" --num-workers "$num_workers"
 else
-  "$PYTHON_BIN" "${STELARX_ROOT}/root_by_outgroups.py" "${root_args[@]}" -o "$tmpfile"
+  "$PYTHON_BIN" "${STELAR_PRO_ROOT}/root_by_outgroups.py" "${root_args[@]}" -o "$tmpfile"
 fi
 
 # Run cleaning
 if [[ -n "$num_workers" ]]; then
-  "$PYTHON_BIN" "${STELARX_ROOT}/clean.py" -i "$tmpfile" -o "$output" --num-workers "$num_workers" "${clean_args[@]}"
+  "$PYTHON_BIN" "${STELAR_PRO_ROOT}/clean.py" -i "$tmpfile" -o "$output" --num-workers "$num_workers" "${clean_args[@]}"
 else
-  "$PYTHON_BIN" "${STELARX_ROOT}/clean.py" -i "$tmpfile" -o "$output" "${clean_args[@]}"
+  "$PYTHON_BIN" "${STELAR_PRO_ROOT}/clean.py" -i "$tmpfile" -o "$output" "${clean_args[@]}"
 fi

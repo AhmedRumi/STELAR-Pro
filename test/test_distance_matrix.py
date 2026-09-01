@@ -2,16 +2,16 @@
 """
 test_distance_matrix.py
 ========================
-20 randomized tests for the STELAR-X distance matrix computation.
+20 randomized tests for the STELAR-Pro distance matrix computation.
 
 For each test case:
   1. Generate n random taxa and k random binary gene trees (some incomplete).
   2. Compute the expected distance matrix by brute-force path-finding in Python.
-  3. Run STELAR-X with --verify-distance-matrix and parse its output.
+  3. Run STELAR-Pro with --verify-distance-matrix and parse its output.
   4. Assert all distances match within tolerance.
 
 Usage:
-  python3 test/test_distance_matrix.py [--stelarx-root PATH] [--mode cpu|gpu]
+  python3 test/test_distance_matrix.py [--stelar-pro-root PATH] [--mode cpu|gpu]
   --mode gpu  will be supported once the GPU distance-matrix kernel is implemented.
 """
 
@@ -127,11 +127,11 @@ def brute_force_distance_matrix(trees_with_taxa, all_taxa):
                 result[i][j] = math.inf
     return result
 
-# ── Run STELAR-X and parse output ─────────────────────────────────────────────
+# ── Run STELAR-Pro and parse output ─────────────────────────────────────────────
 
-def run_stelarx_distance_matrix(newick_lines, stelarx_root, mode):
+def run_stelar_pro_distance_matrix(newick_lines, stelarx_root, mode):
     """
-    Write trees to a temp file, invoke STELAR-X --verify-distance-matrix,
+    Write trees to a temp file, invoke STELAR-Pro --verify-distance-matrix,
     parse and return (taxa_order, n×n list-of-lists).
     """
     build_dir  = os.path.join(stelarx_root, "build")
@@ -153,14 +153,14 @@ def run_stelarx_distance_matrix(newick_lines, stelarx_root, mode):
         result = subprocess.run(cmd, capture_output=True, text=True, timeout=60)
         if result.returncode != 0:
             raise RuntimeError(
-                f"STELAR-X exited {result.returncode}\nstderr:\n{result.stderr[:2000]}")
+                f"STELAR-Pro exited {result.returncode}\nstderr:\n{result.stderr[:2000]}")
         return parse_dm_output(result.stdout)
     finally:
         os.unlink(input_path)
 
 def parse_dm_output(output):
     """
-    Parse the DISTANCE_MATRIX block from STELAR-X stdout.
+    Parse the DISTANCE_MATRIX block from STELAR-Pro stdout.
     Returns (taxa_order: list[str], matrix: list[list[float]]).
     """
     lines = [l.strip() for l in output.splitlines() if l.strip()]
@@ -219,8 +219,8 @@ def run_test(seed, stelarx_root, mode, verbose=False):
     # Python brute-force answer
     expected = brute_force_distance_matrix(trees_with_taxa, all_taxa)
 
-    # STELAR-X answer
-    taxa_order, actual_raw = run_stelarx_distance_matrix(newick_lines, stelarx_root, mode)
+    # STELAR-Pro answer
+    taxa_order, actual_raw = run_stelar_pro_distance_matrix(newick_lines, stelarx_root, mode)
 
     # Reorder actual to match all_taxa order (Java assigns IDs by first-occurrence)
     idx_java = {t: i for i, t in enumerate(taxa_order)}
@@ -254,8 +254,8 @@ def run_test(seed, stelarx_root, mode, verbose=False):
     return passed
 
 def main():
-    ap = argparse.ArgumentParser(description="Test STELAR-X distance matrix")
-    ap.add_argument("--stelarx-root", default=".", help="Path to STELAR-X root")
+    ap = argparse.ArgumentParser(description="Test STELAR-Pro distance matrix")
+    ap.add_argument("--stelar-pro-root", default=".", help="Path to STELAR-Pro root")
     ap.add_argument("--mode", choices=["cpu", "gpu"], default="cpu",
                     help="Compute mode (gpu requires compiled GPU kernel)")
     ap.add_argument("--seeds", type=int, nargs="+",
@@ -269,7 +269,7 @@ def main():
     passed = failed = 0
     for seed in seeds:
         try:
-            ok = run_test(seed, args.stelarx_root, args.mode, verbose=args.verbose)
+            ok = run_test(seed, args.stelar_pro_root, args.mode, verbose=args.verbose)
             if ok:
                 passed += 1
             else:

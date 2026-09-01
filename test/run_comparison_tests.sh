@@ -1,21 +1,21 @@
 #!/usr/bin/env bash
-# run_comparison_tests.sh — Head-to-head comparison of STELAR-X vs ASTRAL-MP.
+# run_comparison_tests.sh — Head-to-head comparison of STELAR-Pro vs ASTRAL-MP.
 #
 # For each test case it:
-#   1. Runs STELAR-X   with --dump-clusters  → cluster dump + species tree
+#   1. Runs STELAR-Pro   with --dump-clusters  → cluster dump + species tree
 #   2. Runs ASTRAL-MP  with --dump-clusters -p 0  → cluster dump + species tree
 #      (-p 0 disables UPGMA/greedy-consensus enrichment so X is gene-tree-only,
-#       the same search space STELAR-X builds)
+#       the same search space STELAR-Pro builds)
 #   3. Calls compare_with_astralmp.py to diff the two cluster dumps and trees
 #
 # Usage:
 #   bash test/run_comparison_tests.sh [TC_FILTER] [options]
 #
 # Options:
-#   --cpu               force CPU mode for STELAR-X (default: --cpu for safety)
-#   --gpu               use GPU for STELAR-X
+#   --cpu               force CPU mode for STELAR-Pro (default: --cpu for safety)
+#   --gpu               use GPU for STELAR-Pro
 #   --no-build          skip building both tools before running
-#   --complete          add --autocomplete-incomplete-gene-trees to STELAR-X
+#   --complete          add --autocomplete-incomplete-gene-trees to STELAR-Pro
 #                       (use for TCs with missing taxa)
 #
 # TC_FILTER: glob pattern matching input file basenames, e.g. "tc1*" or "tc[13]"
@@ -24,7 +24,7 @@
 # Exit code: 0 if all TCs pass, 1 if any fail.
 #
 # Requires an ASTRAL-MP checkout. Set ASTRALMP_ROOT to override the default
-# <STELAR-X checkout>/astral-my location.
+# <STELAR-Pro checkout>/astral-my location.
 
 set -euo pipefail
 
@@ -71,7 +71,7 @@ mkdir -p "$TMP_DIR"
 
 # ── build phase ───────────────────────────────────────────────────────────────
 if [[ $SKIP_BUILD -eq 0 ]]; then
-    echo -e "${BOLD}Building STELAR-X...${NC}"
+    echo -e "${BOLD}Building STELAR-Pro...${NC}"
     bash "${ROOT_DIR}/build.sh"
     bash "${ROOT_DIR}/build_native.sh" 2>/dev/null || true
 
@@ -80,7 +80,7 @@ if [[ $SKIP_BUILD -eq 0 ]]; then
     echo ""
 fi
 
-STELARX_CMD=(java -Djava.library.path="$NATIVE_DIR" -cp "$BUILD_DIR" stelarx.Main
+STELAR_PRO_CMD=(java -Djava.library.path="$NATIVE_DIR" -cp "$BUILD_DIR" stelarx.Main
              $COMPUTE_MODE --search-mode local)
 
 # ── per-TC runner ─────────────────────────────────────────────────────────────
@@ -100,14 +100,14 @@ run_tc() {
     local tx_file="${TMP_DIR}/${name}_stelarx_tree.tre"
     local tm_file="${TMP_DIR}/${name}_astralmp_tree.tre"
 
-    # ── Run STELAR-X ──────────────────────────────────────────────────────────
+    # ── Run STELAR-Pro ──────────────────────────────────────────────────────────
     local stelarx_log
-    if ! stelarx_log="$("${STELARX_CMD[@]}" \
+    if ! stelarx_log="$("${STELAR_PRO_CMD[@]}" \
             -i "$input" \
             -o "$tx_file" \
             --dump-clusters "$cx_file" \
             ${AUTOCOMPLETE} 2>&1)"; then
-        printf "${RED}FAIL${NC}  STELAR-X error\n"
+        printf "${RED}FAIL${NC}  STELAR-Pro error\n"
         echo "$stelarx_log" | tail -5 | sed 's/^/    /'
         ((fail++)) || true
         return 0
@@ -129,9 +129,9 @@ run_tc() {
     # ── Compare ───────────────────────────────────────────────────────────────
     local cmp_out
     if cmp_out="$(python3 "$COMPARE_PY" \
-            --clusters-stelarx  "$cx_file" \
+            --clusters-stelar-pro  "$cx_file" \
             --clusters-astralmp "$cm_file" \
-            --tree-stelarx      "$tx_file" \
+            --tree-stelar-pro      "$tx_file" \
             --tree-astralmp     "$tm_file" \
             --label             "$name" 2>&1)"; then
         printf "${GREEN}PASS${NC}\n"
@@ -144,10 +144,10 @@ run_tc() {
 }
 
 # ── iterate inputs ────────────────────────────────────────────────────────────
-echo -e "${BOLD}Running STELAR-X vs ASTRAL-MP comparison tests${NC}"
+echo -e "${BOLD}Running STELAR-Pro vs ASTRAL-MP comparison tests${NC}"
 echo "  Input dir : $INPUT_DIR"
 echo "  Tmp dir   : $TMP_DIR"
-echo "  Mode      : STELAR-X $COMPUTE_MODE / ASTRAL-MP CPU-only -p 0"
+echo "  Mode      : STELAR-Pro $COMPUTE_MODE / ASTRAL-MP CPU-only -p 0"
 [[ -n "$AUTOCOMPLETE" ]] && echo "  Autocomplete: on"
 echo ""
 

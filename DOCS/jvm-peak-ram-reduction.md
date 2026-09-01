@@ -139,9 +139,9 @@ Three separate null + GC actions together freed ~24–27 GB of peak coexistence:
 
 ---
 
-## Applicability to STELAR-X
+## Applicability to STELAR-Pro
 
-STELAR-X has a similar multi-phase structure (parsing → bipartition manager → weight calculation → DP →
+STELAR-Pro has a similar multi-phase structure (parsing → bipartition manager → weight calculation → DP →
 tree reconstruction).  The same pattern applies:
 
 - **`MemoryEfficientBipartitionManager`** (prefix sums, XOR arrays, hash-to-bipartition map) is only needed
@@ -151,7 +151,7 @@ tree reconstruction).  The same pattern applies:
 - **`rangeBipWeights`** and **`clusterHashToRangeBips`** are needed through DP but can be released once
   `reconstructTree()` returns.
 
-- If STELAR-X is ever run with a large `-Xmx` on a memory-constrained machine (or if future versions add GPU
+- If STELAR-Pro is ever run with a large `-Xmx` on a memory-constrained machine (or if future versions add GPU
   acceleration with JNI input arrays), the `System.gc()` hint at the bipartition-manager → DP boundary would
   provide the same benefit seen in ASTRAL-X.
 

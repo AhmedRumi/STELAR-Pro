@@ -1,12 +1,12 @@
 #!/usr/bin/env python3
 """
-compare_with_astralmp.py — Head-to-head comparison of STELAR-X vs ASTRAL-MP output.
+compare_with_astralmp.py — Head-to-head comparison of STELAR-Pro vs ASTRAL-MP output.
 
 Usage:
     python3 compare_with_astralmp.py \
-        --clusters-stelarx  /tmp/tc1_stelarx_clusters.txt \
+        --clusters-stelar-pro  /tmp/tc1_stelarx_clusters.txt \
         --clusters-astralmp /tmp/tc1_astralmp_clusters.txt \
-        [--tree-stelarx  /tmp/tc1_stelarx_tree.tre] \
+        [--tree-stelar-pro  /tmp/tc1_stelarx_tree.tre] \
         [--tree-astralmp /tmp/tc1_astralmp_tree.tre] \
         [--label TC1]
 
@@ -71,10 +71,10 @@ def rf_distance(tree1: str, tree2: str) -> float:
 # ── main ──────────────────────────────────────────────────────────────────────
 
 def main():
-    ap = argparse.ArgumentParser(description='STELAR-X vs ASTRAL-MP comparison')
-    ap.add_argument('--clusters-stelarx',  required=True, help='STELAR-X cluster dump')
+    ap = argparse.ArgumentParser(description='STELAR-Pro vs ASTRAL-MP comparison')
+    ap.add_argument('--clusters-stelar-pro',  required=True, help='STELAR-Pro cluster dump')
     ap.add_argument('--clusters-astralmp', required=True, help='ASTRAL-MP cluster dump')
-    ap.add_argument('--tree-stelarx',  default=None, help='STELAR-X output tree (optional)')
+    ap.add_argument('--tree-stelar-pro',  default=None, help='STELAR-Pro output tree (optional)')
     ap.add_argument('--tree-astralmp', default=None, help='ASTRAL-MP output tree (optional)')
     ap.add_argument('--label', default='', help='Test case label for display')
     args = ap.parse_args()
@@ -86,12 +86,12 @@ def main():
     cx = load_clusters(args.clusters_stelarx)
     cm = load_clusters(args.clusters_astralmp)
 
-    only_x  = cx - cm   # in STELAR-X but not ASTRAL-MP
-    only_mp = cm - cx   # in ASTRAL-MP but not STELAR-X
+    only_x  = cx - cm   # in STELAR-Pro but not ASTRAL-MP
+    only_mp = cm - cx   # in ASTRAL-MP but not STELAR-Pro
     common  = cx & cm
 
     print(f"{label}Cluster set X comparison:")
-    print(f"  STELAR-X  : {len(cx):5d} clusters")
+    print(f"  STELAR-Pro  : {len(cx):5d} clusters")
     print(f"  ASTRAL-MP : {len(cm):5d} clusters")
     print(f"  Common    : {len(common):5d}")
     print(f"  Only in X : {len(only_x):5d}")

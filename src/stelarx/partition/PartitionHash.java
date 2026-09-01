@@ -3,7 +3,11 @@ package stelarx.partition;
 import stelarx.cluster.ClusterHash;
 
 /**
- * Order-invariant hash key for a gene-tree d-partition.
+ * Order-invariant hash key for a rooted gene-tree bipartition/partition.
+ *
+ * <p>STELAR-Pro keys a resolved rooted bipartition only by its unordered child
+ * pair {@code {M1,M2}}. The legacy constructors retain the outside-subtree slot
+ * for STELAR-Pro paths.</p>
  *
  * BINARY (d=3): a tripartition (M1|M2|M3) is identified by the unordered pair {M1,M2}
  * plus M3.  For complete trees M3 = S\M1\M2 is determined by (M1,M2); for incomplete
@@ -26,6 +30,26 @@ public final class PartitionHash {
 
     /** Flattened canonical fingerprints for both binary and general partitions. */
     private final long[] data;
+
+    /** STELAR-Pro rooted-bipartition identity: unordered child pair {A,B}. */
+    public PartitionHash(ClusterHash a, ClusterHash b) {
+        boolean aFirst = compare(a, b) <= 0;
+        ClusterHash first  = aFirst ? a : b;
+        ClusterHash second = aFirst ? b : a;
+
+        int m = a.sums.length;
+        this.d = 2;
+        data = new long[4 * m];
+        for (int s = 0; s < m; s++) {
+            data[s]         = first.sums[s];
+            data[s + m]     = first.xors[s];
+            data[s + 2 * m] = second.sums[s];
+            data[s + 3 * m] = second.xors[s];
+        }
+        int h = 1;
+        for (long v : data) h = 31 * h + Long.hashCode(v);
+        this.cachedHashCode = h;
+    }
 
     public PartitionHash(ClusterHash a, ClusterHash b, ClusterHash c) {
         // Decide ordering of the two explicit parts (a,b are interchangeable)
@@ -80,6 +104,38 @@ public final class PartitionHash {
         this.data = flat;
         int h = 1;
         for (long v : flat) h = 31 * h + Long.hashCode(v);
+        this.cachedHashCode = h;
+    }
+
+    /** STELAR-Pro identity for an unordered collection of rooted child sets. */
+    public PartitionHash(ClusterHash[] parts, int childCount) {
+        if (childCount < 2 || childCount > parts.length) {
+            throw new IllegalArgumentException("Invalid rooted child count");
+        }
+        int m = parts[0].sums.length;
+        long[][] fingerprints = new long[childCount][2 * m];
+        for (int i = 0; i < childCount; i++) {
+            for (int s = 0; s < m; s++) {
+                fingerprints[i][s] = parts[i].sums[s];
+                fingerprints[i][s + m] = parts[i].xors[s];
+            }
+        }
+        java.util.Arrays.sort(fingerprints, (x, y) -> {
+            for (int s = 0; s < x.length; s++) {
+                int comparison = Long.compareUnsigned(x[s], y[s]);
+                if (comparison != 0) return comparison;
+            }
+            return 0;
+        });
+
+        this.d = childCount;
+        this.data = new long[childCount * 2 * m];
+        int cursor = 0;
+        for (long[] fingerprint : fingerprints) {
+            for (long value : fingerprint) data[cursor++] = value;
+        }
+        int h = 1;
+        for (long value : data) h = 31 * h + Long.hashCode(value);
         this.cachedHashCode = h;
     }
 

@@ -81,7 +81,9 @@ public class PrefixHashArrays {
         allTaxaXor = new long[m];
         boolean foundComplete = false;
         for (Tree tree : trees) {
-            if (tree.isComplete) {
+            // Occurrence prefix hashes represent the all-species set only for a
+            // complete single-copy tree. Multicopy completeness is set-based.
+            if (tree.isComplete && tree.leafCount == tree.distinctTaxonCount) {
                 for (int s = 0; s < m; s++) {
                     allTaxaSum[s] = totalSum[tree.treeIndex][s];
                     allTaxaXor[s] = totalXor[tree.treeIndex][s];

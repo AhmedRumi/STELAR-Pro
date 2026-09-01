@@ -2,7 +2,7 @@
 set -euo pipefail
 
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd -P)"
-WORK="$(mktemp -d "${TMPDIR:-/tmp}/stelarx-clear-simulated-test.XXXXXX")"
+WORK="$(mktemp -d "${TMPDIR:-/tmp}/stelar-pro-clear-simulated-test.XXXXXX")"
 trap 'rm -rf -- "$WORK"' EXIT
 
 fail() {
@@ -33,13 +33,13 @@ BASE="${WORK}/phylogeny data"
 TARGET="${BASE}/simphy/data"
 mkdir -p "${TARGET}/dataset/results" "${BASE}/simphy/keep"
 touch "${TARGET}/dataset/all_gt.tre"
-touch "${TARGET}/dataset/results/out-stelarx.tre"
+touch "${TARGET}/dataset/results/out-stelar-pro.tre"
 touch "${BASE}/simphy/keep/sentinel"
 
 PHYLOGENY_DATA_DIR="$BASE" "$CLEAR_SCRIPT" --dry-run >"${WORK}/dry-run.out"
 grep -Fq "Delete completely:   $TARGET" "${WORK}/dry-run.out" || \
   fail "dry run did not print the exact target"
-[[ -f "${TARGET}/dataset/results/out-stelarx.tre" ]] || \
+[[ -f "${TARGET}/dataset/results/out-stelar-pro.tre" ]] || \
   fail "dry run removed data"
 
 if PHYLOGENY_DATA_DIR="$BASE" "$CLEAR_SCRIPT" >"${WORK}/noninteractive.out" 2>&1; then

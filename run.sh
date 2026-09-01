@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 #
-# STELAR-X runner
+# STELAR-Pro runner
 # ===============
 # Usage: ./run.sh -i <unrooted_gene_trees> -o <output> [options]
 #
@@ -17,10 +17,10 @@ if [[ -t 1 || -t 2 ]]; then
   export FORCE_COLOR="${FORCE_COLOR:-1}"
 fi
 
-STELARX_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-BUILD_DIR="${STELARX_ROOT}/build"
-NATIVE_DIR="${STELARX_ROOT}/native"
-CRASH_DIR="${STELARX_CRASH_DIR:-${STELARX_ROOT}/crash_logs}"
+STELAR_PRO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+BUILD_DIR="${STELAR_PRO_ROOT}/build"
+NATIVE_DIR="${STELAR_PRO_ROOT}/native"
+CRASH_DIR="${STELAR_PRO_CRASH_DIR:-${STELAR_PRO_ROOT}/crash_logs}"
 NTFY_CHANNEL_NAME="${NTFY_CHANNEL_NAME:-anik-phylo-stx}"
 
 GREEN='\033[0;32m'
@@ -32,8 +32,8 @@ INPUT_FILE=""
 OUTPUT_FILE=""
 LOG_FILE=""
 SCORE_SPECIES_TREE=""
-XMS="${STELARX_XMS:-256m}"
-XMX="${STELARX_XMX:-128g}"
+XMS="${STELAR_PRO_XMS:-256m}"
+XMX="${STELAR_PRO_XMX:-128g}"
 BUILD_FIRST=true
 PROGRAM_ARGS=()
 COMPUTE_MODE_SET=false
@@ -43,7 +43,7 @@ TAG_ONLY=false
 
 print_help() {
   cat <<EOF
-${0##*/} - STELAR-X wrapper
+${0##*/} - STELAR-Pro wrapper
 
 Usage: $0 --input <gene_trees> [--output <species_tree>] [options]
 
@@ -78,7 +78,7 @@ Optional:
   --seeds, -m        Number of hash seeds
   --rooted           Rooted input treatment (required and default)
   --keep-polytomy-during-inference
-                     Legacy STELAR-X option; STELAR-Pro inference pre-resolves them
+                     Legacy STELAR-Pro option; STELAR-Pro inference pre-resolves them
   --no-gpu-batch              Disable GPU batching
   --gpu-batch-size            GPU batch size (manual)
   --gpu-batches               Number of GPU batches (manual)
@@ -102,7 +102,7 @@ Optional:
   --xmx SIZE         Java max heap (default: ${XMX})
   --no-build         Skip build.sh before running
   --no-notify, -nn   Disable ntfy notification for score-only mode
-  --version          Print the STELAR-X version and exit
+  --version          Print the STELAR-Pro version and exit
   --diagnose         Print runtime/backend diagnostics and exit
   --help, -h         Show this message
 
@@ -111,7 +111,7 @@ Compatibility:
 
 Crash reports:
   Java and JVM fatal-error logs are stored in ${CRASH_DIR}.
-  Set STELARX_CRASH_DIR to choose another directory.
+  Set STELAR_PRO_CRASH_DIR to choose another directory.
 EOF
 }
 
@@ -242,7 +242,7 @@ fi
 
 # Re-enter once under tee so the log contains the wrapper diagnostics, build
 # output, Java output, and native CUDA messages (but not progress repaints).
-if [[ -n "$LOG_FILE" && "${STELARX_LOG_CAPTURED:-}" != "1" ]]; then
+if [[ -n "$LOG_FILE" && "${STELAR_PRO_LOG_CAPTURED:-}" != "1" ]]; then
   filter_terminal_log() {
     local line
     while IFS= read -r line || [[ -n "$line" ]]; do
@@ -250,7 +250,7 @@ if [[ -n "$LOG_FILE" && "${STELARX_LOG_CAPTURED:-}" != "1" ]]; then
       printf '%s\n' "$line"
     done
   }
-  FILTER_DIR="$(mktemp -d "${TMPDIR:-/tmp}/stelarx-log-filter.XXXXXX")"
+  FILTER_DIR="$(mktemp -d "${TMPDIR:-/tmp}/stelar-pro-log-filter.XXXXXX")"
   FILTER_PIPE="${FILTER_DIR}/stream"
   mkfifo "$FILTER_PIPE"
   cleanup_log_filter() {
@@ -261,7 +261,7 @@ if [[ -n "$LOG_FILE" && "${STELARX_LOG_CAPTURED:-}" != "1" ]]; then
   filter_terminal_log < "$FILTER_PIPE" > "$LOG_FILE" &
   FILTER_PID=$!
   set +e
-  STELARX_LOG_CAPTURED=1 "${BASH_SOURCE[0]}" "${ORIGINAL_ARGS[@]}" 2>&1 | tee "$FILTER_PIPE"
+  STELAR_PRO_LOG_CAPTURED=1 "${BASH_SOURCE[0]}" "${ORIGINAL_ARGS[@]}" 2>&1 | tee "$FILTER_PIPE"
   PIPE_STATUS=("${PIPESTATUS[@]}")
   wait "$FILTER_PID"
   FILTER_STATUS=$?
@@ -280,14 +280,14 @@ if [[ -n "$SCORE_SPECIES_TREE" ]]; then
 fi
 
 if [[ "$BUILD_FIRST" == true ]]; then
-  "${STELARX_ROOT}/build.sh"
+  "${STELAR_PRO_ROOT}/build.sh"
 fi
 
 # Create the target before JVM startup so both Java exception reports and
 # HotSpot fatal-error logs avoid cluttering the repository root.
 if ! mkdir -p "$CRASH_DIR"; then
   echo -e "${YELLOW}Warning: cannot create crash-log directory '$CRASH_DIR'; using the system temporary directory.${NC}" >&2
-  CRASH_DIR="${TMPDIR:-/tmp}/stelarx-crash_logs"
+  CRASH_DIR="${TMPDIR:-/tmp}/stelar-pro-crash-logs"
   mkdir -p "$CRASH_DIR" || {
     echo -e "${RED}Error: cannot create a crash-log directory.${NC}" >&2
     exit 1
@@ -295,8 +295,8 @@ if ! mkdir -p "$CRASH_DIR"; then
 fi
 CRASH_DIR="$(realpath "$CRASH_DIR")"
 JAVA_CRASH_ARGS=(
-  "-Dstelarx.crashDir=${CRASH_DIR}"
-  "-XX:ErrorFile=${CRASH_DIR}/stelarx-hotspot-crash-%p.log"
+  "-Dstelarpro.crashDir=${CRASH_DIR}"
+  "-XX:ErrorFile=${CRASH_DIR}/stelar-pro-hotspot-crash-%p.log"
 )
 
 if [[ ! -f "${BUILD_DIR}/stelarx/Main.class" ]]; then
@@ -305,7 +305,7 @@ if [[ ! -f "${BUILD_DIR}/stelarx/Main.class" ]]; then
 fi
 
 gpu_available=false
-if [[ -f "${NATIVE_DIR}/libstelarx_weight.so" && -f "${NATIVE_DIR}/libstelarx_dp.so" ]] && command -v nvidia-smi >/dev/null 2>&1; then
+if [[ -f "${NATIVE_DIR}/libstelar_pro_weight.so" && -f "${NATIVE_DIR}/libstelar_pro_dp.so" ]] && command -v nvidia-smi >/dev/null 2>&1; then
   if nvidia-smi >/dev/null 2>&1; then
     gpu_available=true
   fi
@@ -316,7 +316,7 @@ if [[ "$COMPUTE_MODE_SET" == false ]]; then
 fi
 
 if [[ "$TAG_ONLY" != true ]]; then
-  echo "=== STELAR-X ==="
+  echo "=== STELAR-Pro ==="
   if [[ -n "$INPUT_FILE" ]]; then
     echo "Input:       $INPUT_FILE"
   fi
@@ -334,7 +334,7 @@ if [[ "$TAG_ONLY" != true ]]; then
 fi
 
 if [[ -n "$SCORE_SPECIES_TREE" ]]; then
-  TMP_LOG="$(mktemp /tmp/stelarx_score_only.XXXXXX.log)"
+  TMP_LOG="$(mktemp /tmp/stelar-pro-score-only.XXXXXX.log)"
   cleanup_score_log() { rm -f "$TMP_LOG"; }
   trap cleanup_score_log EXIT
 
@@ -342,7 +342,7 @@ if [[ -n "$SCORE_SPECIES_TREE" ]]; then
   java \
     -Xms"${XMS}" -Xmx"${XMX}" \
     "${JAVA_CRASH_ARGS[@]}" \
-    -Dstelarx.home="${STELARX_ROOT}" \
+    -Dstelarpro.home="${STELAR_PRO_ROOT}" \
     -Djava.library.path="${NATIVE_DIR}" \
     -cp "${BUILD_DIR}" \
     stelarx.Main \
@@ -358,7 +358,7 @@ if [[ -n "$SCORE_SPECIES_TREE" ]]; then
 
   if [[ "$NO_NOTIFY" == false ]] && command -v curl >/dev/null 2>&1; then
     STATUS_TEXT="$(if [[ $EXIT_CODE -eq 0 ]]; then echo "completed"; else echo "failed (exit $EXIT_CODE)"; fi)"
-    NOTIFY_BODY="STELAR-X score-only ${STATUS_TEXT}
+    NOTIFY_BODY="STELAR-Pro score-only ${STATUS_TEXT}
 
 Triplet score: ${SCORE_VALUE}
 Input: $(basename "$INPUT_FILE")
@@ -376,7 +376,7 @@ fi
 exec java \
   -Xms"${XMS}" -Xmx"${XMX}" \
   "${JAVA_CRASH_ARGS[@]}" \
-  -Dstelarx.home="${STELARX_ROOT}" \
+  -Dstelarpro.home="${STELAR_PRO_ROOT}" \
   -Djava.library.path="${NATIVE_DIR}" \
   -cp "${BUILD_DIR}" \
   stelarx.Main \

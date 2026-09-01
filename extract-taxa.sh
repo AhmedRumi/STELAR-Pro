@@ -1,9 +1,9 @@
 #!/usr/bin/env bash
-# Extract union/intersection taxon names using STELAR-X's own Newick tokenizer.
+# Extract union/intersection taxon names using STELAR-Pro's own Newick tokenizer.
 
 set -euo pipefail
 
-STELARX_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+STELAR_PRO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 INPUT_FILE=""
 OUTPUT_FILE=""
 SET_MODE="union"
@@ -65,10 +65,10 @@ if [[ -n "$OUTPUT_FILE" ]]; then
 fi
 
 if [[ "$BUILD_FIRST" == true ]]; then
-  "$STELARX_ROOT/build.sh"
+  "$STELAR_PRO_ROOT/build.sh"
 fi
-if [[ ! -f "$STELARX_ROOT/build/stelarx/Main.class" ]]; then
-  echo "Error: compiled STELAR-X classes are missing; run ./build.sh first." >&2
+if [[ ! -f "$STELAR_PRO_ROOT/build/stelarx/Main.class" ]]; then
+  echo "Error: compiled STELAR-Pro classes are missing; run ./build.sh first." >&2
   exit 2
 fi
 
@@ -77,4 +77,4 @@ if [[ -n "$OUTPUT_FILE" ]]; then
   ARGS+=(--output "$OUTPUT_FILE")
 fi
 
-exec java -cp "$STELARX_ROOT/build" stelarx.Main "${ARGS[@]}"
+exec java -cp "$STELAR_PRO_ROOT/build" stelarx.Main "${ARGS[@]}"

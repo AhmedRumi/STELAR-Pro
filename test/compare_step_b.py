@@ -1,11 +1,11 @@
 #!/usr/bin/env python3
 """
 compare_step_b.py — Head-to-head comparison of Step B emissions (polytomy
-resolution via sampleAndResolve / resolveLinearly) between STELAR-X and the
+resolution via sampleAndResolve / resolveLinearly) between STELAR-Pro and the
 patched astral-my.
 
 Tag formats:
-   STELAR-X  : "[STEPB] ti=I  size=S  {taxa}"
+   STELAR-Pro  : "[STEPB] ti=I  size=S  {taxa}"
    ASTRAL-MP : "[STEPB_EMIT] size=S {taxa}"
 
 Each emission is canonicalized to the side NOT containing the lex-smallest
@@ -18,7 +18,7 @@ import argparse
 import re
 import sys
 
-STELARX_RE  = re.compile(r"\[STEPB\]\s+ti=\d+\s+size=\d+\s+\{([^}]*)\}")
+STELAR_PRO_RE  = re.compile(r"\[STEPB\]\s+ti=\d+\s+size=\d+\s+\{([^}]*)\}")
 ASTRALMP_RE = re.compile(r"\[STEPB_EMIT\]\s+size=\d+\s+\{([^}]*)\}")
 
 
@@ -42,19 +42,19 @@ def extract_sets(path, pattern, all_taxa=None):
 
 def main():
     ap = argparse.ArgumentParser()
-    ap.add_argument("--stelarx",  required=True)
+    ap.add_argument("--stelar-pro",  required=True)
     ap.add_argument("--astralmp", required=True)
     ap.add_argument("--label", default="")
     args = ap.parse_args()
 
-    _, x_all = extract_sets(args.stelarx,  STELARX_RE)
+    _, x_all = extract_sets(args.stelar_pro,  STELAR_PRO_RE)
     _, m_all = extract_sets(args.astralmp, ASTRALMP_RE)
     all_taxa = x_all | m_all
-    xs, _ = extract_sets(args.stelarx,  STELARX_RE,  all_taxa)
+    xs, _ = extract_sets(args.stelar_pro,  STELAR_PRO_RE,  all_taxa)
     ms, _ = extract_sets(args.astralmp, ASTRALMP_RE, all_taxa)
 
     print(f"=== Step B head-to-head  {args.label} ===")
-    print(f"  STELAR-X  : {len(xs):3d} unique bipartitions  ({args.stelarx})")
+    print(f"  STELAR-Pro  : {len(xs):3d} unique bipartitions  ({args.stelar_pro})")
     print(f"  ASTRAL-MP : {len(ms):3d} unique bipartitions  ({args.astralmp})")
 
     common = xs & ms

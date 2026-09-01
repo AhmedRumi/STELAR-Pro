@@ -84,7 +84,7 @@ public class SimilarityMatrixBuilder {
         int k = trees.size();
         preflightPackedHeap(n);
         if (SimilarityMatrix.requiresPacked(n)
-                || Boolean.getBoolean("stelarx.similarity.forcePacked")) {
+                || Boolean.getBoolean("stelarpro.similarity.forcePacked")) {
             long triangle = SimilarityMatrix.triangleCellCount(n);
             Logging.info("Similarity output: exact segmented upper triangle "
                 + "(%d cells, %.2f GiB per accumulator; dense n×n arrays are disabled)",
@@ -108,11 +108,11 @@ public class SimilarityMatrixBuilder {
         boolean compactLayoutOverflow = !fitsJavaArray((long)k * ePadded)
             || !fitsJavaArray((long)k * logMax * ePadded)
             || !fitsJavaArray((long)k * n);
-        boolean forceWide = Boolean.getBoolean("stelarx.similarity.forceWide");
+        boolean forceWide = Boolean.getBoolean("stelarpro.similarity.forceWide");
 
         if (forceWide || compactTourOverflow || compactLayoutOverflow) {
             String reason = forceWide
-                ? "forced by -Dstelarx.similarity.forceWide=true"
+                ? "forced by -Dstelarpro.similarity.forceWide=true"
                 : compactTourOverflow
                     ? "maximum Euler tour " + eMaxRaw + " exceeds compact limit "
                         + COMPACT_MAX_TOUR
@@ -395,7 +395,7 @@ public class SimilarityMatrixBuilder {
 
     private static void preflightPackedHeap(int n) {
         if (!SimilarityMatrix.requiresPacked(n)
-                && !Boolean.getBoolean("stelarx.similarity.forcePacked")) return;
+                && !Boolean.getBoolean("stelarpro.similarity.forcePacked")) return;
         long triangle = SimilarityMatrix.triangleCellCount(n);
         if (triangle > Long.MAX_VALUE / (2L * Double.BYTES)) {
             throw new IllegalArgumentException("Similarity matrix size overflows byte accounting");

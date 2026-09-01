@@ -47,12 +47,12 @@ public final class PackedMatrixBoundaryTest {
             }
         }
 
-        System.setProperty("stelarx.similarity.forcePacked", "true");
+        System.setProperty("stelarpro.similarity.forcePacked", "true");
         SimilarityMatrix tinyPacked;
         try {
             tinyPacked = new SimilarityMatrix(3);
         } finally {
-            System.clearProperty("stelarx.similarity.forcePacked");
+            System.clearProperty("stelarpro.similarity.forcePacked");
         }
         Config cfg = Config.getInstance();
         if (SimilarityMatrixBuilder.effectiveTreeCapMiB(tinyPacked, cfg) != 8192) {

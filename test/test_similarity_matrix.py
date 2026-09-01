@@ -2,12 +2,12 @@
 """
 test_similarity_matrix.py
 =========================
-Randomized tests for the STELAR-X similarity matrix computation.
+Randomized tests for the STELAR-Pro similarity matrix computation.
 
 For each test case:
   1. Generate n random taxa and k random binary gene trees (some incomplete).
   2. Compute the expected similarity matrix by brute-force in Python.
-  3. Run STELAR-X with --verify-similarity-matrix and parse its output.
+  3. Run STELAR-Pro with --verify-similarity-matrix and parse its output.
   4. Assert all values match within tolerance.
 
 Brute-force definition (binary trees):
@@ -18,7 +18,7 @@ Brute-force definition (binary trees):
   sim(a,a)  = 1.0
 
 Usage:
-  python3 test/test_similarity_matrix.py [--stelarx-root PATH] [--mode cpu|gpu]
+  python3 test/test_similarity_matrix.py [--stelar-pro-root PATH] [--mode cpu|gpu]
                                           [--seeds N N N ...] [-n NUM_TESTS] [-v]
 """
 
@@ -110,7 +110,7 @@ def lca(a_node, b_node):
 
 
 def tree_distance(a_node, b_node):
-    """Unit-edge distance, implemented independently of STELAR-X Euler data."""
+    """Unit-edge distance, implemented independently of STELAR-Pro Euler data."""
     ancestors = {}
     distance = 0
     cur = a_node
@@ -196,9 +196,9 @@ def brute_force_similarity_matrix(trees_with_taxa, all_taxa):
     return result
 
 
-# ── Run STELAR-X and parse output ─────────────────────────────────────────────
+# ── Run STELAR-Pro and parse output ─────────────────────────────────────────────
 
-def run_stelarx_similarity_matrix(newick_lines, stelarx_root, mode):
+def run_stelar_pro_similarity_matrix(newick_lines, stelarx_root, mode):
     build_dir  = os.path.join(stelarx_root, "build")
     native_dir = os.path.join(stelarx_root, "native")
 
@@ -218,7 +218,7 @@ def run_stelarx_similarity_matrix(newick_lines, stelarx_root, mode):
         result = subprocess.run(cmd, capture_output=True, text=True, timeout=120)
         if result.returncode != 0:
             raise RuntimeError(
-                f"STELAR-X exited {result.returncode}\nstderr:\n{result.stderr[:2000]}")
+                f"STELAR-Pro exited {result.returncode}\nstderr:\n{result.stderr[:2000]}")
         return parse_sm_output(result.stdout)
     finally:
         os.unlink(input_path)
@@ -284,8 +284,8 @@ def run_test(seed, stelarx_root, mode, verbose=False):
     # Python brute-force answer
     expected = brute_force_similarity_matrix(trees_with_taxa, all_taxa)
 
-    # STELAR-X answer
-    taxa_order, actual_raw = run_stelarx_similarity_matrix(newick_lines, stelarx_root, mode)
+    # STELAR-Pro answer
+    taxa_order, actual_raw = run_stelar_pro_similarity_matrix(newick_lines, stelarx_root, mode)
 
     # Reorder actual to match all_taxa order
     idx_java = {t: i for i, t in enumerate(taxa_order)}
@@ -319,8 +319,8 @@ def run_test(seed, stelarx_root, mode, verbose=False):
 
 
 def main():
-    ap = argparse.ArgumentParser(description="Test STELAR-X similarity matrix")
-    ap.add_argument("--stelarx-root", default=".", help="Path to STELAR-X root")
+    ap = argparse.ArgumentParser(description="Test STELAR-Pro similarity matrix")
+    ap.add_argument("--stelar-pro-root", default=".", help="Path to STELAR-Pro root")
     ap.add_argument("--mode", choices=["cpu", "gpu"], default="cpu")
     ap.add_argument("--seeds", type=int, nargs="+",
                     help="Specific seeds to test (default: 1..20)")
@@ -335,7 +335,7 @@ def main():
     passed = failed = 0
     for seed in seeds:
         try:
-            ok = run_test(seed, args.stelarx_root, args.mode, verbose=args.verbose)
+            ok = run_test(seed, args.stelar_pro_root, args.mode, verbose=args.verbose)
             if ok:
                 passed += 1
             else:

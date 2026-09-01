@@ -16,7 +16,7 @@ SCRIPT_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 source "${SCRIPT_ROOT}/scripts/phylogeny-data-dir.sh"
 
 # Algorithm configuration - modify this to select which algorithms to collect
-ALGORITHMS=("stelarx")
+ALGORITHMS=("stelar-pro")
 
 BASE_DIR="$SCRIPT_ROOT"
 SIMPHY_DIR=""
@@ -34,7 +34,7 @@ and appends gt-gt,gt-st from a stat-sim.csv located in the same directory as eac
 Configured algorithms: ${ALGORITHMS[*]}
 
 Options:
-  --project-root    STELAR-X checkout root (default: ${SCRIPT_ROOT})
+  --project-root    STELAR-Pro checkout root (default: ${SCRIPT_ROOT})
   --base-dir, -b    Compatibility alias for --project-root
   --simphy-dir      Path to simphy dir (overrides --project-root)
   --simphy-data-dir SimPhy data root (default: \$PHYLOGENY_DATA_DIR/simphy/data)
@@ -59,7 +59,7 @@ if [[ -z "$SIMPHY_DIR" ]]; then
   SIMPHY_DIR="${BASE_DIR%/}/simphy"
 fi
 
-SIMPHY_DATA_DIR="$(stelarx_prepare_simphy_data_dir "$SIMPHY_DATA_DIR")"
+SIMPHY_DATA_DIR="$(stelar_pro_prepare_simphy_data_dir "$SIMPHY_DATA_DIR")"
 
 # find stat files for all configured algorithms (only if lock file exists)
 declare -a all_stat_files=()

@@ -1,5 +1,5 @@
 #!/bin/bash
-# test_rf.sh — Run STELAR-X on a dataset (Mode 1 and Mode 2) and report RF vs true tree.
+# test_rf.sh — Run STELAR-Pro on a dataset (Mode 1 and Mode 2) and report RF vs true tree.
 #
 # Usage:
 #   bash test_rf.sh 37          # test on 37-taxa dataset
@@ -21,7 +21,7 @@ run_one() {
 
     echo ""
     echo "════════════════════════════════════════════════════════"
-    echo "  STELAR-X  |  ${N}-taxa  |  GPU"
+    echo "  STELAR-Pro  |  ${N}-taxa  |  GPU"
     echo "════════════════════════════════════════════════════════"
 
     if [ ! -f "$INPUT" ]; then

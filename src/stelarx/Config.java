@@ -85,7 +85,7 @@ public class Config {
     private int numHashSeeds = 2;
     private long baseSeed = 0xDEADBEEFCAFEL;
     private int verbosity = 1; // 0=quiet 1=INFO 2=DEBUG 3=TRACE
-    /** STELAR-X is intrinsically rooted; retained only for CLI compatibility. */
+    /** STELAR-Pro is intrinsically rooted; retained only for CLI compatibility. */
     private boolean treatAsUnrooted = false;
     /**
      * Inference-only input policy. Final triplet scoring always preserves genuine
@@ -114,7 +114,7 @@ public class Config {
      */
     private boolean pruneUnreachableSplits = true;
 
-    /** Deprecated unrooted compatibility switch; STELAR-X always rejects it. */
+    /** Deprecated unrooted compatibility switch; STELAR-Pro always rejects it. */
     private boolean anchorOutgroup = false;
 
     /** Global taxon id used as the outgroup anchor (default 0). */
@@ -300,7 +300,7 @@ public class Config {
 
     // GPU weight-kernel progress-bar update interval (seconds).  -1 = auto (TTY ~2 s
     // overwriting line; non-TTY ~300 s newline).  Precedence: this flag > env
-    // STELARX_GPU_PROGRESS_SEC > auto default.
+    // STELAR_PRO_GPU_PROGRESS_SEC > auto default.
     private double gpuProgressIntervalSec = -1.0;
     public double getGpuProgressIntervalSec()        { return gpuProgressIntervalSec; }
     public void setGpuProgressIntervalSec(double s)  { this.gpuProgressIntervalSec = s; }

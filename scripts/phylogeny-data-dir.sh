@@ -3,7 +3,7 @@
 # Resolve the shared SimPhy data root. An explicit path takes precedence;
 # otherwise PHYLOGENY_DATA_DIR is required and the standard subdirectory is
 # created beneath it.
-stelarx_prepare_simphy_data_dir() {
+stelar_pro_prepare_simphy_data_dir() {
   local requested_dir="${1:-}"
   local resolved_dir
 

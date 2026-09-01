@@ -27,7 +27,7 @@ public class GPUDistanceMatrix {
         if (attempted) return loaded;
         attempted = true;
         try {
-            System.loadLibrary("stelarx_dist");
+            System.loadLibrary("stelar_pro_dist");
             loaded = true;
             loadError = "";
         } catch (UnsatisfiedLinkError | SecurityException e) {

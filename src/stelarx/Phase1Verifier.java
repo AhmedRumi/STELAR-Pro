@@ -35,14 +35,17 @@ public class Phase1Verifier {
         for (Tree t : trees) {
             out.printf("--- Tree %d ----%n", t.treeIndex);
             out.printf("  leafCount  : %d%n", t.leafCount);
+            out.printf("  distinctTaxa: %d%n", t.distinctTaxonCount);
             out.printf("  isComplete : %b%n", t.isComplete);
             out.printf("  postorder  : %s%n", taxonNames(t.postorderArray, registry));
             out.printf("  postorder  : %s  (IDs)%n", Arrays.toString(t.postorderArray));
             out.println("  positionMap:");
             for (int id = 0; id < registry.size(); id++) {
                 int pos = t.positionMap[id];
+                int copies = t.taxonPositions.countInRange(id, 0, t.leafCount);
                 if (pos != -1)
-                    out.printf("    %s(id=%d) -> pos %d%n", registry.getName(id), id, pos);
+                    out.printf("    %s(id=%d) -> representative pos %d, copies %d%n",
+                        registry.getName(id), id, pos, copies);
                 else
                     out.printf("    %s(id=%d) -> ABSENT%n", registry.getName(id), id);
             }
@@ -51,12 +54,12 @@ public class Phase1Verifier {
             // Sanity checks
             out.println("  --- assertions ---");
             boolean ok = true;
-            // 1. positionMap is inverse of postorderArray
+            // 1. Every leaf occurrence is retained in its taxon's position vector.
             for (int j = 0; j < t.leafCount; j++) {
                 int tid = t.postorderArray[j];
-                if (t.positionMap[tid] != j) {
-                    out.printf("  FAIL: positionMap[%s] = %d, expected %d%n",
-                        registry.getName(tid), t.positionMap[tid], j);
+                if (!t.taxonPositions.containsInRange(tid, j, j + 1)) {
+                    out.printf("  FAIL: position vector for %s omits position %d%n",
+                        registry.getName(tid), j);
                     ok = false;
                 }
             }

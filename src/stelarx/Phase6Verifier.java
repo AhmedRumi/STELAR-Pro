@@ -14,7 +14,7 @@ import java.io.*;
 import java.util.*;
 
 /**
- * Verifies Phase-6 STELAR-X rooted-triplet weight computation.
+ * Verifies Phase-6 STELAR-Pro rooted-triplet weight computation.
  *
  * Checks:
  *   1. All scores are >= 0.

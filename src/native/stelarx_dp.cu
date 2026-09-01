@@ -1,5 +1,5 @@
 /**
- * stelarx_dp.cu — CUDA JNI for STELAR-X cross-tree DP transition discovery (Mode 2).
+ * stelarx_dp.cu — CUDA JNI for STELAR-Pro cross-tree DP transition discovery (Mode 2).
  *
  * Implements the size-binned hash-subtraction search:
  *   For every cluster A in X, for each size sz in [1..|A|/2],
@@ -385,7 +385,7 @@ Java_stelarx_gpu_GPUDPBuilder_findCrossTreeTransitionsGPU(
         size_t freeNow = 0, totalVRAM = 0;
         cudaMemGetInfo(&freeNow, &totalVRAM);
         fprintf(stderr,
-            "[STELAR-X GPU] DP cross-tree allocations:\n"
+            "[STELAR-Pro GPU] DP cross-tree allocations:\n"
             "  N=%d  HT_SIZE=%d  mSeeds=%d  maxPerRound=%d\n"
             "  cluster data : %6.1f MB\n"
             "  hash table   : %6.1f MB\n"
@@ -418,7 +418,7 @@ Java_stelarx_gpu_GPUDPBuilder_findCrossTreeTransitionsGPU(
     }
 
     fprintf(stderr,
-        "[STELAR-X GPU] DP cross-tree search starting:\n"
+        "[STELAR-Pro GPU] DP cross-tree search starting:\n"
         "  clusters     : %d\n"
         "  active bins  : %d  (size range 1..%d)\n"
         "  output buf   : %d triples / sub-batch  (cap = %.0f MB)\n",
@@ -508,7 +508,7 @@ Java_stelarx_gpu_GPUDPBuilder_findCrossTreeTransitionsGPU(
                     "  ║                                                              ║\n"
                     "  ║  TO FIX: rerun with --gpu-dp-state-space-construction-output-cap  ║\n"
                     "  ║  set to a larger value, e.g.  --gpu-dp-state-space-...  1g  ║\n"
-                    "  ║  or report this dataset to the STELAR-X maintainers.        ║\n"
+                    "  ║  or report this dataset to the STELAR-Pro maintainers.        ║\n"
                     "  ╚══════════════════════════════════════════════════════════════╝\n"
                     "\n",
                     outCount,

@@ -19,14 +19,14 @@ public final class FatalReporterTest {
         List<Path> reports;
         try (Stream<Path> files = Files.list(crashDir)) {
             reports = files.filter(path -> path.getFileName().toString()
-                .matches("stelarx-crash-[0-9]{8}-[0-9]{6}-[0-9]+[.]log"))
+                .matches("stelar-pro-crash-[0-9]{8}-[0-9]{6}-[0-9]+[.]log"))
                 .toList();
         }
         check(reports.size() == 1, "expected one crash report, found " + reports);
         String text = Files.readString(reports.get(0));
-        check(text.contains("STELAR-X FATAL ERROR"), "missing report header");
+        check(text.contains("STELAR-Pro FATAL ERROR"), "missing report header");
         check(text.contains("crash-directory-sentinel"), "missing failure message");
-        check(text.contains("Command: stelarx --diagnose"), "missing command line");
+        check(text.contains("Command: stelar-pro --diagnose"), "missing command line");
         System.out.println("Crash-report directory isolation: PASS");
     }
 

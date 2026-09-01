@@ -42,7 +42,7 @@ public class GPUSimilarityMatrix {
         if (attempted) return loaded;
         attempted = true;
         try {
-            System.loadLibrary("stelarx_sim");
+            System.loadLibrary("stelar_pro_sim");
             loaded = true;
             loadError = "";
         } catch (UnsatisfiedLinkError | SecurityException e) {

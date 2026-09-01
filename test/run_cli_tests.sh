@@ -1,23 +1,23 @@
 #!/usr/bin/env bash
-# Current STELAR-X command/identity smoke tests. The superseded quartet-era
+# Current STELAR-Pro command/identity smoke tests. The superseded quartet-era
 # command suite is retained under raw-prev for migration archaeology only.
 set -euo pipefail
 
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
-WORK="$(mktemp -d "${TMPDIR:-/tmp}/stelarx-cli-tests.XXXXXX")"
+WORK="$(mktemp -d "${TMPDIR:-/tmp}/stelar-pro-cli-tests.XXXXXX")"
 trap 'rm -rf "$WORK"' EXIT
 
 "${ROOT}/build.sh" >/dev/null
 
 [[ -f "${ROOT}/build/stelarx/Main.class" ]]
-[[ "$(find "${ROOT}/build" -mindepth 1 -maxdepth 1 -type d -printf '%f\n')" == "stelarx" ]]
+[[ "$(find "${ROOT}/build" -mindepth 1 -maxdepth 1 -type d -printf '%f\n')" == "stelar-pro" ]]
 
-VERSION_TEXT="$(NO_COLOR=1 "${ROOT}/stelarx" --version --no-build)"
-[[ "$VERSION_TEXT" == *"STELAR-X  v1.0.0"* ]]
-[[ "$VERSION_TEXT" == *"Welcome to STELAR-X version 1.0.0!"* ]]
+VERSION_TEXT="$(NO_COLOR=1 "${ROOT}/stelar-pro" --version --no-build)"
+[[ "$VERSION_TEXT" == *"STELAR-Pro  v1.0.0"* ]]
+[[ "$VERSION_TEXT" == *"Welcome to STELAR-Pro version 1.0.0!"* ]]
 
-HELP_TEXT="$(NO_COLOR=1 "${ROOT}/stelarx" --help 2>&1)"
-[[ "$HELP_TEXT" == *"STELAR-X wrapper"* ]]
+HELP_TEXT="$(NO_COLOR=1 "${ROOT}/stelar-pro" --help 2>&1)"
+[[ "$HELP_TEXT" == *"STELAR-Pro wrapper"* ]]
 [[ "$HELP_TEXT" == *"--search-space"* ]]
 [[ "$HELP_TEXT" == *"--intersection-method"* ]]
 [[ "$HELP_TEXT" == *"--gpu-strict"* ]]
@@ -25,12 +25,12 @@ HELP_TEXT="$(NO_COLOR=1 "${ROOT}/stelarx" --help 2>&1)"
 
 DIAG_TEXT="$(NO_COLOR=1 java -Djava.library.path="${ROOT}/native" \
   -cp "${ROOT}/build" stelarx.Main --cpu --diagnose 2>&1)"
-[[ "$DIAG_TEXT" == *"STELAR-X DIAGNOSTICS"* ]]
+[[ "$DIAG_TEXT" == *"STELAR-Pro DIAGNOSTICS"* ]]
 [[ "$DIAG_TEXT" == *"Selected compute:            CPU"* ]]
 
 OUTPUT_TREE="${WORK}/species-tree.tre"
-STELARX_CRASH_DIR="${WORK}/launcher-crash_logs" \
-  NO_COLOR=1 "${ROOT}/stelarx" --no-build --cpu -q \
+STELAR_PRO_CRASH_DIR="${WORK}/launcher-crash_logs" \
+  NO_COLOR=1 "${ROOT}/stelar-pro" --no-build --cpu -q \
   -i "${ROOT}/test/input/stelar_candidate_5taxa.tre" \
   -o "$OUTPUT_TREE" --search-space S1 --intersection-method I2 >/dev/null
 [[ -s "$OUTPUT_TREE" ]]
@@ -49,7 +49,7 @@ printf '%s\n' \
   'printf "(B,(C,(A,A)D));\\n" > "$3"' \
   >"$FAKE_ASTRAL"
 chmod +x "$FAKE_ASTRAL"
-TAG_TEXT="$(NO_COLOR=1 "${ROOT}/stelarx" --no-build -T -q \
+TAG_TEXT="$(NO_COLOR=1 "${ROOT}/stelar-pro" --no-build -T -q \
   -i "$TAG_INPUT" -o "$TAG_OUTPUT" \
   --astral-pro-executable "$FAKE_ASTRAL" 2>&1)"
 [[ "$TAG_TEXT" == *"STELAR-Pro tag-only: rooting and tagging gene trees..."* ]]
@@ -57,6 +57,6 @@ TAG_TEXT="$(NO_COLOR=1 "${ROOT}/stelarx" --no-build -T -q \
 [[ "$TAG_TEXT" != *"ASTRAL-PRO BACKEND NOISE"* ]]
 grep -q ')D' "$TAG_OUTPUT"
 
-STELARX_SKIP_BUILD=1 "${ROOT}/test/run_stelarx_tests.sh" >/dev/null
+STELAR_PRO_SKIP_BUILD=1 "${ROOT}/test/run_stelar_pro_tests.sh" >/dev/null
 
-echo "STELAR-X CLI and identity tests: PASS"
+echo "STELAR-Pro CLI and identity tests: PASS"

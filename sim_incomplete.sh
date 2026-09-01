@@ -11,7 +11,7 @@
 #   incomplete: $PHYLOGENY_DATA_DIR/simphy/data/t_N_g_K_sb_S_spmin_A_spmax_B_incomplete/Ri/all_gt.tre
 #
 # The true species tree (s_tree.trees) is copied into each incomplete replicate
-# directory so that test-stelarx-simulated.sh --incomplete can compute RF distance.
+# directory so that test-stelar-pro-simulated.sh --incomplete can compute RF distance.
 #
 # All sim.sh options are accepted and forwarded. Incomplete-specific options:
 #   --fraction F    Fraction of taxa to remove per tree (default: 0.30)
@@ -28,7 +28,7 @@ set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 source "${SCRIPT_DIR}/scripts/phylogeny-data-dir.sh"
-PYTHON_BIN="${STELARX_PYTHON:-${SCRIPT_DIR}/.venv/bin/python}"
+PYTHON_BIN="${STELAR_PRO_PYTHON:-${SCRIPT_DIR}/.venv/bin/python}"
 [[ -x "$PYTHON_BIN" ]] || PYTHON_BIN="python3"
 
 # ── Incomplete-specific defaults ──────────────────────────────────────────────
@@ -114,7 +114,7 @@ if [[ "$SIMPHY_DIR_SET" == false ]]; then
   SIMPHY_DIR="${BASE_DIR%/}/simphy"
 fi
 SIMPHY_DIR="$(realpath "$SIMPHY_DIR")"
-SIMPHY_DATA_DIR="$(stelarx_prepare_simphy_data_dir "$SIMPHY_DATA_DIR")"
+SIMPHY_DATA_DIR="$(stelar_pro_prepare_simphy_data_dir "$SIMPHY_DATA_DIR")"
 SIM_ARGS+=(--simphy-data-dir "$SIMPHY_DATA_DIR")
 
 # ── Derive complete output dir (same logic as sim.sh) ────────────────────────
@@ -167,7 +167,7 @@ for i in $(seq 1 "${REPLICATES}"); do
     --min-keep "$MIN_KEEP" \
     --stats 2>&1 | sed "s/^/  [R${i}] /"
 
-  # Copy true species tree so test-stelarx-simulated.sh --incomplete can compute RF
+  # Copy true species tree so test-stelar-pro-simulated.sh --incomplete can compute RF
   if [[ -f "$TRUE_TREE_SRC" ]]; then
     cp "$TRUE_TREE_SRC" "$TRUE_TREE_DST"
   fi

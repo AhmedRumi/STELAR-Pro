@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-Independent Python implementation of the STELAR-X distance matrix computation.
+Independent Python implementation of the STELAR-Pro distance matrix computation.
 
 Algorithm (same as DistanceMatrixBuilder.buildCPU):
   For each gene tree T, do a post-order traversal.
@@ -13,14 +13,14 @@ Algorithm (same as DistanceMatrixBuilder.buildCPU):
 Usage:
   python3 test/verify_dm.py <input.tre>
 
-Output: same format as STELAR-X --verify-distance-matrix
+Output: same format as STELAR-Pro --verify-distance-matrix
   DISTANCE_MATRIX
   n=<count>
   taxa=name0,name1,...
   row0=d00,d01,...
   ...
 
-To compare against STELAR-X:
+To compare against STELAR-Pro:
   python3 test/verify_dm.py input.tre > expected.txt
   java ... --verify-distance-matrix --cpu -i input.tre > cpu.txt
   java ... --verify-distance-matrix --gpu -i input.tre > gpu.txt

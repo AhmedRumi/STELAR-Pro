@@ -110,7 +110,7 @@ public final class GeneTreeRooterTagger {
         if (environment != null && !environment.isBlank()) {
             return Path.of(environment).toAbsolutePath().normalize();
         }
-        String home = System.getProperty("stelarx.home");
+        String home = System.getProperty("stelarpro.home");
         if (home != null && !home.isBlank()) {
             Path candidate = Path.of(home).resolve(EXECUTABLE_RELATIVE).normalize();
             if (Files.isRegularFile(candidate)) return candidate.toAbsolutePath();

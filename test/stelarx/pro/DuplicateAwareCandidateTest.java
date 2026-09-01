@@ -67,8 +67,8 @@ public final class DuplicateAwareCandidateTest {
         BitSet singletonMembers = new BitSet(registry.size());
         singletonMembers.set(duplication.left.taxonId);
         ClusterHash singletonA = hashMembers(singletonMembers, hasher);
-        check(newClusters.get(singletonA).frequency == 3,
-            "duplication-rooted subtree was added as a candidate");
+        check(newClusters.get(singletonA).frequency == 4,
+            "duplication child set was not retained exactly once as a valid split side");
 
         TreeNode aabSpeciation = first.root.left.left;
         ClusterHash ab = unique.get(0, aabSpeciation);
@@ -80,6 +80,9 @@ public final class DuplicateAwareCandidateTest {
             for (BipartitionSplit split : entry.getValue()) {
                 check(split.lo.size + split.hi.size == entry.getKey().size,
                     "DP split contains overlapping species");
+                check(newClusters.get(split.lo) != null
+                        && newClusters.get(split.hi) != null,
+                    "speciation transition side has no cluster exemplar");
             }
         }
 

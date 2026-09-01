@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # Compatibility entry point for the current rooted-triplet validation suite.
 # The pre-migration runner used an unrooted quartet oracle and accepted fixtures
-# that STELAR-X now intentionally rejects, so keeping that logic here produced
+# that STELAR-Pro now intentionally rejects, so keeping that logic here produced
 # false failures against the current command contract.
 set -euo pipefail
 
@@ -12,7 +12,7 @@ usage() {
   cat <<'EOF'
 Usage: test/run_tests.sh [--cpu|--gpu] [--quick] [--skip-packaging]
 
-Compatibility wrapper around run_stelarx_comprehensive_tests.sh.
+Compatibility wrapper around run_stelar_pro_comprehensive_tests.sh.
   --cpu               Run CPU validation only.
   --gpu               Require the strict CUDA validation layer.
   --quick             Use the comprehensive suite's reduced randomized matrix.
@@ -48,4 +48,4 @@ while [[ $# -gt 0 ]]; do
   esac
 done
 
-exec "${ROOT}/test/run_stelarx_comprehensive_tests.sh" "${ARGS[@]}"
+exec "${ROOT}/test/run_stelar_pro_comprehensive_tests.sh" "${ARGS[@]}"

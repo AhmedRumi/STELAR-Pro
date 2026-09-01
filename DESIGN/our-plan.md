@@ -1,9 +1,9 @@
-So, you will be given a STELAR-X codebase as reference, and you can take help from there but i want a cleaner and essential code for this project. Like the ref is kinda bloated, so let's go through all the steps our code will need perform. You will need to write modular and efficient Java files following best practices and also optimal cuda kernels and launchers. 
+So, you will be given a STELAR-Pro codebase as reference, and you can take help from there but i want a cleaner and essential code for this project. Like the ref is kinda bloated, so let's go through all the steps our code will need perform. You will need to write modular and efficient Java files following best practices and also optimal cuda kernels and launchers. 
 
 # Input
 =======
 
-A set of gene trees just as stelar-x takes. For now assume that the trees will be in newick format and they will be rooted trees, so essentially, the multithreaded tree parsing will be almost all the same as done in stelar-x. 
+A set of gene trees just as stelar-pro takes. For now assume that the trees will be in newick format and they will be rooted trees, so essentially, the multithreaded tree parsing will be almost all the same as done in stelar-pro. 
 
 Here, 
 
@@ -14,15 +14,15 @@ So, our first task is parsing and preprocessing the trees.
 
 # Parsing and Preprocessing
 
-Well, the parsing is just it is like normal Newick parsing as in stelar-x. 
+Well, the parsing is just it is like normal Newick parsing as in stelar-pro. 
 
 Now let us come to preprocessing. 
 
-See the stelar-x ref code impleemnts many different classes like RangeBipartition, MixedBipartition, etc many many things. 
+See the stelar-pro ref code impleemnts many different classes like RangeBipartition, MixedBipartition, etc many many things. 
 
 See, here we will have a very essential core class that is Cluster. 
 
-So, at first our first task is to create similar post order traversal arrays for the trees, just like done by stelar-x, 
+So, at first our first task is to create similar post order traversal arrays for the trees, just like done by stelar-pro, 
 
 so, say we have k=3 input gene trees like 
 
@@ -49,7 +49,7 @@ Aside this, we will compute a position mapping, this is like, for each array, fo
 Explanation: Since here in 2nd array, taxon 3 appears at index 4, and taxon 4 appears at index 3
 And in 3rd array, taxon 1, and taxon 2 does not appear, -1, -1, and taxon 3,4 appears at positions 1,2 respectively. 
 
-note that, similar processing is already actually done in stelar-x you may take help from there.
+note that, similar processing is already actually done in stelar-pro you may take help from there.
 
 # Computing Single Taxon hashes
 
@@ -184,7 +184,7 @@ its cluster hashes will be m hashes for the sums of m different hash values (mod
 
 Now the question is, how do we efficiently calculate range hashes?
 
-We will use prefix hashes, just like stelar-x does. 
+We will use prefix hashes, just like stelar-pro does. 
 
 For each of the 2m cases, we will essentially compute prefix scan arrays for that particular hash function across all the k gene trees. 
 
@@ -296,7 +296,7 @@ thus this step will give us the total DP mapping basically.
 
 # Weight Calculation of Candidate Bipartitions
 
-Well now that we have the DP search space, we will now at some point traverse this search space and will choose optimal solutions based on scores etc. For that reason, the only thing remaining to complete the whole inference is how to calculate score for a particular candidate bipartition, then we very similar to STELAR-X, accumulate scores and keep choosing optimal biparittions at correpsonding levels and theerby form the tree. 
+Well now that we have the DP search space, we will now at some point traverse this search space and will choose optimal solutions based on scores etc. For that reason, the only thing remaining to complete the whole inference is how to calculate score for a particular candidate bipartition, then we very similar to STELAR-Pro, accumulate scores and keep choosing optimal biparittions at correpsonding levels and theerby form the tree. 
 
 
 Ok so, now it boils down to this, for one given candidate biparitition X|Y (note that, since we will build a rooted tree, we consider candidates as bipartitions), find the quartet score for this (as opposed to triplet score as we did earlier)
@@ -390,7 +390,7 @@ So, we kinda need to compute 6 intersections, and may infer the other three with
 
 # Calculation of Intersections
 
-One way is current one, iterating over smaller range, as is done in STELAR-X
+One way is current one, iterating over smaller range, as is done in STELAR-Pro
 
 Another way is to use Wavelet Matrix per pair of gene trees (Build: O(nlogn), Memory: O(nlogn), Query Time: O(logn)). We may use Wavelet Matrix in GPU (working code given in ref-cuda)
 
@@ -404,7 +404,7 @@ note that, the candidate X|Y, is kinda free, in the sense that X and Y may come 
 
 Now our idea is that, since each unique gene tree trip will in turn contribute to the total scores for each candidate bip, well, let us very carefully do this to carefully handle GPU memory
 
-let us first init 0 scores for each candidate bip, we will essentially need to output total aggregate scores for each of these as output from the GPU kernel as we do in STELAR-X. 
+let us first init 0 scores for each candidate bip, we will essentially need to output total aggregate scores for each of these as output from the GPU kernel as we do in STELAR-Pro. 
 
 Now let us for each gene tree gt_i, build wavelet matrix for this gt and all the other gts, this takes nklogn memory, now, this enables us to find any intersection count between this gt_i any other gt, so, now, for all the candidate bips X|Y, we calc the intersections efficiently and add to the scores as needs to bbe done...
 
@@ -412,7 +412,7 @@ Importantly, after doing this, let us carefully free up this memory of the wavel
 
 # Inference DP
 
-Once we know all the scores, we can run the inference DP on the cluster to partitioon that DP state space map... and do like ASTRAL or STELAR-X does, building a tree, 
+Once we know all the scores, we can run the inference DP on the cluster to partitioon that DP state space map... and do like ASTRAL or STELAR-Pro does, building a tree, 
 
 notet one thing that, the topmost bipartition choice itself does not have a score actually, like, its own score is 0, but its children's scores count... 
 

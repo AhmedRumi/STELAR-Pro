@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Download simulated STELAR-X datasets from Hugging Face.
+# Download simulated STELAR-Pro datasets from Hugging Face.
 #
 # Edit the parameter lists below or override them with the matching command-line
 # options. Every Cartesian-product combination maps to one dataset archive.
@@ -118,7 +118,7 @@ done
 
 LOCAL_DATA_DIR="$(expand_home "$LOCAL_DATA_DIR")"
 DOWNLOAD_SCRIPT="$(expand_home "$DOWNLOAD_SCRIPT")"
-LOCAL_DATA_DIR="$(stelarx_prepare_simphy_data_dir "$LOCAL_DATA_DIR")"
+LOCAL_DATA_DIR="$(stelar_pro_prepare_simphy_data_dir "$LOCAL_DATA_DIR")"
 REMOTE_DIR="${REMOTE_DIR%/}"
 
 validate_integer_list() {
@@ -209,7 +209,7 @@ trap 'exit 130' INT
 trap 'exit 143' TERM
 
 if [[ "$DRY_RUN" == false ]]; then
-  WORK_ROOT="$(mktemp -d "${TMPDIR:-/tmp}/stelarx-download.XXXXXX")" || exit 2
+  WORK_ROOT="$(mktemp -d "${TMPDIR:-/tmp}/stelar-pro-download.XXXXXX")" || exit 2
 fi
 
 print_command() {
@@ -414,7 +414,7 @@ process_dataset() {
   fi
 }
 
-echo "STELAR-X simulated dataset downloader"
+echo "STELAR-Pro simulated dataset downloader"
 echo "Repository: $REPO_ID ($REPO_TYPE)"
 echo "Local data: $LOCAL_DATA_DIR"
 if [[ "$DOWNLOAD_ONLY" == true ]]; then

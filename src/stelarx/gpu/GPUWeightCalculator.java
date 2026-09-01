@@ -3,7 +3,7 @@ package stelarx.gpu;
 /**
  * JNI bridge to the CUDA weight-calculation kernel.
  *
- * The native library (libstelarx_weight.so) must be on java.library.path
+ * The native library (libstelar_pro_weight.so) must be on java.library.path
  * or the directory passed via -Djava.library.path=native/.
  *
  * Call tryLoad() once at startup; it returns false if the .so is missing.
@@ -35,9 +35,13 @@ public class GPUWeightCalculator {
         if (loadAttempted) return loaded;
         loadAttempted = true;
         try {
-            // Distinct name prevents an older STELAR-X quartet kernel from being
-            // loaded accidentally into the rooted STELAR-X scoring pipeline.
-            System.loadLibrary("stelarx_weight");
+            // Distinct name prevents an older STELAR-Pro quartet kernel from being
+            // loaded accidentally into the rooted STELAR-Pro scoring pipeline.
+            System.loadLibrary("stelar_pro_weight");
+            if (queryWeightApiVersion() != 2) {
+                throw new UnsatisfiedLinkError(
+                    "CUDA weight library must be rebuilt for multicopy index API v2");
+            }
             loaded = true;
             loadError = "";
         } catch (UnsatisfiedLinkError | SecurityException e) {
@@ -182,22 +186,23 @@ public class GPUWeightCalculator {
      * One CUDA thread per split, zero per-thread working state: each thread loops
      * over every deduplicated rooted child partition and computes the required
      * intersections by walking the smaller of the two ranges element-by-element
-     * (looking taxa up in invIndex).  No prefix-sum arrays are built or allocated,
-     * so device memory is just the static parts/orderings/invIndex plus the split
-     * batch — there is no O(L) prefix working set.
+     * (binary-searching their per-taxon position vectors). No prefix-sum arrays
+     * are built or allocated, so there is no O(L) per-thread working set.
      *
-     * Static data (parts, orderings, invIndex) is uploaded once; splits stream in
-     * adaptive batches exactly like the prefix-sum path.
+     * Static data (parts, orderings, and position-vector CSR) is uploaded once;
+     * splits stream in adaptive batches exactly like the prefix-sum path.
      *
      * @param splits     flat int array, numSplits × 10
      *                   [aTree,aLo,aHi,aComp,aSize, bTree,bLo,bHi,bComp,bSize]
      * @param parts      flat int array, numParts × 9 (deduplicated binary partitions)
      *                   [treeIdx, lo1, hi1, lo2, hi2, sz1, sz2, sz3, frequency]
-     * @param orderings  flat int array, numGpuTrees × numTaxa
-     * @param invIndex   flat int array, numGpuTrees × numTaxa
+     * @param orderings flat concatenation of every tree's postorder leaf array
+     * @param treeOffsets CSR row pointers into orderings, length numGpuTrees+1
+     * @param taxonOffsets CSR row pointers for (tree,taxon), length numGpuTrees*numTaxa+1
+     * @param taxonPositions concatenated sorted leaf positions for all taxon rows
      * @param numSplits  number of candidate splits
      * @param numParts   number of unique binary rooted child partitions
-     * @param numGpuTrees total orderings/invIndex slots
+     * @param numGpuTrees number of tree rows represented by the CSR arrays
      * @param numTaxa    total taxon count (registry size)
      * @param totalN     total taxon count (same as numTaxa, used for sizeC)
      * @param batchSizeHint 0=auto, -1=no batching, >0=exact batch size
@@ -217,7 +222,9 @@ public class GPUWeightCalculator {
         int[] ssPolyBoundOffset,// numPolyParts+1: range into ssPolyBounds (length d) per poly node
         int[] ssPolyBounds,     // concatenated boundary lists b[0..d-1]
         int[] orderings,
-        int[] invIndex,
+        int[] treeOffsets,
+        int[] taxonOffsets,
+        int[] taxonPositions,
         int numSplits,
         int numParts,
         int numPolyParts,
@@ -350,5 +357,6 @@ public class GPUWeightCalculator {
     public static native long[] queryVRAMMiB();
 
     /** Machine-readable CUDA/device probe used for auto-selection and diagnostics. */
+    private static native int queryWeightApiVersion();
     private static native String queryGPUStatus();
 }

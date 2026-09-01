@@ -1,8 +1,8 @@
 #!/bin/bash
-# Build all CUDA JNI shared libraries for STELAR-X.
-#   native/libstelarx_weight.so  -- rooted-triplet GPU weight kernel
-#   native/libstelarx_dp.so      -- GPU cross-tree DP transition search kernel
-#   native/libstelarx_dist.so    -- GPU distance matrix kernel (Euler tour + RMQ)
+# Build all CUDA JNI shared libraries for STELAR-Pro.
+#   native/libstelar_pro_weight.so  -- rooted-triplet GPU weight kernel
+#   native/libstelar_pro_dp.so      -- GPU cross-tree DP transition search kernel
+#   native/libstelar_pro_dist.so    -- GPU distance matrix kernel (Euler tour + RMQ)
 set -euo pipefail
 
 ROOT="$(cd "$(dirname "$0")" && pwd)"
@@ -44,7 +44,7 @@ NVCC_FLAGS=(
   --shared
   -I"${JAVA_HOME}/include"
   -I"${JAVA_HOME}/include/linux"
-  -DSTELARX_MIN_CUDA_CC="${MIN_CUDA_CC}"
+  -DSTELAR_PRO_MIN_CUDA_CC="${MIN_CUDA_CC}"
 )
 
 # nvcc links cudart statically by default. Also remove target-machine
@@ -54,7 +54,7 @@ if [[ "$(uname -s)" == "Linux" ]]; then
   NVCC_FLAGS+=( -Xcompiler=-static-libstdc++ -Xcompiler=-static-libgcc )
 fi
 
-echo "=== Building STELAR-X native GPU libraries ==="
+echo "=== Building STELAR-Pro native GPU libraries ==="
 echo "  JDK         : $JAVA_HOME"
 echo "  CUDA arch   : $CUDA_ARCH"
 echo "  Minimum CC  : $MIN_CUDA_CC"
@@ -62,28 +62,28 @@ echo "  Output      : $NATIVE_OUT_DIR"
 
 # ── Weight kernel ─────────────────────────────────────────────────────────────
 SRC_W="$ROOT/src/native/stelarx_weight.cu"
-OUT_W="$NATIVE_OUT_DIR/libstelarx_weight.so"
+OUT_W="$NATIVE_OUT_DIR/libstelar_pro_weight.so"
 echo "  Building    : $SRC_W  ->  $OUT_W"
 nvcc "${NVCC_FLAGS[@]}" -o "$OUT_W" "$SRC_W"
 echo "  OK"
 
 # ── DP cross-tree search kernel ───────────────────────────────────────────────
 SRC_DP="$ROOT/src/native/stelarx_dp.cu"
-OUT_DP="$NATIVE_OUT_DIR/libstelarx_dp.so"
+OUT_DP="$NATIVE_OUT_DIR/libstelar_pro_dp.so"
 echo "  Building    : $SRC_DP  ->  $OUT_DP"
 nvcc "${NVCC_FLAGS[@]}" -o "$OUT_DP" "$SRC_DP"
 echo "  OK"
 
 # ── Distance matrix kernel ────────────────────────────────────────────────────
 SRC_DM="$ROOT/src/native/stelarx_dist.cu"
-OUT_DM="$NATIVE_OUT_DIR/libstelarx_dist.so"
+OUT_DM="$NATIVE_OUT_DIR/libstelar_pro_dist.so"
 echo "  Building    : $SRC_DM  ->  $OUT_DM"
 nvcc "${NVCC_FLAGS[@]}" -o "$OUT_DM" "$SRC_DM"
 echo "  OK"
 
 # ── Similarity matrix kernel ──────────────────────────────────────────────────
 SRC_SIM="$ROOT/src/native/stelarx_similarity.cu"
-OUT_SIM="$NATIVE_OUT_DIR/libstelarx_sim.so"
+OUT_SIM="$NATIVE_OUT_DIR/libstelar_pro_sim.so"
 echo "  Building    : $SRC_SIM  ->  $OUT_SIM"
 nvcc "${NVCC_FLAGS[@]}" -o "$OUT_SIM" "$SRC_SIM"
 echo "  OK"

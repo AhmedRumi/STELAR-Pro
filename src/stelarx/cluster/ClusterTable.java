@@ -14,9 +14,10 @@ import java.util.*;
  * The cluster set X: all unique clusters extracted from gene trees.
  *
  * For each rooted gene tree, we register leaves and descendant clusters rooted
- * at nodes tagged as speciation. This is origin-agnostic: a node introduced by
- * polytomy resolution contributes when rooting/tagging classifies it as
- * speciation. Other internal nodes are traversed but contribute no candidates.
+ * at nodes tagged as speciation. Node origin is irrelevant: resolved-polytomy
+ * nodes follow the same tag rule as every other node. If a valid speciation
+ * split has a duplication-rooted child, that child's taxon set is retained only
+ * as a split-side exemplar; it does not contribute a candidate split of its own.
  *
  * Also registers the all-taxa cluster (DP root) separately.
  * Singleton clusters (size 1) are included -- they are DP base cases.
@@ -154,7 +155,7 @@ public class ClusterTable {
             ? pref.numSeeds() : uniqueTaxonHashes.numSeeds();
         if (anchorFreeX) {
             throw new IllegalArgumentException(
-                "Outgroup anchoring is an unrooted reduction and is not valid in STELAR-X");
+                "Outgroup anchoring is an unrooted reduction and is not valid in STELAR-Pro");
         }
         this.anchorFreeX = false;
         this.anchor = -1;
@@ -198,8 +199,9 @@ public class ClusterTable {
     }
 
     /**
-     * Extract singleton leaves and non-root speciation clusters from one tree.
-     * Returns the number of candidates generated (before dedup).
+     * Extract singleton leaves, non-root speciation clusters, and any auxiliary
+     * child-side exemplars required by a speciation split. Returns the number of
+     * cluster records generated before deduplication.
      */
     private int extractFromTree(Tree tree, PrefixHashArrays pref, int numTaxa) {
         int ti = tree.treeIndex;
@@ -210,8 +212,8 @@ public class ClusterTable {
     }
 
     /**
-     * Post-order walk. Leaves remain DP base cases. Internal candidates must be
-     * rooted at biological speciation nodes.
+     * Post-order walk. Leaves remain DP base cases. Internal candidate splits
+     * must be rooted at nodes tagged as speciation.
      */
     private void walkNodes(TreeNode node, int ti, int L, int anchorPos,
                            PrefixHashArrays pref, int numTaxa, int[] count) {
@@ -227,8 +229,6 @@ public class ClusterTable {
             }
         }
 
-        if (node.isRoot()) return;  // The root is represented by allTaxaHash.
-
         // Keep walking through duplications so speciation descendants survive.
         if (!node.isLeaf() && !node.isSpeciation()) return;
 
@@ -237,8 +237,25 @@ public class ClusterTable {
         // A leaf is already unique, so its legacy one-position hash is safe.
         ClusterHash knownHash = uniqueTaxonHashes == null || node.isLeaf()
             ? null : uniqueTaxonHashes.get(ti, node);
-        registerCluster(ti, lo, hi, false, hi - lo, L, pref, numTaxa, knownHash);
-        count[0]++;
+        if (!node.isRoot()) {
+            registerCluster(ti, lo, hi, false, hi - lo, L, pref, numTaxa, knownHash);
+            count[0]++;
+        }
+
+        if (uniqueTaxonHashes != null && !node.isLeaf() && node.isSpeciation()) {
+            TreeNode[] children = node.isPolytomous()
+                ? node.children : new TreeNode[]{node.left, node.right};
+            for (int childIndex = 0; childIndex < children.length; childIndex++) {
+                TreeNode child = children[childIndex];
+                // A non-speciation child contributes no bipartition of its own,
+                // but its set is still one side of this valid parent split.
+                if (child.isLeaf() || child.isSpeciation()) continue;
+                ClusterHash childHash = uniqueTaxonHashes.getChild(ti, node, childIndex);
+                registerCluster(ti, child.rangeStart, child.rangeEnd, false,
+                    childHash.size, L, pref, numTaxa, childHash);
+                count[0]++;
+            }
+        }
     }
 
     /**

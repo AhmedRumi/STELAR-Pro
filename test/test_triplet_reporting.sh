@@ -2,7 +2,7 @@
 set -euo pipefail
 
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd -P)"
-WORK="$(mktemp -d "${TMPDIR:-/tmp}/stelarx-triplet-reporting.XXXXXX")"
+WORK="$(mktemp -d "${TMPDIR:-/tmp}/stelar-pro-triplet-reporting.XXXXXX")"
 trap 'status=$?; rm -rf -- "$WORK"; exit "$status"' EXIT
 
 MOCK_BIN="${WORK}/bin"
@@ -19,7 +19,7 @@ OUTPUT="${WORK}/inferred.tre"
 MONITOR_CAPTURE="${WORK}/monitor-ntfy.txt"
 
 PATH="${MOCK_BIN}:${PATH}" NTFY_CAPTURE="$MONITOR_CAPTURE" \
-  "${ROOT}/run-stelarx-with-monitor.sh" \
+  "${ROOT}/run-stelar-pro-with-monitor.sh" \
   --input "$GENES" --output "$OUTPUT" \
   --opts "--cpu -q --no-build" --no-time-monitor --no-gpu-monitor \
   > "${WORK}/monitor.log" 2>&1
@@ -40,7 +40,7 @@ PATH="${MOCK_BIN}:${PATH}" NTFY_CAPTURE="$SCORE_CAPTURE" NO_COLOR=1 \
   > "${WORK}/score-only.log" 2>&1
 
 grep -q '^TRIPLET_SCORE: 21$' "${WORK}/score-only.log"
-grep -q 'STELAR-X score-only completed' "$SCORE_CAPTURE"
+grep -q 'STELAR-Pro score-only completed' "$SCORE_CAPTURE"
 grep -q 'Triplet score: 21' "$SCORE_CAPTURE"
 ! grep -qi 'quartet' "${WORK}/score-only.log" "$SCORE_CAPTURE"
 

@@ -3,7 +3,7 @@ package stelarx.weight;
 import stelarx.tree.Tree;
 
 /**
- * O(min(|P|, |Q|)) intersection counts between postorder ranges.
+ * Duplicate-invariant intersections between postorder ranges.
  *
  * For complete gene trees (Lg = L), complement intersections reduce to:
  *   |comp(P) ∩ Q| = |Q| - |P ∩ Q|
@@ -18,24 +18,25 @@ public final class IntersectionCounter {
 
     /**
      * |range_in_treeA ∩ range_in_treeB| -- both ranges non-complement.
-     * Iterates over the smaller range; looks up each taxon in the other tree's
-     * positionMap to check membership.
+     * Iterates over the smaller occurrence range. A taxon is visited only at its
+     * first copy in that range, then its sorted position vector in the other tree
+     * is binary-searched for membership.
      */
     public static int coreIntersect(Tree tA, int loA, int hiA,
                                      Tree tB, int loB, int hiB) {
-        int count = 0;
         if (hiA - loA <= hiB - loB) {
-            for (int pos = loA; pos < hiA; pos++) {
-                int taxon = tA.postorderArray[pos];
-                int posB  = tB.positionMap[taxon];
-                if (posB >= loB && posB < hiB) count++;
-            }
-        } else {
-            for (int pos = loB; pos < hiB; pos++) {
-                int taxon = tB.postorderArray[pos];
-                int posA  = tA.positionMap[taxon];
-                if (posA >= loA && posA < hiA) count++;
-            }
+            return scanUniqueTaxa(tA, loA, hiA, tB, loB, hiB);
+        }
+        return scanUniqueTaxa(tB, loB, hiB, tA, loA, hiA);
+    }
+
+    private static int scanUniqueTaxa(Tree source, int sourceLo, int sourceHi,
+                                      Tree target, int targetLo, int targetHi) {
+        int count = 0;
+        for (int pos = sourceLo; pos < sourceHi; pos++) {
+            int taxon = source.postorderArray[pos];
+            if (!source.taxonPositions.isFirstInRange(taxon, pos, sourceLo)) continue;
+            if (target.taxonPositions.containsInRange(taxon, targetLo, targetHi)) count++;
         }
         return count;
     }
@@ -51,7 +52,7 @@ public final class IntersectionCounter {
      * @param tC        exemplar tree of the candidate cluster
      * @param loC, hiC  range in candidate cluster's exemplar tree
      * @param cComp     whether the candidate cluster is complement w.r.t. its tree
-     * @param sizeGTRange  = hiGT - loGT (passed in to avoid recomputation)
+     * @param sizeGTRange number of distinct taxa in the gene-tree range
      */
     public static int intersect(Tree tGT, int loGT, int hiGT,
                                  Tree tC, int loC, int hiC, boolean cComp,
@@ -78,8 +79,8 @@ public final class IntersectionCounter {
      * @param cComp true if A is a complement cluster (A = S\[loC,hiC))
      */
     public static int intersectWithFullTree(Tree tGT, Tree tC, int loC, int hiC, boolean cComp) {
-        int L_GT = tGT.leafCount;
-        int core = coreIntersect(tGT, 0, L_GT, tC, loC, hiC);
+        int L_GT = tGT.distinctTaxonCount;
+        int core = coreIntersect(tGT, 0, tGT.leafCount, tC, loC, hiC);
         return cComp ? (L_GT - core) : core;
     }
 
@@ -97,14 +98,21 @@ public final class IntersectionCounter {
     // caller may always dispatch on Cluster.isMultiRange() with identical results.
     // -------------------------------------------------------------------------
 
-    /** Σ_j |[loGT,hiGT) ∩ [los[j],his[j])| — disjoint ranges, each smaller-side walk. */
+    /** |[loGT,hiGT) ∩ union(ranges)|, counting each taxon once across all ranges. */
     public static int coreIntersectMulti(Tree tGT, int loGT, int hiGT,
                                           Tree tC, int[] los, int[] his) {
-        int total = 0;
-        for (int j = 0; j < los.length; j++) {
-            total += coreIntersect(tGT, loGT, hiGT, tC, los[j], his[j]);
+        int count = 0;
+        for (int pos = loGT; pos < hiGT; pos++) {
+            int taxon = tGT.postorderArray[pos];
+            if (!tGT.taxonPositions.isFirstInRange(taxon, pos, loGT)) continue;
+            for (int j = 0; j < los.length; j++) {
+                if (tC.taxonPositions.containsInRange(taxon, los[j], his[j])) {
+                    count++;
+                    break;
+                }
+            }
         }
-        return total;
+        return count;
     }
 
     /** Multi-range analogue of {@link #intersect}. */
@@ -118,8 +126,8 @@ public final class IntersectionCounter {
     /** Multi-range analogue of {@link #intersectWithFullTree} (row sum vs full gene tree). */
     public static int intersectWithFullTreeMulti(Tree tGT, Tree tC,
                                                  int[] los, int[] his, boolean cComp) {
-        int L_GT = tGT.leafCount;
-        int core = coreIntersectMulti(tGT, 0, L_GT, tC, los, his);
+        int L_GT = tGT.distinctTaxonCount;
+        int core = coreIntersectMulti(tGT, 0, tGT.leafCount, tC, los, his);
         return cComp ? (L_GT - core) : core;
     }
 }

@@ -10,13 +10,13 @@ public final class WeightModeBoundaryTest {
         String forced = args.length == 0 ? "none" : args[0];
         if (forced.equals("double")) {
             check(WeightTable.needsDoubleAccumulation(3, 1),
-                "STELARX_WEIGHT_FORCE_DOUBLE did not force the wide path");
+                "STELAR_PRO_WEIGHT_FORCE_DOUBLE did not force the wide path");
             System.out.println("Weight mode forced-double dispatch: PASS");
             return;
         }
         if (forced.equals("long")) {
             check(!WeightTable.needsDoubleAccumulation(Integer.MAX_VALUE, Integer.MAX_VALUE),
-                "STELARX_WEIGHT_FORCE_LONG did not force the long path");
+                "STELAR_PRO_WEIGHT_FORCE_LONG did not force the long path");
             System.out.println("Weight mode forced-long dispatch: PASS");
             return;
         }

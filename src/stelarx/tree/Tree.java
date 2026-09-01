@@ -3,8 +3,7 @@ package stelarx.tree;
 import stelarx.taxon.TaxonRegistry;
 
 /**
- * A parsed rooted binary gene tree with postorder (L-to-R leaf) array
- * and inverse position map.
+ * A parsed rooted binary gene tree with a postorder leaf array and taxon indexes.
  */
 public class Tree {
     /** Index in the gene tree list (0..k-1). */
@@ -20,13 +19,19 @@ public class Tree {
     public final int[] postorderArray;
 
     /**
-     * positionMap[taxonId] = position in postorderArray (-1 if absent).
-     * Length = total taxa count n.
+     * Legacy representative position per taxon (-1 if absent). Multicopy code
+     * must use {@link #taxonPositions}, which retains every position.
      */
     public final int[] positionMap;
 
+    /** All leaf-copy positions, grouped by taxon in sorted CSR rows. */
+    public final TaxonPositionIndex taxonPositions;
+
     /** Number of leaves in this tree. */
     public final int leafCount;
+
+    /** Number of distinct species represented by the leaves. */
+    public final int distinctTaxonCount;
 
     /** True when this tree contains all n taxa. */
     public final boolean isComplete;
@@ -48,7 +53,9 @@ public class Tree {
         this.postorderArray = postorderArray;
         this.positionMap = positionMap;
         this.leafCount = leafCount;
-        this.isComplete = (leafCount == totalTaxa);
+        this.taxonPositions = TaxonPositionIndex.build(postorderArray, totalTaxa);
+        this.distinctTaxonCount = taxonPositions.distinctTaxonCount();
+        this.isComplete = (distinctTaxonCount == totalTaxa);
         this.hasPolytomy = hasPolytomy;
     }
 

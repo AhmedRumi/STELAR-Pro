@@ -40,11 +40,11 @@ public final class RootedPolytomyLifecycleTest {
         Threading.start(Math.min(4, Runtime.getRuntime().availableProcessors()));
         try {
             int n = keptSerial.registry.size();
-            System.clearProperty("stelarx.similarity.forcePacked");
+            System.clearProperty("stelarpro.similarity.forcePacked");
             SimilarityMatrix denseMatrix = SimilarityMatrixBuilder.buildCPU(keptSerial.trees, n);
             List<Tree> dense = TreeCompleter.completeAll(keptSerial.trees, denseMatrix, n);
 
-            System.setProperty("stelarx.similarity.forcePacked", "true");
+            System.setProperty("stelarpro.similarity.forcePacked", "true");
             SimilarityMatrix packedMatrix = SimilarityMatrixBuilder.buildCPU(keptSerial.trees, n);
             check(packedMatrix.isPacked(), "forced packed matrix was not selected");
             List<Tree> packed = TreeCompleter.completeAll(keptSerial.trees, packedMatrix, n);
@@ -77,7 +77,7 @@ public final class RootedPolytomyLifecycleTest {
             System.out.println("Rooted polytomy lifecycle: PASS (" + keptSerial.trees.size()
                 + " trees, " + triplesChecked + " preserved triples)");
         } finally {
-            System.clearProperty("stelarx.similarity.forcePacked");
+            System.clearProperty("stelarpro.similarity.forcePacked");
             Threading.shutdown();
         }
     }

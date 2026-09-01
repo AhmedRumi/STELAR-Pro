@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-Reference STELAR-X weight verifier.
+Reference STELAR-Pro weight verifier.
 
 Independently recomputes:
   1. Gene-tree tripartitions (M1|M2|M3) with frequencies.
@@ -10,7 +10,7 @@ Independently recomputes:
        - c2  = sz3 - a2 - b2       (column M3 constraint, correct formula)
   4. Final split scores and inferred species tree.
 
-Matches STELAR-X exactly.  Any discrepancy indicates a bug in either.
+Matches STELAR-Pro exactly.  Any discrepancy indicates a bug in either.
 """
 
 import sys, re
@@ -49,7 +49,7 @@ def parse_newick(s, is_root=True):
     childstrs.append(s[prev:-1])
     children = [parse_newick(cs, False) for cs in childstrs]
     nc = len(children)
-    # Mirror STELAR-X TreeParser.validateAndConvert (polytomy-design.md §3.2):
+    # Mirror STELAR-Pro TreeParser.validateAndConvert (polytomy-design.md §3.2):
     if nc == 2:
         return _node(children)                              # binary internal
     if nc == 3 and is_root:
@@ -82,7 +82,7 @@ def extract_tripartitions(parsed_trees):
     c0..c_{k-1}:  the d-partition (d = k+1) is
       M_i = sub(c_i)            for i = 0..k-1
       M_{d-1} = Lg - sub(u)     (complement)
-    Returns: dict{ key -> frequency }.  For binary (d=3) the key matches STELAR-X's
+    Returns: dict{ key -> frequency }.  For binary (d=3) the key matches STELAR-Pro's
     PartitionHash exactly (sort {M0,M1}, complement separate); for d≥4 the key is
     order-invariant over all d parts.
     """
@@ -162,7 +162,7 @@ def score_split(A_set, B_set, S, triparts, verbose=False):
     For each d-partition (M_0|…|M_{d-1}) with frequency f, compute explicitly:
       a[i] = |A ∩ M_i|,  b[i] = |B ∩ M_i|,  c[i] = |M_i| - a[i] - b[i]
     (A,B disjoint ⇒ c[i] ≥ 0; the complement part M_{d-1} is stored explicitly so
-    a[i]/b[i] are the true intersections — equivalent to STELAR-X's row-constraint
+    a[i]/b[i] are the true intersections — equivalent to STELAR-Pro's row-constraint
     derivation, but valid for any degree d, binary or polytomous).
 
     Returns: score = (1/2) * sum_P freq * 2*QI

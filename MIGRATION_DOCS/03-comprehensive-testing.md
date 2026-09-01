@@ -3,7 +3,7 @@
 The primary validation entry point is:
 
 ```bash
-test/run_stelarx_comprehensive_tests.sh --require-gpu
+test/run_stelar_pro_comprehensive_tests.sh --require-gpu
 ```
 
 It builds once and runs these independent layers:
@@ -41,13 +41,13 @@ It builds once and runs these independent layers:
 For a shorter edit-time check, use:
 
 ```bash
-test/run_stelarx_comprehensive_tests.sh --quick --cpu-only
+test/run_stelar_pro_comprehensive_tests.sh --quick --cpu-only
 ```
 
 Random generation is deterministic (`0x5e1a7` by default), and a failing case
 prints its case name, method, numeric mode, expected score, and captured program
 output. The number of generated CPU cases can be changed with the differential
-test's `--cases`; the strict GPU wrapper accepts `STELARX_GPU_RANDOM_CASES`.
+test's `--cases`; the strict GPU wrapper accepts `STELAR_PRO_GPU_RANDOM_CASES`.
 
 On the RTX 3050 development host, the complete `--require-gpu` run took 259
 seconds (4 minutes 19 seconds), including a clean Java build and portable-image
@@ -59,7 +59,7 @@ acceptance of empty inputs, and unsafe read/write path aliases.
 
 ## Accuracy and scalability regression benchmark
 
-`test/test_stelarx_scalability.py` adds measured performance checks without
+`test/test_stelar_pro_scalability.py` adds measured performance checks without
 placing inherently noisy wall-time assertions in the ordinary correctness
 suite. It:
 
@@ -80,7 +80,7 @@ commit `88af054` on the RTX 3050 host, S1/I2 CPU measured:
 | Build | Median wall time | Median peak RSS |
 |---|---:|---:|
 | Pre-migration ASTRAL-X reference | 1.110 s | 360.5 MiB |
-| Current STELAR-X | 1.100 s | 204.5 MiB |
+| Current STELAR-Pro | 1.100 s | 204.5 MiB |
 | Current/reference | 0.991× | 0.567× |
 
 All 24 S×I×CPU/CUDA inference runs returned score 1,391,309 with identical

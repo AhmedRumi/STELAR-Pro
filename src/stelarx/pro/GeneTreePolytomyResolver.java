@@ -77,7 +77,7 @@ public final class GeneTreePolytomyResolver {
 
     /** Locate the script relative to the launcher, classpath, or working tree. */
     public static Path resolveScript() {
-        String home = System.getProperty("stelarx.home");
+        String home = System.getProperty("stelarpro.home");
         if (home != null && !home.isBlank()) {
             Path candidate = Path.of(home).resolve(SCRIPT_RELATIVE).normalize();
             if (Files.isRegularFile(candidate)) return candidate.toAbsolutePath();

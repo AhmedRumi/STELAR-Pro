@@ -4,7 +4,7 @@
 
 This document specifies the finalized design for the "extra mode" bipartition
 enrichment of ASTRAL-X — the port of ASTRAL-MP's greedy consensus machinery
-onto STELAR-X's compact integer-tuple + double-hashing world. It replaces the
+onto STELAR-Pro's compact integer-tuple + double-hashing world. It replaces the
 two dominant costs of the legacy implementation:
 
 - the **O(B·n) per-cluster LCA rebuild** inside `buildTreeFromClusters`, and
@@ -34,7 +34,7 @@ two phases are: **(I) Consensus construction** and **(II) Polytomy resolution
 | `σ(S)` | double-hash signature `(ϕ1, ϕ2)` of taxon set `S` |
 | `α(n)` | inverse-Ackermann (effectively constant) |
 
-**Hash scheme (inherited from STELAR-X §2.5).** Two permutation-invariant,
+**Hash scheme (inherited from STELAR-Pro §2.5).** Two permutation-invariant,
 associative hash functions over `Z_{2^64}`: `ϕ1` = addition, `ϕ2` = XOR. A
 per-element scrambler `H` maps each id into `Z_{2^64}`. For a set `S`,
 `σ(S) = (ϕ1({H(id) : id∈S}), ϕ2({H(id) : id∈S}))`. Equivalent bipartitions
@@ -233,7 +233,7 @@ negligible. Each `T[ti]` is exactly the legacy greedy tree at that threshold —
 ## 5. Bitset-Free Cluster Handling
 
 A cluster `C` from a gene tree is the tuple `(i, l, r)` = subarray `A_i[l..r]`
-(STELAR-X §2.4). Inside `INSERT`:
+(STELAR-Pro §2.4). Inside `INSERT`:
 
 - **Enumerate `C`'s taxa:** `for j in l..r: t = A_i[j]` — `O(|C|)`, touches no
   bitset. (A bitset would scan all `n/64` words regardless of `|C|`.)
@@ -424,7 +424,7 @@ matrix, gene trees, `π_i` maps). Dispatch across `TC` CPU threads.
 ### 10.2 Thread-local buffers, merge once (no lock on hot path)
 
 The shared sink X is the contention point. Use the same map-reduce shape as
-STELAR-X's CPU frequency mapping (§2.8): **each thread accumulates emitted
+STELAR-Pro's CPU frequency mapping (§2.8): **each thread accumulates emitted
 signatures into a thread-local hash table; merge into global X once at the end.**
 Merge is `O(total emitted)`, dedup by signature. No lock on the per-emission
 path.

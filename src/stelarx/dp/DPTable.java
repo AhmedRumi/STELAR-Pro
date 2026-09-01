@@ -408,7 +408,7 @@ public class DPTable {
      * the single split {@code ({anchor} | S\{anchor})}.
      *
      * Legacy unrooted implementation retained for internal binary/JNI compatibility.
-     * STELAR-X rejects this mode before construction, so this method is unreachable
+     * STELAR-Pro rejects this mode before construction, so this method is unreachable
      * from the public CLI.
      *
      * Must be called AFTER all local (Mode 1) and cross-tree (Mode 2) transitions are

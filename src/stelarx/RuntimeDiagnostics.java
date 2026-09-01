@@ -16,7 +16,7 @@ public final class RuntimeDiagnostics {
         Runtime rt = Runtime.getRuntime();
         GPUWeightCalculator.Probe gpu = GPUWeightCalculator.probe();
 
-        System.out.println("STELAR-X DIAGNOSTICS");
+        System.out.println("STELAR-Pro DIAGNOSTICS");
         row("Version", Main.VERSION);
         row("OS", prop("os.name") + " " + prop("os.version"));
         row("Architecture", prop("os.arch"));

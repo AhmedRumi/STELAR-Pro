@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # collect-scores-a10k.sh
-# Aggregates per-replicate STELAR-X run stats from the A10K layout.
+# Aggregates per-replicate STELAR-Pro run stats from the A10K layout.
 
 set -euo pipefail
 
@@ -38,7 +38,7 @@ echo "alg,setting,replicate,tree_type,rf-rate,optimal-triplet-score,running-time
 for i in $(seq "$START_REP" "$END_REP"); do
   while IFS= read -r -d '' stat_file; do
     tail -n +2 "$stat_file" >> "$MERGED_CSV"
-  done < <(find "${DATA_DIR}/10k-simphy/R${i}/stelarx_outputs" -type f -name 'stat-stelarx.csv' -print0 2>/dev/null | sort -z)
+  done < <(find "${DATA_DIR}/10k-simphy/R${i}/stelar-pro-outputs" -type f -name 'stat-stelar-pro.csv' -print0 2>/dev/null | sort -z)
 done
 
-echo "Merged A10K STELAR-X stats saved to: $MERGED_CSV"
+echo "Merged A10K STELAR-Pro stats saved to: $MERGED_CSV"

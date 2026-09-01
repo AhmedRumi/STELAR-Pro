@@ -1,7 +1,7 @@
 # Polytomy Support in ASTRAL-X — Design Document
 
-> **Rooted STELAR-X correction (2026-08):** This document began as an
-> ASTRAL-MP/unrooted implementation plan.  In rooted STELAR-X the final group of
+> **Rooted STELAR-Pro correction (2026-08):** This document began as an
+> ASTRAL-MP/unrooted implementation plan.  In rooted STELAR-Pro the final group of
 > a d-partition is the outside/complement group, not another interchangeable
 > incident branch: only the first d-1 child groups contribute to the node's
 > rooted-triplet weight.  Consequently the complement must remain distinguished

@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # run-a10k.sh
-# STELAR-X runner for the 10k-simphy dataset layout.
+# STELAR-Pro runner for the 10k-simphy dataset layout.
 
 set -euo pipefail
 
@@ -12,14 +12,14 @@ REPLICATES_SPEC=""
 START_REP=""
 END_REP=""
 FRESH=false
-STELARX_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-STELARX_OPTS="--search-space S2 -vv"
-STELARX_OPTS_LIST_RAW=""
+STELAR_PRO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+STELAR_PRO_OPTS="--search-space S2 -vv"
+STELAR_PRO_OPTS_LIST_RAW=""
 TIME_MONITOR=true
 GPU_MONITOR=true
 NO_NOTIFY=false
 
-source "${STELARX_ROOT}/experiment-setting-name.sh"
+source "${STELAR_PRO_ROOT}/experiment-setting-name.sh"
 
 csv_get_field() {
   local file="$1"
@@ -45,10 +45,10 @@ csv_get_field() {
 }
 
 # Example single setting:
-# STELARX_OPTS="--search-space S2 --intersection-method I2"
+# STELAR_PRO_OPTS="--search-space S2 --intersection-method I2"
 #
 # Example sweep over search-space presets:
-# STELARX_OPTS_LIST_RAW="--search-space S1;--search-space S2;--search-space S3"
+# STELAR_PRO_OPTS_LIST_RAW="--search-space S1;--search-space S2;--search-space S3"
 #
 # This becomes search-space_S2__intersection-method_I2. Verbosity flags such as
 # -v/-vv are ignored when constructing the setting name.
@@ -66,11 +66,11 @@ Optional:
   --replicates         Replicates to run, e.g. "1-20" or "R1,R2"
   --start-rep, -sr     Start replicate number
   --end-rep, -er       End replicate number
-  --stelarx-root       Path to STELAR-X root
+  --stelar-pro-root       Path to STELAR-Pro root
   --opts, --alg-opts   Extra options for the selected algorithm
   --opts-list, --alg-opts-list
                        Semicolon-separated list of option strings to loop over
-  --fresh              Force rerun even if stat-stelarx.csv exists
+  --fresh              Force rerun even if stat-stelar-pro.csv exists
   --no-time-monitor    Disable time monitoring
   --no-gpu-monitor     Disable GPU monitoring
   --no-notify, -nn     Disable ntfy notifications
@@ -93,9 +93,9 @@ while [[ $# -gt 0 ]]; do
     --replicates) REPLICATES_SPEC="$2"; shift 2 ;;
     --start-rep|-sr) START_REP="$2"; shift 2 ;;
     --end-rep|-er) END_REP="$2"; shift 2 ;;
-    --stelarx-root|--stelar-root) STELARX_ROOT="$2"; shift 2 ;;
-    --opts|--alg-opts|--stelarx-opts|--stelar-opts) STELARX_OPTS="$2"; shift 2 ;;
-    --opts-list|--alg-opts-list|--stelarx-opts-list|--stelar-opts-list) STELARX_OPTS_LIST_RAW="$2"; shift 2 ;;
+    --stelar-pro-root|--stelar-root) STELAR_PRO_ROOT="$2"; shift 2 ;;
+    --opts|--alg-opts|--stelar-pro-opts|--stelar-opts) STELAR_PRO_OPTS="$2"; shift 2 ;;
+    --opts-list|--alg-opts-list|--stelar-pro-opts-list|--stelar-opts-list) STELAR_PRO_OPTS_LIST_RAW="$2"; shift 2 ;;
     --fresh) FRESH=true; shift ;;
     --no-time-monitor) TIME_MONITOR=false; shift ;;
     --no-gpu-monitor) GPU_MONITOR=false; shift ;;
@@ -110,8 +110,8 @@ if [[ -z "$DATA_DIR" ]]; then
   exit 2
 fi
 
-STELARX_ROOT="$(realpath "$STELARX_ROOT")"
-PYTHON_BIN="${STELARX_PYTHON:-${STELARX_ROOT}/.venv/bin/python}"
+STELAR_PRO_ROOT="$(realpath "$STELAR_PRO_ROOT")"
+PYTHON_BIN="${STELAR_PRO_PYTHON:-${STELAR_PRO_ROOT}/.venv/bin/python}"
 [[ -x "$PYTHON_BIN" ]] || PYTHON_BIN="python3"
 DATA_DIR="$(realpath "$DATA_DIR")"
 SIMPHY_DIR="${DATA_DIR%/}/10k-simphy"
@@ -148,18 +148,18 @@ if [[ ${#TREE_TYPES[@]} -eq 0 ]]; then
   exit 2
 fi
 
-STELARX_OPTS_LIST=()
-if [[ -n "$STELARX_OPTS_LIST_RAW" ]]; then
-  IFS=';' read -r -a raw_opts_list <<< "$STELARX_OPTS_LIST_RAW"
+STELAR_PRO_OPTS_LIST=()
+if [[ -n "$STELAR_PRO_OPTS_LIST_RAW" ]]; then
+  IFS=';' read -r -a raw_opts_list <<< "$STELAR_PRO_OPTS_LIST_RAW"
   for opts in "${raw_opts_list[@]}"; do
     opts="$(echo "$opts" | sed 's/^ *//;s/ *$//')"
-    [[ -n "$opts" ]] && STELARX_OPTS_LIST+=("$opts")
+    [[ -n "$opts" ]] && STELAR_PRO_OPTS_LIST+=("$opts")
   done
 fi
-if [[ ${#STELARX_OPTS_LIST[@]} -eq 0 ]]; then
-  STELARX_OPTS_LIST+=("${STELARX_OPTS}")
+if [[ ${#STELAR_PRO_OPTS_LIST[@]} -eq 0 ]]; then
+  STELAR_PRO_OPTS_LIST+=("${STELAR_PRO_OPTS}")
 fi
-echo "[DEBUG] opts list (${#STELARX_OPTS_LIST[@]} items): ${STELARX_OPTS_LIST[*]}"
+echo "[DEBUG] opts list (${#STELAR_PRO_OPTS_LIST[@]} items): ${STELAR_PRO_OPTS_LIST[*]}"
 echo "[DEBUG] tree types (${#TREE_TYPES[@]} items): ${TREE_TYPES[*]}"
 echo "[DEBUG] replicates spec: '${REPLICATES_SPEC}' | fresh: ${FRESH}"
 
@@ -201,12 +201,12 @@ for TREE_TYPE in "${TREE_TYPES[@]}"; do
     GT_FILE="${GT_DIR}/estimatedgenetrees.tre"
     ROOTED_GT="${GT_DIR}/estimatedgenetrees.rooted.tre"
     if [[ ! -f "$ROOTED_GT" ]]; then
-      if [[ ! -x "${STELARX_ROOT%/}/process_unrooted.sh" ]]; then
-        echo "Error: process_unrooted.sh not found or not executable at ${STELARX_ROOT%/}/process_unrooted.sh"
+      if [[ ! -x "${STELAR_PRO_ROOT%/}/process_unrooted.sh" ]]; then
+        echo "Error: process_unrooted.sh not found or not executable at ${STELAR_PRO_ROOT%/}/process_unrooted.sh"
         exit 7
       fi
       echo "Rooting estimated gene trees for ${REPL} with outgroup 0..."
-      "${STELARX_ROOT%/}/process_unrooted.sh" -i "$GT_FILE" -o "$ROOTED_GT" -og "0"
+      "${STELAR_PRO_ROOT%/}/process_unrooted.sh" -i "$GT_FILE" -o "$ROOTED_GT" -og "0"
     fi
     GT_FILE="$ROOTED_GT"
   else
@@ -218,11 +218,11 @@ for TREE_TYPE in "${TREE_TYPES[@]}"; do
     continue
   fi
 
-  for STELARX_OPTS_ITEM in "${STELARX_OPTS_LIST[@]}"; do
-    SETTING_NAME="$(build_setting_name_from_opts "$STELARX_OPTS_ITEM")"
-    OUT_DIR="${REPL_DIR}/stelarx_outputs/${TREE_TYPE}/${SETTING_NAME}"
-    OUT_FILE="${OUT_DIR}/out-stelarx.tre"
-    STAT_FILE="${OUT_DIR}/stat-stelarx.csv"
+  for STELAR_PRO_OPTS_ITEM in "${STELAR_PRO_OPTS_LIST[@]}"; do
+    SETTING_NAME="$(build_setting_name_from_opts "$STELAR_PRO_OPTS_ITEM")"
+    OUT_DIR="${REPL_DIR}/stelar-pro-outputs/${TREE_TYPE}/${SETTING_NAME}"
+    OUT_FILE="${OUT_DIR}/out-stelar-pro.tre"
+    STAT_FILE="${OUT_DIR}/stat-stelar-pro.csv"
 
     if [[ "$FRESH" == false && -f "$STAT_FILE" ]]; then
       echo "SKIPPING: ${STAT_FILE} exists."
@@ -232,15 +232,15 @@ for TREE_TYPE in "${TREE_TYPES[@]}"; do
     fi
 
     mkdir -p "$OUT_DIR"
-    CMD=("${STELARX_ROOT}/run-stelarx-with-monitor.sh" -i "$GT_FILE" -o "$OUT_FILE" --stelarx-root "$STELARX_ROOT")
+    CMD=("${STELAR_PRO_ROOT}/run-stelar-pro-with-monitor.sh" -i "$GT_FILE" -o "$OUT_FILE" --stelar-pro-root "$STELAR_PRO_ROOT")
     if [[ "$TIME_MONITOR" == false ]]; then CMD+=(--no-time-monitor); fi
     if [[ "$GPU_MONITOR" == false ]]; then CMD+=(--no-gpu-monitor); fi
     if [[ "$NO_NOTIFY" == true ]]; then CMD+=(--no-notify); fi
-    if [[ -n "$STELARX_OPTS_ITEM" ]]; then
-      CMD+=(--opts "$STELARX_OPTS_ITEM")
+    if [[ -n "$STELAR_PRO_OPTS_ITEM" ]]; then
+      CMD+=(--opts "$STELAR_PRO_OPTS_ITEM")
     fi
 
-    echo "==> Running stelarx on ${REPL} (${TREE_TYPE}, ${SETTING_NAME})"
+    echo "==> Running stelar-pro on ${REPL} (${TREE_TYPE}, ${SETTING_NAME})"
     echo "Command: ${CMD[*]}"
     set +e
     "${CMD[@]}"
@@ -264,7 +264,7 @@ for TREE_TYPE in "${TREE_TYPES[@]}"; do
 
     RF_RATE="NA"
     if [[ -f "$OUT_FILE" && -f "$TRUE_TREE" ]]; then
-      rf_output=$("$PYTHON_BIN" "${STELARX_ROOT}/rf.py" "$OUT_FILE" "$TRUE_TREE" 2>&1) || true
+      rf_output=$("$PYTHON_BIN" "${STELAR_PRO_ROOT}/rf.py" "$OUT_FILE" "$TRUE_TREE" 2>&1) || true
       rf_line=$(echo "$rf_output" | grep -i "Robinson-Foulds distance" | tail -n1 || true)
       if [[ -n "$rf_line" ]]; then
         RF_RATE=$(echo "$rf_line" | grep -Eo '[0-9]+(\.[0-9]+)?' | tail -n1 || echo "NA")
@@ -272,9 +272,9 @@ for TREE_TYPE in "${TREE_TYPES[@]}"; do
     fi
 
     echo "alg,setting,replicate,tree_type,rf-rate,optimal-triplet-score,running-time-s,max-cpu-mb,max-gpu-mb" > "$STAT_FILE"
-    echo "stelarx,${SETTING_NAME},${REPL},${TREE_TYPE},${RF_RATE},${OPTIMAL_TRIPLET_SCORE},${RUNNING_TIME},${MAX_CPU_MB},${MAX_GPU_MB}" >> "$STAT_FILE"
+    echo "stelar-pro,${SETTING_NAME},${REPL},${TREE_TYPE},${RF_RATE},${OPTIMAL_TRIPLET_SCORE},${RUNNING_TIME},${MAX_CPU_MB},${MAX_GPU_MB}" >> "$STAT_FILE"
     echo
-    echo "=== A10K STELAR-X Summary ==="
+    echo "=== A10K STELAR-Pro Summary ==="
     echo "Replicate:      ${REPL}"
     echo "Tree type:      ${TREE_TYPE}"
     echo "Setting:        ${SETTING_NAME}"
@@ -288,7 +288,7 @@ for TREE_TYPE in "${TREE_TYPES[@]}"; do
     echo "Saved $STAT_FILE"
 
     if [[ "$NO_NOTIFY" == false ]] && command -v curl >/dev/null 2>&1; then
-      curl -s -d "✅ STELAR-X A10K completed
+      curl -s -d "✅ STELAR-Pro A10K completed
 
 Replicate: ${REPL}
 Tree type: ${TREE_TYPE}

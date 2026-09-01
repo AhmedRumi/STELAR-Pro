@@ -36,7 +36,7 @@ final class TerminalLog implements AutoCloseable {
     }
 
     static TerminalLog installFromArgs(String[] args) throws SetupException {
-        if ("1".equals(System.getenv("STELARX_LOG_CAPTURED"))) return null;
+        if ("1".equals(System.getenv("STELAR_PRO_LOG_CAPTURED"))) return null;
 
         String logName = optionValue(args, "--log-file");
         if (logName == null) return null;

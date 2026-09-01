@@ -19,7 +19,7 @@ import stelarx.util.Threading;
 import java.util.*;
 
 /**
- * Precomputed STELAR-X rooted-triplet scores for every candidate child split.
+ * Precomputed STELAR-Pro rooted-triplet scores for every candidate child split.
  *
  * For a candidate rooted child split (A | B), and a rooted gene-tree child
  * partition (M1 | M2), compute:
@@ -36,7 +36,7 @@ import java.util.*;
  * so scores are stored as non-negative longs.
  *
  * Execution path selection:
- *   GPU  — when --gpu is set and libstelarx_weight.so is loadable.
+ *   GPU  — when --gpu is set and libstelar_pro_weight.so is loadable.
  *   CPU  — otherwise (multi-threaded via Threading.processRangeParallel).
  */
 public class WeightTable {
@@ -205,7 +205,16 @@ public class WeightTable {
             NodeCSR csr = smallerSide ? null : buildDedupNodeCSR(partTable, partTrees);
 
             // Resident data memory (for the vram-control-factor sizing only).
-            long orderingMem = (long) numGpuTrees * n * 2 * Integer.BYTES; // orderings + invIndex
+            long orderingMem;
+            if (smallerSide) {
+                long occurrences = totalLeafOccurrences(clusterTrees, partTrees);
+                // Leaves occur once in orderings and once in the position-vector CSR.
+                long ints = 2L * occurrences + (numGpuTrees + 1L)
+                    + (long) numGpuTrees * n + 1L;
+                orderingMem = ints * Integer.BYTES;
+            } else {
+                orderingMem = (long) numGpuTrees * n * 2 * Integer.BYTES;
+            }
             long modeDataMem; String modeDataDesc;
             if (smallerSide) {
                 modeDataMem  = (long) partTable.size() * 9 * Integer.BYTES; // parts
@@ -342,11 +351,11 @@ public class WeightTable {
      * {@code double}.
      *
      * <p>Overridable for testing via environment variables
-     * {@code STELARX_WEIGHT_FORCE_DOUBLE} / {@code STELARX_WEIGHT_FORCE_LONG}.
+     * {@code STELAR_PRO_WEIGHT_FORCE_DOUBLE} / {@code STELAR_PRO_WEIGHT_FORCE_LONG}.
      */
     static boolean needsDoubleAccumulation(int n, int numGenes) {
-        if (System.getenv("STELARX_WEIGHT_FORCE_DOUBLE") != null) return true;
-        if (System.getenv("STELARX_WEIGHT_FORCE_LONG")   != null) return false;
+        if (System.getenv("STELAR_PRO_WEIGHT_FORCE_DOUBLE") != null) return true;
+        if (System.getenv("STELAR_PRO_WEIGHT_FORCE_LONG")   != null) return false;
         return estimatedMaxTwoScore(n, numGenes) > longSafeBound();
     }
 
@@ -516,7 +525,7 @@ public class WeightTable {
 
         // --- parts (binary d==3): numParts * 9 ints; poly (d>3): separate CSR ---
         // treeIdx stored as (p.treeIndex + partTreeOffset) so the kernel reads the
-        // original-tree half of the combined orderings/invIndex.
+        // original-tree half of the combined multicopy position index.
         // [treeIdx, lo1, hi1, lo2, hi2, sz1, sz2, sz3, frequency]
         List<PartitionTable.Entry> binEntries = new ArrayList<>();
         List<PartitionTable.Entry> polyEntries = new ArrayList<>();
@@ -559,7 +568,7 @@ public class WeightTable {
         for (PartitionTable.Entry pe : polyEntries) {
             Partition p = pe.exemplar;
             ssPolyMeta[pj * 3]     = p.treeIndex + partTreeOffset;
-            ssPolyMeta[pj * 3 + 1] = partTrees.get(p.treeIndex).leafCount;
+            ssPolyMeta[pj * 3 + 1] = partTrees.get(p.treeIndex).distinctTaxonCount;
             ssPolyMeta[pj * 3 + 2] = pe.frequency;
             ssPolyBoundOffset[pj] = boundCur;
             int k = p.d - 1;
@@ -570,19 +579,21 @@ public class WeightTable {
         }
         ssPolyBoundOffset[numPolyParts] = boundCur;
 
-        int[][] oi      = buildOrderingsInvIndex(clusterTrees, partTrees, numGpuTrees);
-        int[] orderings = oi[0], invIndex = oi[1];
+        MulticopyGpuIndex index = buildMulticopyGpuIndex(
+            clusterTrees, partTrees, numGpuTrees);
 
         long t1 = System.nanoTime();
         long[] twoScores = GPUWeightCalculator.computeWeightsSmallerSideGPU(
             splitsData, splitRangeMeta, rangeData, partsData,
-            ssPolyMeta, ssPolyBoundOffset, ssPolyBounds, orderings, invIndex,
+            ssPolyMeta, ssPolyBoundOffset, ssPolyBounds,
+            index.orderings, index.treeOffsets,
+            index.taxonOffsets, index.taxonPositions,
             numSplits, numParts, numPolyParts, numGpuTrees, n, n,
             batchSizeHint, vramFraction, nativeScoreMode(),
             Config.getInstance().getGpuProgressIntervalSec());
         long gpuMs = (System.nanoTime() - t1) / 1_000_000;
 
-        splitsData = null; partsData = null; orderings = null; invIndex = null;   // let GC reclaim
+        splitsData = null; partsData = null; index = null;   // let GC reclaim
         if (twoScores == null) {
             Logging.info("  GPU kernel returned null after %d ms (infeasible)", gpuMs);
             return false;
@@ -700,6 +711,77 @@ public class WeightTable {
             }
         }
         return new int[][]{ orderings, invIndex };
+    }
+
+    /** CSR form of the per-tree/per-taxon position vectors consumed by CUDA I1. */
+    private static final class MulticopyGpuIndex {
+        final int[] orderings;
+        final int[] treeOffsets;
+        final int[] taxonOffsets;
+        final int[] taxonPositions;
+
+        MulticopyGpuIndex(int[] orderings, int[] treeOffsets,
+                          int[] taxonOffsets, int[] taxonPositions) {
+            this.orderings = orderings;
+            this.treeOffsets = treeOffsets;
+            this.taxonOffsets = taxonOffsets;
+            this.taxonPositions = taxonPositions;
+        }
+    }
+
+    /**
+     * Flatten all copy positions without padding a tree to n leaves. Each
+     * (tree,taxon) row remains sorted, enabling binary-search membership on GPU.
+     */
+    private MulticopyGpuIndex buildMulticopyGpuIndex(
+            List<Tree> clusterTrees, List<Tree> partTrees, int numGpuTrees) {
+        boolean splitTrees = clusterTrees != partTrees;
+        long totalOccurrences = totalLeafOccurrences(clusterTrees, partTrees);
+        if (totalOccurrences > Integer.MAX_VALUE) {
+            throw new IllegalArgumentException(
+                "Too many gene-copy occurrences for the CUDA position index");
+        }
+
+        int[] orderings = new int[(int) totalOccurrences];
+        int[] positions = new int[(int) totalOccurrences];
+        int[] treeOffsets = new int[numGpuTrees + 1];
+        int[] taxonOffsets = new int[Math.addExact(Math.multiplyExact(numGpuTrees, n), 1)];
+
+        int treeSlot = 0;
+        int occurrenceCursor = 0;
+        int taxonRow = 0;
+        for (int listIndex = 0; listIndex < (splitTrees ? 2 : 1); listIndex++) {
+            List<Tree> source = listIndex == 0 ? clusterTrees : partTrees;
+            for (Tree tree : source) {
+                treeOffsets[treeSlot] = occurrenceCursor;
+                System.arraycopy(tree.postorderArray, 0, orderings,
+                    occurrenceCursor, tree.leafCount);
+                tree.taxonPositions.copyPositionsTo(positions, occurrenceCursor);
+                for (int taxon = 0; taxon < n; taxon++) {
+                    taxonOffsets[taxonRow++] = occurrenceCursor
+                        + tree.taxonPositions.startOffset(taxon);
+                }
+                occurrenceCursor += tree.leafCount;
+                treeSlot++;
+            }
+        }
+        if (treeSlot != numGpuTrees || occurrenceCursor != totalOccurrences) {
+            throw new IllegalStateException("Inconsistent CUDA tree-index packing");
+        }
+        treeOffsets[numGpuTrees] = occurrenceCursor;
+        taxonOffsets[taxonRow] = occurrenceCursor;
+        return new MulticopyGpuIndex(
+            orderings, treeOffsets, taxonOffsets, positions);
+    }
+
+    private static long totalLeafOccurrences(List<Tree> clusterTrees,
+                                             List<Tree> partTrees) {
+        long total = 0;
+        for (Tree tree : clusterTrees) total += tree.leafCount;
+        if (clusterTrees != partTrees) {
+            for (Tree tree : partTrees) total += tree.leafCount;
+        }
+        return total;
     }
 
     // -------------------------------------------------------------------------
@@ -1866,7 +1948,7 @@ public class WeightTable {
             // M1 = [leftStart, leftEnd), M2 = [rightStart, rightEnd)
             int lo1 = p.leftStart,  hi1 = p.leftEnd;   // M1 range
             int lo2 = p.rightStart, hi2 = p.rightEnd;  // M2 range
-            int sz1 = p.size1, sz2 = p.size2, sz3 = p.size3;
+            int sz1 = p.size1, sz2 = p.size2;
 
             // 4 core intersections
             int a0 = clusterIntersect(tGT, lo1, hi1, tA, cA, sz1);
@@ -1874,31 +1956,12 @@ public class WeightTable {
             int b0 = clusterIntersect(tGT, lo1, hi1, tB, cB, sz1);
             int b1 = clusterIntersect(tGT, lo2, hi2, tB, cB, sz2);
 
-            // Row sums: for incomplete gene trees, |A∩Lg_GT| < sizeA; must compute explicitly
-            int lgA = tGT.isComplete ? sizeA : clusterFullTree(tGT, tA, cA);
-            int lgB = tGT.isComplete ? sizeB : clusterFullTree(tGT, tB, cB);
-
-            // Derive remaining 5
-            int a2 = lgA - a0 - a1;            // row constraint on A (w.r.t. Lg_GT)
-            int b2 = lgB - b0 - b1;            // row constraint on B
-            int c0 = sz1 - a0 - b0;            // column constraint M1
-            int c1 = sz2 - a1 - b1;            // column constraint M2
-            int c2 = sz3 - a2 - b2;            // column constraint M3 (correct formula)
-
-            // All values must be non-negative for a valid intersection matrix
-            if (a2 < 0 || b2 < 0 || c0 < 0 || c1 < 0 || c2 < 0) {
-                Logging.trace("    SKIP  tGT=%d sz=%d|%d|%d lgA=%d lgB=%d "
-                    + "a=[%d,%d,%d] b=[%d,%d,%d] c=[%d,%d,%d]",
-                    p.treeIndex, sz1, sz2, sz3, lgA, lgB,
-                    a0,a1,a2, b0,b1,b2, c0,c1,c2);
-                continue;
-            }
-
-            long twoQI = computeTwoQI(a0, a1, a2, b0, b1, b2, c0, c1, c2);
-            Logging.trace("    PART  tGT=%d sz=%d|%d|%d lgA=%d lgB=%d "
-                + "a=[%d,%d,%d] b=[%d,%d,%d] c=[%d,%d,%d] 2*tripletWeight=%d freq=%d",
-                p.treeIndex, sz1, sz2, sz3, lgA, lgB,
-                a0,a1,a2, b0,b1,b2, c0,c1,c2, twoQI, pe.frequency);
+            // The rooted-bipartition objective uses exactly these four counts;
+            // no complement part is needed (STELAR-Pro Eq. 2).
+            long twoQI = computeTwoQI(a0, a1, 0, b0, b1, 0, 0, 0, 0);
+            Logging.trace("    PART  tGT=%d sz=%d|%d intersections=[%d,%d;%d,%d] "
+                    + "2*tripletWeight=%d freq=%d",
+                p.treeIndex, sz1, sz2, a0, a1, b0, b1, twoQI, pe.frequency);
             twoScore += (long) pe.frequency * twoQI;
         }
 
@@ -1963,25 +2026,14 @@ public class WeightTable {
 
             int lo1 = p.leftStart,  hi1 = p.leftEnd;
             int lo2 = p.rightStart, hi2 = p.rightEnd;
-            int sz1 = p.size1, sz2 = p.size2, sz3 = p.size3;
+            int sz1 = p.size1, sz2 = p.size2;
 
             int a0 = clusterIntersect(tGT, lo1, hi1, tA, cA, sz1);
             int a1 = clusterIntersect(tGT, lo2, hi2, tA, cA, sz2);
             int b0 = clusterIntersect(tGT, lo1, hi1, tB, cB, sz1);
             int b1 = clusterIntersect(tGT, lo2, hi2, tB, cB, sz2);
 
-            int lgA = tGT.isComplete ? sizeA : clusterFullTree(tGT, tA, cA);
-            int lgB = tGT.isComplete ? sizeB : clusterFullTree(tGT, tB, cB);
-
-            int a2 = lgA - a0 - a1;
-            int b2 = lgB - b0 - b1;
-            int c0 = sz1 - a0 - b0;
-            int c1 = sz2 - a1 - b1;
-            int c2 = sz3 - a2 - b2;
-
-            if (a2 < 0 || b2 < 0 || c0 < 0 || c1 < 0 || c2 < 0) continue;
-
-            double twoQI = computeTwoQIDouble(a0, a1, a2, b0, b1, b2, c0, c1, c2);
+            double twoQI = computeTwoQIDouble(a0, a1, 0, b0, b1, 0, 0, 0, 0);
             twoScore += (double) pe.frequency * twoQI;
         }
 
@@ -2037,25 +2089,14 @@ public class WeightTable {
 
             int lo1 = p.leftStart,  hi1 = p.leftEnd;
             int lo2 = p.rightStart, hi2 = p.rightEnd;
-            int sz1 = p.size1, sz2 = p.size2, sz3 = p.size3;
+            int sz1 = p.size1, sz2 = p.size2;
 
             int a0 = clusterIntersect(tGT, lo1, hi1, tA, cA, sz1);
             int a1 = clusterIntersect(tGT, lo2, hi2, tA, cA, sz2);
             int b0 = clusterIntersect(tGT, lo1, hi1, tB, cB, sz1);
             int b1 = clusterIntersect(tGT, lo2, hi2, tB, cB, sz2);
 
-            int lgA = tGT.isComplete ? sizeA : clusterFullTree(tGT, tA, cA);
-            int lgB = tGT.isComplete ? sizeB : clusterFullTree(tGT, tB, cB);
-
-            int a2 = lgA - a0 - a1;
-            int b2 = lgB - b0 - b1;
-            int c0 = sz1 - a0 - b0;
-            int c1 = sz2 - a1 - b1;
-            int c2 = sz3 - a2 - b2;
-
-            if (a2 < 0 || b2 < 0 || c0 < 0 || c1 < 0 || c2 < 0) continue;
-
-            Int128 twoQI = computeTwoQIInt128(a0, a1, a2, b0, b1, b2, c0, c1, c2);
+            Int128 twoQI = computeTwoQIInt128(a0, a1, 0, b0, b1, 0, 0, 0, 0);
             twoScore = twoScore.add(twoQI.mulScalar(pe.frequency));
         }
 

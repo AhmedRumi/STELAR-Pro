@@ -36,7 +36,7 @@ canonical_intersection_method_name() {
 
 # Encode meaningful options as option_value groups separated by '__'.
 # Display-only verbosity flags do not describe an experimental setting and are
-# omitted. Friendly and legacy STELAR-X aliases use the compact preset names.
+# omitted. Friendly and legacy STELAR-Pro aliases use the compact preset names.
 build_setting_name_from_opts() {
   local raw="$1"
   local -a tokens=()

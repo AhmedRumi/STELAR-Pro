@@ -50,7 +50,7 @@ public class SimilarityMatrix {
     public SimilarityMatrix(int n) {
         long cellsLong = (long)n * n;
         this.n = n;
-        this.packed = Boolean.getBoolean("stelarx.similarity.forcePacked")
+        this.packed = Boolean.getBoolean("stelarpro.similarity.forcePacked")
             || requiresPacked(n);
         if (packed) {
             long triangleCells = triangleCellCount(n);

@@ -34,7 +34,7 @@ tripartition (A|B|C):
 With complete gene trees (Lg = S), only 4 intersections needed:
 |X cap A|, |X cap B|, |Y cap A|, |Y cap B|. The other 5 derived by subtraction.
 
-CPU method (STELAR-X style): For each intersection |X cap A|, iterate over the smaller
+CPU method (STELAR-Pro style): For each intersection |X cap A|, iterate over the smaller
 cluster and check membership in the larger via inverse index. O(min(|X|, |A|)).
 
 GPU method (wavelet matrix): Build wavelet matrix per gene tree pair, query in O(log n).

@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """
 compare_greedy_consensus.py — Head-to-head comparison of the 7 greedy-consensus
-trees produced by STELAR-X (Part I) against ASTRAL-MP (astral-my, patched to
+trees produced by STELAR-Pro (Part I) against ASTRAL-MP (astral-my, patched to
 dump allGreedies via [GREEDY_DUMP_T*] sentinel lines).
 
 For each threshold T[0]..T[6]:
@@ -15,12 +15,12 @@ Exit code: 0 if all 7 trees agree as unrooted bipartition sets, else 1.
 
 Usage:
   python3 compare_greedy_consensus.py \\
-      --stelarx /tmp/stelarx_gc_37.log \\
+      --stelar-pro /tmp/stelarx_gc_37.log \\
       --astralmp /tmp/astral_mp_gc_37.log \\
       [--label 37taxon]
 
 Each input file is the verbatim run log; lines matching the sentinel pattern
-are extracted.  STELAR-X sentinel: "T[i]_threshold_X.XXXX: (...);"
+are extracted.  STELAR-Pro sentinel: "T[i]_threshold_X.XXXX: (...);"
 ASTRAL-MP sentinel: "[GREEDY_DUMP_Ti_threshold_X.XXXX] (...);"
 """
 
@@ -35,7 +35,7 @@ except ImportError:
     sys.exit(2)
 
 
-STELARX_RE  = re.compile(r"^T\[(\d)\]_threshold_[\d.]+:\s*(.+);")
+STELAR_PRO_RE  = re.compile(r"^T\[(\d)\]_threshold_[\d.]+:\s*(.+);")
 ASTRALMP_RE = re.compile(r"^\[GREEDY_DUMP_T(\d)_threshold_[\d.]+\]\s*(.+);+")
 
 
@@ -81,16 +81,16 @@ def bipartition_set(newick, tns):
 
 def main():
     ap = argparse.ArgumentParser()
-    ap.add_argument("--stelarx",  required=True)
+    ap.add_argument("--stelar-pro",  required=True)
     ap.add_argument("--astralmp", required=True)
     ap.add_argument("--label", default="")
     args = ap.parse_args()
 
-    xt = extract_newicks(args.stelarx,  STELARX_RE)
+    xt = extract_newicks(args.stelar_pro,  STELAR_PRO_RE)
     mt = extract_newicks(args.astralmp, ASTRALMP_RE)
 
     print(f"=== Head-to-head greedy consensus comparison  {args.label} ===")
-    print(f"  STELAR-X  : extracted {len(xt)} snapshot trees from {args.stelarx}")
+    print(f"  STELAR-Pro  : extracted {len(xt)} snapshot trees from {args.stelar_pro}")
     print(f"  ASTRAL-MP : extracted {len(mt)} snapshot trees from {args.astralmp}")
 
     if set(xt.keys()) != set(mt.keys()):

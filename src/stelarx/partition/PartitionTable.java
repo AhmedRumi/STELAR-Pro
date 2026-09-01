@@ -19,7 +19,7 @@ import java.util.*;
  *   part3 = Lg \ sub(u)     complement of [u.start, u.end) w.r.t. Lg
  *
  * The legacy third part stores the taxa outside u only to preserve the compact
- * data ABI used by the optimized intersection engines. STELAR-X ignores it.
+ * data ABI used by the optimized intersection engines. STELAR-Pro ignores it.
  *
  * In STELAR-Pro, every part hash contains each species once. The subtree and
  * outside-subtree hashes come from the shared small-to-large tree index.
@@ -117,7 +117,9 @@ public class PartitionTable {
             sizes[d - 1]  = szC;
             hashes[d - 1] = complement;
 
-            PartitionHash ph = new PartitionHash(hashes);
+            PartitionHash ph = uniqueTaxonHashes == null
+                ? new PartitionHash(hashes)
+                : new PartitionHash(hashes, k);
             Entry existing = table.get(ph);
             if (existing != null) {
                 existing.frequency++;
@@ -141,7 +143,11 @@ public class PartitionTable {
         int sz2 = h2.size;
         int sz3 = h3.size;
 
-        PartitionHash ph = new PartitionHash(h1, h2, h3);
+        // A rooted bipartition is identified only by its unordered children.
+        // The outside-subtree slot is retained in the exemplar ABI, not its key.
+        PartitionHash ph = uniqueTaxonHashes == null
+            ? new PartitionHash(h1, h2, h3)
+            : new PartitionHash(h1, h2);
 
         Entry existing = table.get(ph);
         if (existing != null) {

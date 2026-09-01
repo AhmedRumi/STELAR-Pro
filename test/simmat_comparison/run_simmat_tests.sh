@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# run_simmat_tests.sh — Run similarity matrix comparison tests (STELAR-X vs ASTRAL-MP)
+# run_simmat_tests.sh — Run similarity matrix comparison tests (STELAR-Pro vs ASTRAL-MP)
 #
 # Usage:
 #   bash run_simmat_tests.sh [--tol TOL] [--verbose] [--no-gen] [--mode cpu|gpu]
@@ -8,7 +8,7 @@
 #   --tol TOL      Float tolerance (default: 1e-5)
 #   --verbose      Pass --verbose to compare_simmat.py
 #   --no-gen       Skip input generation (assume inputs already exist)
-#   --mode MODE    STELAR-X compute mode: cpu or gpu (default: cpu)
+#   --mode MODE    STELAR-Pro compute mode: cpu or gpu (default: cpu)
 
 set -euo pipefail
 

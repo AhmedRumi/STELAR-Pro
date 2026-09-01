@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """
 compare_step_a.py — Head-to-head comparison of Step A (polytomy resolution via
-UPGMA on group similarity matrix) emissions between STELAR-X and ASTRAL-MP.
+UPGMA on group similarity matrix) emissions between STELAR-Pro and ASTRAL-MP.
 
 Both sources emit lines of the form "[STEPA_EMIT] ti=I size=S {taxa}" (MP, by
 patched dump) and "[STEPA] ti=I  size=S  {taxa}" (X verifier output).  We parse
@@ -15,7 +15,7 @@ import argparse
 import re
 import sys
 
-STELARX_RE  = re.compile(r"\[STEPA\]\s+ti=\d+\s+size=\d+\s+\{([^}]*)\}")
+STELAR_PRO_RE  = re.compile(r"\[STEPA\]\s+ti=\d+\s+size=\d+\s+\{([^}]*)\}")
 ASTRALMP_RE = re.compile(r"\[STEPA_EMIT\]\s+ti=\d+\s+size=\d+\s+\{([^}]*)\}")
 
 
@@ -43,20 +43,20 @@ def extract_sets(path, pattern, all_taxa=None):
 
 def main():
     ap = argparse.ArgumentParser()
-    ap.add_argument("--stelarx", required=True)
+    ap.add_argument("--stelar-pro", required=True)
     ap.add_argument("--astralmp", required=True)
     ap.add_argument("--label", default="")
     args = ap.parse_args()
 
     # Build all_taxa from union of both sources so canonicalization is consistent
-    _, x_all = extract_sets(args.stelarx,  STELARX_RE)
+    _, x_all = extract_sets(args.stelar_pro,  STELAR_PRO_RE)
     _, m_all = extract_sets(args.astralmp, ASTRALMP_RE)
     all_taxa = x_all | m_all
-    xs, _ = extract_sets(args.stelarx,  STELARX_RE,  all_taxa)
+    xs, _ = extract_sets(args.stelar_pro,  STELAR_PRO_RE,  all_taxa)
     ms, _ = extract_sets(args.astralmp, ASTRALMP_RE, all_taxa)
 
     print(f"=== Step A head-to-head  {args.label} ===")
-    print(f"  STELAR-X  : {len(xs):3d} unique bipartitions  ({args.stelarx})")
+    print(f"  STELAR-Pro  : {len(xs):3d} unique bipartitions  ({args.stelar_pro})")
     print(f"  ASTRAL-MP : {len(ms):3d} unique bipartitions  ({args.astralmp})")
 
     x_only = xs - ms

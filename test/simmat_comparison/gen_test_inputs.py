@@ -18,8 +18,8 @@ import shutil
 SEED = 42
 SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
 INPUT_DIR  = os.path.join(SCRIPT_DIR, "input")
-STELARX_ROOT = os.path.normpath(os.path.join(SCRIPT_DIR, "..", ".."))
-TC5_PATH = os.path.join(STELARX_ROOT, "test", "input", "tc5_heavy_incomplete.tre")
+STELAR_PRO_ROOT = os.path.normpath(os.path.join(SCRIPT_DIR, "..", ".."))
+TC5_PATH = os.path.join(STELAR_PRO_ROOT, "test", "input", "tc5_heavy_incomplete.tre")
 
 
 # ── Tree generation helpers ───────────────────────────────────────────────────

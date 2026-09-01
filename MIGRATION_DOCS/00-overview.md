@@ -1,4 +1,4 @@
-# ASTRAL-X to STELAR-X migration
+# ASTRAL-X to STELAR-Pro migration
 
 This codebase was converted in place. The migration keeps the optimized data
 plane and replaces only the semantics that necessarily differ between an
@@ -16,7 +16,7 @@ unrooted quartet method and a rooted triplet method.
 - exact `long`/`Int128` and optional large-score `double` accumulation;
 - parallel parsing, CPU scoring, batching, diagnostics, and portable tooling.
 
-The implementation identity is now STELAR-X end to end: Java sources live in
+The implementation identity is now STELAR-Pro end to end: Java sources live in
 `src/stelarx`, the entry point is `stelarx.Main`, JNI exports use the
 `Java_stelarx_*` namespace, and every native library is named `libstelarx_*`.
 Launchers, test utilities, experiment output directories, environment variables,

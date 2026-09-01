@@ -21,7 +21,7 @@ public class GPUDPBuilder {
         if (loadAttempted) return loaded;
         loadAttempted = true;
         try {
-            System.loadLibrary("stelarx_dp");
+            System.loadLibrary("stelar_pro_dp");
             loaded = true;
             loadError = "";
         } catch (UnsatisfiedLinkError | SecurityException e) {

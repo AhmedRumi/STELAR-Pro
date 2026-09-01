@@ -33,14 +33,14 @@ public final class PackedSimilarityParityTest {
         List<Tree> trees = TreeParser.parseGeneTrees(path, registry);
         int n = registry.size();
 
-        System.clearProperty("stelarx.similarity.forcePacked");
+        System.clearProperty("stelarpro.similarity.forcePacked");
         SimilarityMatrix dense = SimilarityMatrixBuilder.buildCPU(trees, n);
-        System.setProperty("stelarx.similarity.forcePacked", "true");
+        System.setProperty("stelarpro.similarity.forcePacked", "true");
         SimilarityMatrix packed;
         try {
             packed = SimilarityMatrixBuilder.buildCPU(trees, n);
         } finally {
-            System.clearProperty("stelarx.similarity.forcePacked");
+            System.clearProperty("stelarpro.similarity.forcePacked");
         }
         if (!packed.isPacked() || dense.isPacked()) throw new AssertionError("storage dispatch failed");
 

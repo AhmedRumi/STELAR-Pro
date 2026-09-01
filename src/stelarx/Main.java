@@ -82,7 +82,7 @@ public class Main {
 
         if (cfg.isAnchorOutgroup()) {
             throw new IllegalArgumentException(
-                "--anchor-outgroup is an unrooted optimization and is not valid in STELAR-X");
+                "--anchor-outgroup is an unrooted optimization and is not valid in STELAR-Pro");
         }
         if (cfg.isExtractTaxa()) {
             runTaxaExtraction(cfg);
@@ -158,10 +158,6 @@ public class Main {
                 registry = restricted.registry();
                 trees = restricted.trees();
                 inferenceInputHasPolytomy = restricted.hasPolytomy();
-            }
-            String repeatedSpecies = findRepeatedSpecies(trees, registry);
-            if (cfg.isScoreOnly() && repeatedSpecies != null) {
-                rejectRepeatedSpeciesBeforeWeights(repeatedSpecies);
             }
             PhaseLogger.end("Phase 1  Parse gene trees", t1, false);
 
@@ -482,9 +478,6 @@ public class Main {
                 (gcHeapBefore - gcHeapAfter) / 1_000_000);
 
             // ── Phase 6: Weight calculation ───────────────────────────────────
-            if (repeatedSpecies != null) {
-                rejectRepeatedSpeciesBeforeWeights(repeatedSpecies);
-            }
             boolean gpuWeight = (cfg.getComputeMode() == Config.ComputeMode.GPU)
                                 && GPUWeightCalculator.isLoaded();
             long t6 = PhaseLogger.begin("Phase 6  Weight calculation", gpuWeight);
@@ -972,11 +965,11 @@ public class Main {
         Banner.printTitle(System.err);
         System.err.print("""
             Usage:
-              stelarx -i <unrooted_gene_trees.tre> [-o <species_tree.tre>] [options]
-              stelarx -i <unrooted_gene_trees.tre> --score-species-tree <rooted_species_tree.tre> [options]
-              stelarx -T -i <unrooted_gene_trees.tre> -o <tagged_gene_trees.tre>
-              stelarx -i <trees.tre> --extract-taxa [-o <taxa.txt>]
-              stelarx --diagnose
+              stelar-pro -i <unrooted_gene_trees.tre> [-o <species_tree.tre>] [options]
+              stelar-pro -i <unrooted_gene_trees.tre> --score-species-tree <rooted_species_tree.tre> [options]
+              stelar-pro -T -i <unrooted_gene_trees.tre> -o <tagged_gene_trees.tre>
+              stelar-pro -i <trees.tre> --extract-taxa [-o <taxa.txt>]
+              stelar-pro --diagnose
 
             General:
               -i, --input FILE                 Input gene trees (one Newick tree per line)
@@ -1014,7 +1007,7 @@ public class Main {
               --no-prune-search-space           Disable reachability pruning
               --rooted | --unrooted             Compatibility flags; normal STELAR-Pro runs
                                                  resolve, root, and tag before parsing
-              --keep-polytomy-during-inference   Legacy STELAR-X option; STELAR-Pro
+              --keep-polytomy-during-inference   Legacy STELAR-Pro option; STELAR-Pro
                                                  inference pre-resolves polytomies
               -m, --seeds N                     Number of cluster-hash seeds
 
@@ -1287,29 +1280,6 @@ public class Main {
             java.nio.file.Path.of(second).toAbsolutePath().normalize());
     }
 
-    /** Return the first repeated species occurrence, or null for single-copy input. */
-    private static String findRepeatedSpecies(List<Tree> trees, TaxonRegistry registry) {
-        for (Tree tree : trees) {
-            boolean[] seen = new boolean[registry.size()];
-            for (int taxonId : tree.postorderArray) {
-                if (seen[taxonId]) {
-                    return "tree " + tree.treeIndex + " repeats species "
-                        + registry.getName(taxonId);
-                }
-                seen[taxonId] = true;
-            }
-        }
-        return null;
-    }
-
-    /** Weight indexing remains occurrence-based until the next implementation step. */
-    private static void rejectRepeatedSpeciesBeforeWeights(String repeatedSpecies) {
-        throw new UnsupportedOperationException(
-            "STELAR-Pro duplicate-aware hashing, rooted partitions, and candidate "
-            + "DP are ready; per-tree multicopy weight indexes are the next "
-            + "implementation stage (" + repeatedSpecies + ")");
-    }
-
     /** Keep incomplete STELAR-Pro paths from being selected accidentally. */
     private static void validateCurrentProScope(Config cfg) {
         if (cfg.getWeightIntersectionMethod()
@@ -1423,7 +1393,12 @@ public class Main {
         PartitionTable genePartitions = null;
         if (cfg.getWeightIntersectionMethod()
                 != Config.WeightIntersectionMethod.SIMPLE_TREE_WALK) {
-            genePartitions = new PartitionTable(geneTrees, genePref);
+            // Score only the same duplicate-invariant, speciation-rooted records
+            // used by S1 inference; duplication roots never enter the weight map.
+            UniqueTaxonSubtreeHashes geneHashes =
+                new UniqueTaxonSubtreeHashes(geneTrees, hasher);
+            genePartitions = new PartitionTable(geneTrees, genePref, geneHashes);
+            geneHashes.release();
         } else {
             Logging.info("%s tree-walk: skipped unused gene-tree PartitionTable",
                 scoreLogLabel);

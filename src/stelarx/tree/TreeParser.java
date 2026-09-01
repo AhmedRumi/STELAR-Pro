@@ -22,7 +22,7 @@ import java.util.function.Consumer;
  * policy and roots the in-memory representation:
  *
  *   Root node with 2 children → rooted binary tree, keep its supplied root.
- *   Any other root arity → reject: STELAR-X never invents an arbitrary root.
+ *   Any other root arity → reject: STELAR-Pro never invents an arbitrary root.
  *   Default                            → deterministic first-pair binary refinement.
  *   keepPolytomy=true internal degree≥3 → native polytomous node.
  *
@@ -342,7 +342,7 @@ public class TreeParser {
     /**
      * Shared Newick leaf-token scanner.  Taxa extraction and coverage reporting
      * deliberately use this exact scanner so their name semantics cannot drift
-     * from normal STELAR-X parsing.
+     * from normal STELAR-Pro parsing.
      */
     static void forEachTaxonName(String s, Consumer<String> consumer) {
         int i = 0, n = s.length();
@@ -610,7 +610,7 @@ public class TreeParser {
         if (isRoot && nc != 2) {
             throw new IllegalArgumentException("Tree " + treeIdx
                 + " is not an explicitly rooted binary Newick tree: the top-level "
-                + "node has " + nc + " children (STELAR-X requires exactly 2 and "
+                + "node has " + nc + " children (STELAR-Pro requires exactly 2 and "
                 + "never roots input trees arbitrarily)");
         }
         if (nc > (isRoot ? 3 : 2)) rootingCounts[4]++;

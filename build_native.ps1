@@ -42,17 +42,17 @@ $Common = @(
     "-Xcompiler=/MD",
     "-I$JniInclude",
     "-I$JniPlatformInclude",
-    "-DSTELARX_MIN_CUDA_CC=$MinCudaCc"
+    "-DSTELAR_PRO_MIN_CUDA_CC=$MinCudaCc"
 )
 
 $Libraries = @(
-    @{ Source = "stelarx_weight.cu";     Output = "stelarx_weight.dll" },
-    @{ Source = "stelarx_dp.cu";         Output = "stelarx_dp.dll" },
-    @{ Source = "stelarx_dist.cu";       Output = "stelarx_dist.dll" },
-    @{ Source = "stelarx_similarity.cu"; Output = "stelarx_sim.dll" }
+    @{ Source = "stelarx_weight.cu";     Output = "stelar_pro_weight.dll" },
+    @{ Source = "stelarx_dp.cu";         Output = "stelar_pro_dp.dll" },
+    @{ Source = "stelarx_dist.cu";       Output = "stelar_pro_dist.dll" },
+    @{ Source = "stelarx_similarity.cu"; Output = "stelar_pro_sim.dll" }
 )
 
-Write-Host "=== Building STELAR-X native GPU libraries ==="
+Write-Host "=== Building STELAR-Pro native GPU libraries ==="
 Write-Host "  JDK         : $Jdk"
 Write-Host "  CUDA arch   : $CudaArch"
 Write-Host "  Minimum CC  : $MinCudaCc"

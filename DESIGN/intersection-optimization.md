@@ -304,10 +304,10 @@ In the weight calculation for ASTRAL-like methods, computing QI(T, T') requires 
 
 ### 7.2 Where It Truly Helps: Tuple-Based Representations
 
-In STELAR-X's integer-tuple representation, each intersection |X ∩ A| costs O(min(|X|, |A|)) rather than O(n). The optimization is more impactful here:
+In STELAR-Pro's integer-tuple representation, each intersection |X ∩ A| costs O(min(|X|, |A|)) rather than O(n). The optimization is more impactful here:
 
-- **Without the optimization:** 4 intersection computations for the 2×2 bipartition case (STELAR-X already does this — Equation 2 in the STELAR-X paper computes 4 intersections for M(x,y)).
-- **With the optimization for tripartitions:** If one were to extend STELAR-X to handle tripartitions (a 3×3 matrix), computing only 4 intersections instead of 9 would save more than half the work, with the remaining 5 values obtained in O(1).
+- **Without the optimization:** 4 intersection computations for the 2×2 bipartition case (STELAR-Pro already does this — Equation 2 in the STELAR-Pro paper computes 4 intersections for M(x,y)).
+- **With the optimization for tripartitions:** If one were to extend STELAR-Pro to handle tripartitions (a 3×3 matrix), computing only 4 intersections instead of 9 would save more than half the work, with the remaining 5 values obtained in O(1).
 
 ### 7.3 Connection to ASTRAL-II's Algorithm
 

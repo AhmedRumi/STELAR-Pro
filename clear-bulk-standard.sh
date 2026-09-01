@@ -10,7 +10,7 @@ METHOD=""
 DRY_RUN=false
 ASSUME_YES=false
 ALL_RESULTS=false
-SUPPORTED_METHODS=(stelarx stelar aster astral treeqmc wqfmtree supertriplets stp-nni tmc)
+SUPPORTED_METHODS=(stelar-pro stelar aster astral treeqmc wqfmtree supertriplets stp-nni tmc)
 
 show_usage() {
   cat <<'EOF'
@@ -23,7 +23,7 @@ output trees and logs are preserved. This is enough to exclude the method from
 the next collect-stats-standard.sh run and allow run-bulk-standard.sh to rerun it.
 
 Required:
-  --method, -m METHOD   stelarx | stelar | aster | astral | treeqmc |
+  --method, -m METHOD   stelar-pro | stelar | aster | astral | treeqmc |
                         wqfmtree | supertriplets | stp-nni | tmc | all
 
 Paths:
@@ -39,18 +39,18 @@ Modes:
   --help, -h            Show this help
 
 Examples:
-  ./clear-bulk-standard.sh --method stelarx --dry-run
+  ./clear-bulk-standard.sh --method stelar-pro --dry-run
   ./clear-bulk-standard.sh --method stelar --yes
   ./clear-bulk-standard.sh --method all --dry-run
-  ./clear-bulk-standard.sh --method stelarx
-  ./clear-bulk-standard.sh --method stelarx --yes
+  ./clear-bulk-standard.sh --method stelar-pro
+  ./clear-bulk-standard.sh --method stelar-pro --yes
 EOF
 }
 
 normalize_method() {
   case "${1,,}" in
-    stelarx|astral-x)             printf 'stelarx' ;;
-    stelar|stelar-x)              printf 'stelar' ;;
+    stelar-pro|astral-x)             printf 'stelar-pro' ;;
+    stelar|stelar-pro)              printf 'stelar' ;;
     aster)                        printf 'aster' ;;
     astral)                       printf 'astral' ;;
     treeqmc|tree-qmc)             printf 'treeqmc' ;;

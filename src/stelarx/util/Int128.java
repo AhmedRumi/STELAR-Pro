@@ -13,7 +13,7 @@ import java.math.BigInteger;
  * {@link #add}, {@link #compareTo}, {@link #halve}, and the small-operand
  * builders {@link #ofLong} / {@link #mulLong}.
  *
- * <p>All scores in STELAR-X are non-negative; the signed representation is used
+ * <p>All scores in STELAR-Pro are non-negative; the signed representation is used
  * only so the DP can start from a {@code null}/lowest sentinel and compare.
  * {@link #toString} (rare, for logging) goes through {@code BigInteger}.
  */

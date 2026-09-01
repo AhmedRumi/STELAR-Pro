@@ -2,7 +2,7 @@
 
 ## Overall Verdict
 
-The plan is fundamentally sound and represents a genuine contribution: bringing STELAR-X's compact integer-tuple representation and GPU-accelerated weight precomputation into ASTRAL's quartet-based framework. The pipeline stages are logically ordered and the key data structures (Cluster with tuple representation, prefix-hash arrays, partition hashtable) are well-motivated.
+The plan is fundamentally sound and represents a genuine contribution: bringing STELAR-Pro's compact integer-tuple representation and GPU-accelerated weight precomputation into ASTRAL's quartet-based framework. The pipeline stages are logically ordered and the key data structures (Cluster with tuple representation, prefix-hash arrays, partition hashtable) are well-motivated.
 
 However, there are issues spanning from a critical mathematical subtlety to several architectural concerns and missed optimizations. I organize these by severity.
 
@@ -145,18 +145,18 @@ But the **total work** needs careful analysis. For each gene tree gᵢ (contribu
 Total work per round: O(C × |tripartitions from gᵢ| × 4 × log n)
 Total over all rounds: O(C × T × 4 × log n)
 
-Compare with STELAR-X's approach (iterating over the smaller range): O(C × T × min(s,t)) per pair, which for balanced trees gives O(n²k²).
+Compare with STELAR-Pro's approach (iterating over the smaller range): O(C × T × min(s,t)) per pair, which for balanced trees gives O(n²k²).
 
-With wavelet matrices: O(C × T × log n). Since C = O(nk) and T = O(nk), this is O(n²k² log n) — actually *worse* by a log factor than STELAR-X's balanced-tree case!
+With wavelet matrices: O(C × T × log n). Since C = O(nk) and T = O(nk), this is O(n²k² log n) — actually *worse* by a log factor than STELAR-Pro's balanced-tree case!
 
 ### Where Wavelet Matrices Win
 
-They win when the clusters are **large** — for balanced trees with cluster sizes ~n/2, STELAR-X's min(s,t) approach costs O(n/2) per intersection, while wavelet costs O(log n). But for small clusters (which are much more numerous), the iteration approach is faster.
+They win when the clusters are **large** — for balanced trees with cluster sizes ~n/2, STELAR-Pro's min(s,t) approach costs O(n/2) per intersection, while wavelet costs O(log n). But for small clusters (which are much more numerous), the iteration approach is faster.
 
 ### Recommendation
 
 Consider a **hybrid approach**: 
-- For small clusters (size < threshold), use the direct iteration method (STELAR-X style).
+- For small clusters (size < threshold), use the direct iteration method (STELAR-Pro style).
 - For large clusters (size ≥ threshold), use wavelet matrices.
 - The threshold should be around O(log n).
 
@@ -231,7 +231,7 @@ In practice, many of these tripartitions will share the same third part, but the
 
 The weight precomputation should be indexed by tripartitions (all three parts), not just bipartitions. Alternatively, during the DP traversal, compute the weight on-the-fly for each (A', A\A', S\A) encountered, rather than trying to precompute all of them. This is what ASTRAL-II/III actually does — it computes weights lazily as the DP encounters new tripartitions.
 
-This is actually a significant design decision. STELAR-X can precompute all bipartition weights because the score depends only on the bipartition (A|B), not on context. In ASTRAL, the score depends on the tripartition (A|B|C), which is context-dependent. You may need to either:
+This is actually a significant design decision. STELAR-Pro can precompute all bipartition weights because the score depends only on the bipartition (A|B), not on context. In ASTRAL, the score depends on the tripartition (A|B|C), which is context-dependent. You may need to either:
 (a) Precompute all O(|X|²) tripartition weights (expensive in memory), or
 (b) Compute weights on-the-fly during the DP (ASTRAL's approach), or
 (c) Cache computed weights in a hash table keyed by tripartition hash (lazy evaluation with memoization).
@@ -281,7 +281,7 @@ Based on the above, here is a cleaned-up pipeline:
 
 ```
 Phase 0: Parse & Preprocess
-  - Parse Newick trees (multithreaded, as in STELAR-X)
+  - Parse Newick trees (multithreaded, as in STELAR-Pro)
   - Build post-order arrays + position maps
   - Compute single-taxon hashes (m seeds × n taxa)
   - Build prefix-hash arrays (2m arrays per gene tree)

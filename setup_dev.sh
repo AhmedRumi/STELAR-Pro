@@ -1,9 +1,9 @@
 #!/usr/bin/env bash
-# Prepare and verify a Linux STELAR-X development checkout.
+# Prepare and verify a Linux STELAR-Pro development checkout.
 set -euo pipefail
 
-STELARX_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-VENV_DIR="${STELARX_ROOT}/.venv"
+STELAR_PRO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+VENV_DIR="${STELAR_PRO_ROOT}/.venv"
 CPU_ONLY=false
 CHECK_ONLY=false
 BUILD_PROJECT=true
@@ -57,8 +57,8 @@ require_command() {
   fi
 }
 
-echo "=== STELAR-X developer environment ==="
-echo "Repository: $STELARX_ROOT"
+echo "=== STELAR-Pro developer environment ==="
+echo "Repository: $STELAR_PRO_ROOT"
 echo
 echo "Required tools"
 require_command bash "Bash"
@@ -95,7 +95,7 @@ if [[ -x /usr/bin/time ]]; then ok "GNU time monitor: /usr/bin/time"; else warn 
 if command -v curl >/dev/null 2>&1; then ok "curl notifications"; else warn "curl not found; notifications will be disabled"; fi
 if command -v nvidia-smi >/dev/null 2>&1; then ok "NVIDIA driver tool: $(command -v nvidia-smi)"; else warn "nvidia-smi not found; GPU monitoring will be disabled"; fi
 if command -v nvcc >/dev/null 2>&1; then ok "CUDA compiler: $(nvcc --version | tail -1)"; else warn "nvcc not found; only CPU development builds are available"; fi
-if [[ -x "${STELARX_ROOT}/simphy/simphy_lnx64" ]]; then ok "Bundled SimPhy executable"; else warn "Bundled SimPhy executable is missing or not executable"; fi
+if [[ -x "${STELAR_PRO_ROOT}/simphy/simphy_lnx64" ]]; then ok "Bundled SimPhy executable"; else warn "Bundled SimPhy executable is missing or not executable"; fi
 
 if (( failures > 0 )); then
   echo
@@ -116,9 +116,9 @@ if [[ "$CHECK_ONLY" == true ]]; then
   else
     fail "DendroPy is missing; run ./setup_dev.sh"
   fi
-  if [[ -f "${STELARX_ROOT}/build/stelarx/Main.class" ]]; then ok "Java build output"; else warn "Java build output is absent; run ./setup_dev.sh"; fi
+  if [[ -f "${STELAR_PRO_ROOT}/build/stelarx/Main.class" ]]; then ok "Java build output"; else warn "Java build output is absent; run ./setup_dev.sh"; fi
   if [[ "$CPU_ONLY" != true && -x "$(command -v nvcc 2>/dev/null || true)" ]]; then
-    if [[ -f "${STELARX_ROOT}/native/libstelarx_weight.so" ]]; then ok "CUDA native libraries"; else warn "CUDA libraries are absent; run ./setup_dev.sh"; fi
+    if [[ -f "${STELAR_PRO_ROOT}/native/libstelar_pro_weight.so" ]]; then ok "CUDA native libraries"; else warn "CUDA libraries are absent; run ./setup_dev.sh"; fi
   fi
   echo
   (( failures == 0 )) || exit 1
@@ -135,13 +135,13 @@ if [[ ! -x "${VENV_DIR}/bin/python" ]]; then
   fi
 fi
 PYTHON_BIN="${VENV_DIR}/bin/python"
-"$PYTHON_BIN" -m pip install --disable-pip-version-check -r "${STELARX_ROOT}/requirements-dev.txt"
+"$PYTHON_BIN" -m pip install --disable-pip-version-check -r "${STELAR_PRO_ROOT}/requirements-dev.txt"
 
 if [[ "$BUILD_PROJECT" == true ]]; then
-  "${STELARX_ROOT}/build.sh"
+  "${STELAR_PRO_ROOT}/build.sh"
   if [[ "$CPU_ONLY" != true ]]; then
     if command -v nvcc >/dev/null 2>&1; then
-      CUDA_ARCH="$CUDA_ARCH_VALUE" "${STELARX_ROOT}/build_native.sh"
+      CUDA_ARCH="$CUDA_ARCH_VALUE" "${STELAR_PRO_ROOT}/build_native.sh"
     else
       warn "Skipping CUDA build because nvcc is unavailable"
     fi
@@ -149,11 +149,11 @@ if [[ "$BUILD_PROJECT" == true ]]; then
 fi
 
 if [[ "$RUN_TESTS" == true ]]; then
-  bash "${STELARX_ROOT}/test/run_stelarx_tests.sh"
+  bash "${STELAR_PRO_ROOT}/test/run_stelar_pro_tests.sh"
 fi
 
 echo
 echo "Developer setup complete."
 echo "  Check later : ./setup_dev.sh --check"
-echo "  Run         : ./stelarx -i rooted_gene_trees.tre -o species_tree.tre --search-space S1"
-echo "  Monitor     : ./run-stelarx-with-monitor.sh -i gene_trees.tre -o species_tree.tre --search-space S1"
+echo "  Run         : ./stelar-pro -i rooted_gene_trees.tre -o species_tree.tre --search-space S1"
+echo "  Monitor     : ./run-stelar-pro-with-monitor.sh -i gene_trees.tre -o species_tree.tre --search-space S1"

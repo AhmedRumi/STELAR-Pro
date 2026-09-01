@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Remove all STELAR-X results produced by run-a10k.sh while preserving the A10K
+# Remove all STELAR-Pro results produced by run-a10k.sh while preserving the A10K
 # source data, rooted gene trees, and simulation files.
 
 set -euo pipefail
@@ -12,8 +12,8 @@ show_usage() {
   cat <<'EOF'
 Usage: ./clear-a10k.sh --data-dir DIR [options]
 
-Remove all STELAR-X A10K results beneath:
-  DIR/10k-simphy/R*/stelarx_outputs
+Remove all STELAR-Pro A10K results beneath:
+  DIR/10k-simphy/R*/stelar-pro-outputs
 
 The merged DIR/a10k_stelarx_scores_merged.csv file is also removed when present.
 Input gene trees, rooted gene trees, species trees, and all other dataset files
@@ -78,7 +78,7 @@ fi
 declare -a RESULT_DIRS=()
 declare -a TARGETS=()
 while IFS= read -r -d '' replicate_dir; do
-  result_dir="${replicate_dir}/stelarx_outputs"
+  result_dir="${replicate_dir}/stelar-pro-outputs"
   [[ -d "$result_dir" ]] && RESULT_DIRS+=("$result_dir")
 done < <(find "$SIMPHY_DIR" -mindepth 1 -maxdepth 1 -type d -name 'R*' -print0 | sort -z -V)
 
@@ -87,18 +87,18 @@ MERGED_CSV="${DATA_DIR}/a10k_stelarx_scores_merged.csv"
 [[ -f "$MERGED_CSV" ]] && TARGETS+=("$MERGED_CSV")
 
 echo "A10K data: $DATA_DIR"
-echo "Results:   $SIMPHY_DIR/R*/stelarx_outputs"
+echo "Results:   $SIMPHY_DIR/R*/stelar-pro-outputs"
 echo
 
 if [[ ${#TARGETS[@]} -eq 0 ]]; then
-  echo "No A10K STELAR-X results found. Nothing to remove."
+  echo "No A10K STELAR-Pro results found. Nothing to remove."
   exit 0
 fi
 
 echo "Targets (${#TARGETS[@]}):"
 for target in "${TARGETS[@]}"; do
   case "$target" in
-    "$SIMPHY_DIR"/R*/stelarx_outputs|"$MERGED_CSV") ;;
+    "$SIMPHY_DIR"/R*/stelar-pro-outputs|"$MERGED_CSV") ;;
     *) echo "Error: unsafe target outside the A10K result layout: $target" >&2; exit 3 ;;
   esac
   printf '  %s\n' "$target"
@@ -123,7 +123,7 @@ if [[ "$ASSUME_YES" != true ]]; then
 fi
 
 for result_dir in "${RESULT_DIRS[@]}"; do
-  [[ "$(basename "$result_dir")" == "stelarx_outputs" ]] || {
+  [[ "$(basename "$result_dir")" == "stelar-pro-outputs" ]] || {
     echo "Error: refusing unexpected result directory: $result_dir" >&2
     exit 3
   }

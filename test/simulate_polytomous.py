@@ -11,7 +11,7 @@ Usage:
   simulate_polytomous.py IN.tre OUT.tre [--prob P] [--seed S]
 
 --prob is the per-internal-edge collapse probability (default 0.3).
-The output is guaranteed parseable by STELAR-X (and verify_weights.py).
+The output is guaranteed parseable by STELAR-Pro (and verify_weights.py).
 """
 import sys, re, random, argparse
 

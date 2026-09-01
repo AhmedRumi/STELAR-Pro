@@ -2,20 +2,20 @@
 """
 test_upgma.py
 =============
-Randomized tests for the STELAR-X UPGMA clusterer.
+Randomized tests for the STELAR-Pro UPGMA clusterer.
 
 For each test case:
   1. Generate n random taxa and k random binary gene trees (some incomplete).
   2. Compute the similarity matrix by brute-force in Python.
   3. Run Python O(n³) UPGMA brute-force on that matrix → Python bipartitions.
-  4. Run STELAR-X with --verify-upgma → STELAR-X bipartitions.
+  4. Run STELAR-Pro with --verify-upgma → STELAR-Pro bipartitions.
   5. Assert the two bipartition *sets* are identical.
 
 Python UPGMA is deliberately O(n³): find-best in O(n²) each of n−1 iterations.
 This is correct but slow; it serves only as a reference for n ≤ ~50.
 
 Usage:
-  python3 test/test_upgma.py [--stelarx-root PATH] [--seeds N N N ...] [-n NUM] [-v]
+  python3 test/test_upgma.py [--stelar-pro-root PATH] [--seeds N N N ...] [-n NUM] [-v]
 """
 
 import argparse
@@ -200,7 +200,7 @@ def upgma_bipartitions(sim, ordered_taxa):
 def first_seen_order(newick_lines):
     """
     Return taxa names in the order they first appear (left-to-right) across
-    all Newick strings, exactly as STELAR-X's TaxonRegistry assigns IDs.
+    all Newick strings, exactly as STELAR-Pro's TaxonRegistry assigns IDs.
     """
     seen = {}
     for line in newick_lines:
@@ -221,11 +221,11 @@ def first_seen_order(newick_lines):
     return list(seen.keys())   # ordered by first appearance
 
 
-# ── Parse STELAR-X --verify-upgma output ─────────────────────────────────────
+# ── Parse STELAR-Pro --verify-upgma output ─────────────────────────────────────
 
 def parse_stelarx_upgma(output):
     """
-    Parse stdout from STELAR-X --verify-upgma.
+    Parse stdout from STELAR-Pro --verify-upgma.
 
     Returns a set of frozensets of taxon *names* (strings).
     """
@@ -273,7 +273,7 @@ def run_one(seed, n_taxa, k_trees, stelarx_root, verbose):
     random.seed(seed)  # ensure global random state is deterministic per seed
     all_taxa, newick_lines, trees_for_python = make_test_case(seed, n_taxa, k_trees)
 
-    # Determine first-seen taxon order (mirrors STELAR-X TaxonRegistry)
+    # Determine first-seen taxon order (mirrors STELAR-Pro TaxonRegistry)
     ordered_taxa = first_seen_order(newick_lines)
 
     # ── Python reference ──────────────────────────────────────────────────────
@@ -281,7 +281,7 @@ def run_one(seed, n_taxa, k_trees, stelarx_root, verbose):
     sim_raw = brute_force_similarity(trees_for_python, all_taxa)
     raw_idx = {t: i for i, t in enumerate(all_taxa)}
 
-    # Reorder sim matrix to first-seen ordering so tie-breaking matches STELAR-X
+    # Reorder sim matrix to first-seen ordering so tie-breaking matches STELAR-Pro
     n = len(ordered_taxa)
     sim = [[0.0] * n for _ in range(n)]
     for i in range(n):
@@ -292,7 +292,7 @@ def run_one(seed, n_taxa, k_trees, stelarx_root, verbose):
 
     py_bips = upgma_bipartitions(sim, ordered_taxa)
 
-    # ── STELAR-X ──────────────────────────────────────────────────────────────
+    # ── STELAR-Pro ──────────────────────────────────────────────────────────────
     build_dir  = os.path.join(stelarx_root, "build")
     native_dir = os.path.join(stelarx_root, "native")
     with tempfile.NamedTemporaryFile(mode='w', suffix='.tre', delete=False) as f:
@@ -311,8 +311,8 @@ def run_one(seed, n_taxa, k_trees, stelarx_root, verbose):
 
     if result.returncode != 0:
         if verbose:
-            print(f"  STELAR-X stderr:\n{result.stderr[:500]}")
-        return False, f"STELAR-X exited with code {result.returncode}"
+            print(f"  STELAR-Pro stderr:\n{result.stderr[:500]}")
+        return False, f"STELAR-Pro exited with code {result.returncode}"
 
     ax_bips = parse_stelarx_upgma(result.stdout)
 
@@ -327,23 +327,23 @@ def run_one(seed, n_taxa, k_trees, stelarx_root, verbose):
     if only_py:
         msg.append(f"  in Python only: {[sorted(s) for s in only_py]}")
     if only_ax:
-        msg.append(f"  in STELAR-X only: {[sorted(s) for s in only_ax]}")
+        msg.append(f"  in STELAR-Pro only: {[sorted(s) for s in only_ax]}")
     return False, "\n".join(msg)
 
 
 # ── Main ──────────────────────────────────────────────────────────────────────
 
 def main():
-    ap = argparse.ArgumentParser(description="Test STELAR-X UPGMA clusterer")
-    ap.add_argument("--stelarx-root", default=os.path.join(os.path.dirname(__file__), ".."),
-                    help="STELAR-X project root (default: parent of test/)")
+    ap = argparse.ArgumentParser(description="Test STELAR-Pro UPGMA clusterer")
+    ap.add_argument("--stelar-pro-root", default=os.path.join(os.path.dirname(__file__), ".."),
+                    help="STELAR-Pro project root (default: parent of test/)")
     ap.add_argument("--seeds", type=int, nargs="+",
                     help="Specific seeds to test (default: 1..20)")
     ap.add_argument("-n", "--num-tests", type=int, default=20)
     ap.add_argument("-v", "--verbose", action="store_true")
     args = ap.parse_args()
 
-    stelarx_root = os.path.abspath(args.stelarx_root)
+    stelarx_root = os.path.abspath(args.stelar_pro_root)
     seeds = args.seeds if args.seeds else list(range(1, args.num_tests + 1))
 
     print(f"Running {len(seeds)} UPGMA tests ...")

@@ -67,13 +67,13 @@ public class Banner {
         boolean color = detectColor(1);
         printTitle(System.out, color);
         System.out.println(c(color, WHT,
-            "Welcome to STELAR-X version " + Main.VERSION + "!"));
+            "Welcome to STELAR-Pro version " + Main.VERSION + "!"));
         System.out.println();
     }
 
     private static void printTitle(PrintStream out, boolean color) {
         // w = number of ═ characters (= total inner + 2 for the space padding each side)
-        String title = "STELAR-X  v" + Main.VERSION;
+        String title = "STELAR-Pro  v" + Main.VERSION;
         int inner = TITLE_WIDTH - 2;
         int lpad  = (inner - title.length()) / 2;
         int rpad  = inner - title.length() - lpad;

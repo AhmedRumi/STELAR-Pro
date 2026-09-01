@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # Multi-Algorithm Dataset Runner Script (updated)
-# Supports STELAR-X and optional baseline algorithms
+# Supports STELAR-Pro and optional baseline algorithms
 # Usage: ./run-bulk-standard.sh [--base-dir /path/to/base] [--dataset-dir /path/to/datasets] [--fresh]
 #   --base-dir, -b    Optional base directory (defaults to value below)
 #   --dataset-dir, -d Optional dataset directory (defaults to BASE_DIR/datasets)
@@ -13,15 +13,15 @@ set -uo pipefail
 # =============================================================================
 BASE_DIR="$HOME/phylogeny"  # default; can be overridden with --base-dir or -b
 DATASET_DIR=""                        # dataset directory; defaults to BASE_DIR/datasets/standard
-STELAR_X_ROOT=""                      # STELAR-X root (this project); derived from script location
-ASTER_ROOT=""                         # ASTER root; derived from STELAR_X_ROOT if not set
+STELAR_PRO_ROOT=""                      # STELAR-Pro root (this project); derived from script location
+ASTER_ROOT=""                         # ASTER root; derived from STELAR_PRO_ROOT if not set
 ASTRAL_ROOT=""                        # derived from BASE_DIR if not set explicitly
 TREEQMC_ROOT=""                       # derived from BASE_DIR if not set explicitly
 WQFMTREE_ROOT=""                      # derived from BASE_DIR if not set explicitly
-SUPERTRIPLETS_ROOT=""                 # SuperTriplets baseline; derived from STELAR_X_ROOT/baselines
-TMC_ROOT=""                           # TMC baseline; derived from STELAR_X_ROOT/baselines
-RUN_WITH_MONITOR_SCRIPT=""           # derived from STELAR_X_ROOT if not set
-RUN_BASELINE_WITH_MONITOR_SCRIPT=""  # derived from STELAR_X_ROOT if not set
+SUPERTRIPLETS_ROOT=""                 # SuperTriplets baseline; derived from STELAR_PRO_ROOT/baselines
+TMC_ROOT=""                           # TMC baseline; derived from STELAR_PRO_ROOT/baselines
+RUN_WITH_MONITOR_SCRIPT=""           # derived from STELAR_PRO_ROOT if not set
+RUN_BASELINE_WITH_MONITOR_SCRIPT=""  # derived from STELAR_PRO_ROOT if not set
 METHODS_ARG=""                       # optional semicolon-separated methods override
 FOLDERS_ARG=""                       # optional semicolon-separated folders override
 FRESH=false
@@ -33,12 +33,12 @@ GENERIC_OPTS_LIST_SET=false
 
 # Algorithm configuration. Override with --method for a single method or a
 # semicolon-separated sweep. Optional baselines are validated only if selected.
-ALGORITHMS=("stelarx")
+ALGORITHMS=("stelar-pro")
 
 
 
 # Algorithm-specific options
-# STELAR-X examples:
+# STELAR-Pro examples:
 # GENERIC_OPTS="--search-space S2 --intersection-method I2 -vv"
 # GENERIC_OPTS_LIST_RAW="--search-space S1 -vv;--search-space S2 -vv;--search-space S3 -vv"
 # The setting-name encoder ignores verbosity. The single setting above becomes:
@@ -55,7 +55,7 @@ TMC_OPTS=""  # TMC options
 
 # Algorithm command mappings - these will be used to construct the actual commands
 declare -A ALG_COMMANDS
-ALG_COMMANDS["stelarx"]="stelarx_command"
+ALG_COMMANDS["stelar-pro"]="stelarx_command"
 ALG_COMMANDS["aster"]="aster_command"
 ALG_COMMANDS["astral"]="astral_command"
 ALG_COMMANDS["treeqmc"]="treeqmc_command"
@@ -124,13 +124,13 @@ print_header() {
     echo "==============================================="
     echo "BASE_DIR: $BASE_DIR"
     echo "DATASET_DIR: $DATASET_DIR"
-    echo "STELAR_X_ROOT: ${STELAR_X_ROOT:-(auto-detected)}"
-    echo "ASTER_ROOT: ${ASTER_ROOT:-(derived from STELAR_X_ROOT)}"
+    echo "STELAR_PRO_ROOT: ${STELAR_PRO_ROOT:-(auto-detected)}"
+    echo "ASTER_ROOT: ${ASTER_ROOT:-(derived from STELAR_PRO_ROOT)}"
     echo "ASTRAL_ROOT: ${ASTRAL_ROOT:-(derived from BASE_DIR)}"
     echo "TREEQMC_ROOT: ${TREEQMC_ROOT:-(derived from BASE_DIR)}"
     echo "WQFMTREE_ROOT: ${WQFMTREE_ROOT:-(derived from BASE_DIR)}"
-    echo "SUPERTRIPLETS_ROOT: ${SUPERTRIPLETS_ROOT:-(derived from STELAR_X_ROOT)}"
-    echo "TMC_ROOT: ${TMC_ROOT:-(derived from STELAR_X_ROOT)}"
+    echo "SUPERTRIPLETS_ROOT: ${SUPERTRIPLETS_ROOT:-(derived from STELAR_PRO_ROOT)}"
+    echo "TMC_ROOT: ${TMC_ROOT:-(derived from STELAR_PRO_ROOT)}"
     echo "Algorithms: ${ALGORITHMS[*]}"
     echo "STELAR_OPTS: ${STELAR_OPTS:-<empty>}"
     echo "ASTER_OPTS: ${ASTER_OPTS:-<empty>}"
@@ -166,7 +166,7 @@ validate_base_dir() {
 normalize_algorithm_name() {
     local name="${1,,}"
     case "$name" in
-      stelarx|astral-x|stelar|stelar-x) echo "stelarx" ;;
+      stelar-pro|astral-x|stelar|stelar-pro) echo "stelar-pro" ;;
       aster) echo "aster" ;;
       astral) echo "astral" ;;
       treeqmc|tree-qmc) echo "treeqmc" ;;
@@ -199,7 +199,7 @@ assign_generic_opts_to_algorithm() {
     local value="$2"
 
     case "$algorithm" in
-      stelarx) STELAR_OPTS="$value" ;;
+      stelar-pro) STELAR_OPTS="$value" ;;
       aster) ASTER_OPTS="$value" ;;
       astral) ASTRAL_OPTS="$value" ;;
       treeqmc) TREEQMC_OPTS="$value" ;;
@@ -255,7 +255,7 @@ strip_trivial_opts_for_csv() {
 method_opts_for_algorithm() {
     local algorithm="$1"
     case "$algorithm" in
-      stelarx) printf '%s' "$STELAR_OPTS" ;;
+      stelar-pro) printf '%s' "$STELAR_OPTS" ;;
       aster) printf '%s' "$ASTER_OPTS" ;;
       astral) printf '%s' "$ASTRAL_OPTS" ;;
       treeqmc) printf '%s' "$TREEQMC_OPTS" ;;
@@ -296,7 +296,7 @@ send_run_notification() {
     fi
 
     local score_line=""
-    if [[ "$algorithm" == "stelarx" ]]; then
+    if [[ "$algorithm" == "stelar-pro" ]]; then
       score_line="Triplet score: ${triplet_score}"$'\n'
     fi
     local notify_msg
@@ -323,21 +323,21 @@ validate_algorithm_binaries() {
     local errors_found=false
     local needs_baseline_wrapper=false
 
-    if [[ ! -d "$STELAR_X_ROOT" ]]; then
-        echo -e "${RED}Error: STELAR_X_ROOT '$STELAR_X_ROOT' does not exist.${NC}"
+    if [[ ! -d "$STELAR_PRO_ROOT" ]]; then
+        echo -e "${RED}Error: STELAR_PRO_ROOT '$STELAR_PRO_ROOT' does not exist.${NC}"
         errors_found=true
     fi
 
     local alg
     for alg in "${ALGORITHMS[@]}"; do
         case "$alg" in
-          stelarx)
+          stelar-pro)
             if [[ ! -x "$RUN_WITH_MONITOR_SCRIPT" ]]; then
-              echo -e "${RED}Error: STELAR-X monitor wrapper not found: $RUN_WITH_MONITOR_SCRIPT${NC}"
+              echo -e "${RED}Error: STELAR-Pro monitor wrapper not found: $RUN_WITH_MONITOR_SCRIPT${NC}"
               errors_found=true
             fi
-            if [[ ! -x "${STELAR_X_ROOT}/run.sh" ]]; then
-              echo -e "${RED}Error: STELAR-X run.sh not found in project root.${NC}"
+            if [[ ! -x "${STELAR_PRO_ROOT}/run.sh" ]]; then
+              echo -e "${RED}Error: STELAR-Pro run.sh not found in project root.${NC}"
               errors_found=true
             fi
             ;;
@@ -349,8 +349,8 @@ validate_algorithm_binaries() {
               echo -e "${RED}Error: Baseline monitor wrapper not found: $RUN_BASELINE_WITH_MONITOR_SCRIPT${NC}"
               errors_found=true
             fi
-            if [[ ! -x "${STELAR_X_ROOT}/run_supertriplets.sh" ]]; then
-              echo -e "${RED}Error: run_supertriplets.sh not found in STELAR_X_ROOT.${NC}"
+            if [[ ! -x "${STELAR_PRO_ROOT}/run_supertriplets.sh" ]]; then
+              echo -e "${RED}Error: run_supertriplets.sh not found in STELAR_PRO_ROOT.${NC}"
               errors_found=true
             fi
             if [[ ! -f "${SUPERTRIPLETS_ROOT}/SuperTriplets_v1.1.jar" ]]; then
@@ -361,8 +361,8 @@ validate_algorithm_binaries() {
         esac
     done
 
-    if [[ "$needs_baseline_wrapper" = true && ! -d "${STELAR_X_ROOT%/}/baselines" ]]; then
-      echo -e "${RED}Error: baselines directory not found in ${STELAR_X_ROOT%/}.${NC}"
+    if [[ "$needs_baseline_wrapper" = true && ! -d "${STELAR_PRO_ROOT%/}/baselines" ]]; then
+      echo -e "${RED}Error: baselines directory not found in ${STELAR_PRO_ROOT%/}.${NC}"
       errors_found=true
     fi
     if [[ "$needs_baseline_wrapper" = true && ! -x "$RUN_BASELINE_WITH_MONITOR_SCRIPT" ]]; then
@@ -383,7 +383,7 @@ run_algorithm_and_write_stats() {
     local REPLICATE_NAME="$4"    # e.g., R1
     local FOLDER_NAME="$5"
     local INNER_FOLDER_NAME="$6"
-    local ALGORITHM="$7"         # algorithm name (stelarx, astral, etc.)
+    local ALGORITHM="$7"         # algorithm name (stelar-pro, astral, etc.)
 
     local START_NS
     local END_NS
@@ -406,7 +406,7 @@ run_algorithm_and_write_stats() {
     METHOD_OPTS_ESCAPED="$(csv_escape "$METHOD_OPTS_CSV_RAW")"
     local SETTING_NAME
     SETTING_NAME="$(build_setting_name_from_opts "$METHOD_OPTS_RAW")"
-    if [[ "$ALGORITHM" == "stelarx" ]]; then
+    if [[ "$ALGORITHM" == "stelar-pro" ]]; then
       OUT_DIR="${OUT_DIR%/}/${SETTING_NAME}"
     fi
 
@@ -423,17 +423,17 @@ run_algorithm_and_write_stats() {
 
     echo "      Running ${ALGORITHM^^} [${SETTING_NAME}] (output -> $OUT_FILE)"
     case "$ALGORITHM" in
-      "stelarx")
+      "stelar-pro")
         if [[ -n "$STELAR_OPTS" ]]; then
           "$RUN_WITH_MONITOR_SCRIPT" \
-            --stelar-root "$STELAR_X_ROOT" \
+            --stelar-root "$STELAR_PRO_ROOT" \
             --input "$ALL_GT_FILE" \
             --output "$OUT_FILE" \
             --opts "$STELAR_OPTS" \
             --no-notify
         else
           "$RUN_WITH_MONITOR_SCRIPT" \
-            --stelar-root "$STELAR_X_ROOT" \
+            --stelar-root "$STELAR_PRO_ROOT" \
             --input "$ALL_GT_FILE" \
             --output "$OUT_FILE" \
             --no-notify
@@ -452,7 +452,7 @@ run_algorithm_and_write_stats() {
         esac
 
         "$RUN_BASELINE_WITH_MONITOR_SCRIPT" \
-          --stelar-root "$STELAR_X_ROOT" \
+          --stelar-root "$STELAR_PRO_ROOT" \
           --method "$ALGORITHM" \
           --input "$ALL_GT_FILE" \
           --output "$OUT_FILE" \
@@ -469,7 +469,7 @@ run_algorithm_and_write_stats() {
         [[ -n "$SUPERTRIPLETS_OPTS" ]] && stp_opts+=(--supertriplets-opts "$SUPERTRIPLETS_OPTS")
 
         "$RUN_BASELINE_WITH_MONITOR_SCRIPT" \
-          --stelar-root "$STELAR_X_ROOT" \
+          --stelar-root "$STELAR_PRO_ROOT" \
           --method "supertriplets" \
           --input "$ALL_GT_FILE" \
           --output "$TEMP_STP_OUTPUT" \
@@ -538,10 +538,10 @@ run_algorithm_and_write_stats() {
     # RF calculation
     local RF_RATE="NA"
     if [[ -f "$OUT_FILE" ]]; then
-      # Prefer rf.py inside STELAR_X_ROOT if present
-      if [[ -f "${STELAR_X_ROOT%/}/rf.py" && -x "$PYTHON_BIN" ]]; then
-        echo "      Calculating RF using ${STELAR_X_ROOT%/}/rf.py"
-        rf_output=$("$PYTHON_BIN" "${STELAR_X_ROOT%/}/rf.py" "$OUT_FILE" "$TRUE_SPECIES_TREE" 2>&1) || rf_output="$rf_output"
+      # Prefer rf.py inside STELAR_PRO_ROOT if present
+      if [[ -f "${STELAR_PRO_ROOT%/}/rf.py" && -x "$PYTHON_BIN" ]]; then
+        echo "      Calculating RF using ${STELAR_PRO_ROOT%/}/rf.py"
+        rf_output=$("$PYTHON_BIN" "${STELAR_PRO_ROOT%/}/rf.py" "$OUT_FILE" "$TRUE_SPECIES_TREE" 2>&1) || rf_output="$rf_output"
         
         echo "$rf_output"
         
@@ -610,8 +610,8 @@ while [[ $# -gt 0 ]]; do
       DATASET_DIR="$2"
       shift 2
       ;;
-    --stelar-x-root)
-      STELAR_X_ROOT="$2"
+    --stelar-pro-root)
+      STELAR_PRO_ROOT="$2"
       shift 2
       ;;
     --method|-m)
@@ -642,19 +642,19 @@ while [[ $# -gt 0 ]]; do
       GENERIC_OPTS_LIST_SET=true
       shift
       ;;
-    --stelar-opts|--stelarx-opts)
+    --stelar-opts|--stelar-pro-opts)
       STELAR_OPTS="$2"
       shift 2
       ;;
-    --stelar-opts=*|--stelarx-opts=*)
+    --stelar-opts=*|--stelar-pro-opts=*)
       STELAR_OPTS="${1#*=}"
       shift
       ;;
-    --stelar-opts-list|--stelarx-opts-list)
+    --stelar-opts-list|--stelar-pro-opts-list)
       STELAR_OPTS_LIST_RAW="$2"
       shift 2
       ;;
-    --stelar-opts-list=*|--stelarx-opts-list=*)
+    --stelar-opts-list=*|--stelar-pro-opts-list=*)
       STELAR_OPTS_LIST_RAW="${1#*=}"
       shift
       ;;
@@ -718,18 +718,18 @@ while [[ $# -gt 0 ]]; do
       cat <<EOF
 Usage: $0 [--base-dir /path/to/base] [--dataset-dir /path/to/datasets] [--method "m1;m2"] [--folder "f1;f2"] [--fresh] [--no-notify]
 
-Multi-algorithm dataset runner supporting STELAR-X, ASTER, ASTRAL, TreeQMC, wQFMtree, SuperTriplets, and TMC.
+Multi-algorithm dataset runner supporting STELAR-Pro, ASTER, ASTRAL, TreeQMC, wQFMtree, SuperTriplets, and TMC.
 
 --base-dir, -b      Base directory containing RF/ and external tools (overrides default)
 --dataset-dir, -d   Dataset directory (overrides default BASE_DIR/datasets)
---stelar-x-root     STELAR-X root directory (overrides auto-detection from script location)
+--stelar-pro-root     STELAR-Pro root directory (overrides auto-detection from script location)
 --method, -m        Optional semicolon-separated methods (e.g. "stelar;astral;aster")
 --folder, -f        Optional semicolon-separated folders (e.g. "37-taxon;48-taxon")
 --opts, --alg-opts  Override the default option string for the selected algorithm
 --opts-list, --alg-opts-list
                     Semicolon-separated list of option strings to loop over for the selected algorithm
---stelar-opts       Compatibility alias for STELAR-X-specific --opts
---stelar-opts-list  Compatibility alias for STELAR-X-specific --opts-list
+--stelar-opts       Compatibility alias for STELAR-Pro-specific --opts
+--stelar-opts-list  Compatibility alias for STELAR-Pro-specific --opts-list
 --aster-opts        Override default ASTER_OPTS
 --astral-opts       Override default ASTRAL_OPTS
 --treeqmc-opts      Override default TREEQMC_OPTS
@@ -740,17 +740,17 @@ Multi-algorithm dataset runner supporting STELAR-X, ASTER, ASTRAL, TreeQMC, wQFM
 --no-notify, -nn    Disable bulk-level ntfy notifications
 --help, -h          Show this help
 
-Algorithms available: stelarx, aster, astral, treeqmc, wqfmtree, supertriplets, stp-nni, tmc
-Example STELAR-X setting sweep:
-  --method "stelarx" --opts-list "--search-space S1 -vv;--search-space S2 -vv;--search-space S3 -vv"
+Algorithms available: stelar-pro, aster, astral, treeqmc, wqfmtree, supertriplets, stp-nni, tmc
+Example STELAR-Pro setting sweep:
+  --method "stelar-pro" --opts-list "--search-space S1 -vv;--search-space S2 -vv;--search-space S3 -vv"
 Algorithm root directories:
-  STELAR-X:       Auto-detected from script location
-  ASTER:          \${STELAR_X_ROOT}/baselines/ASTER
-  ASTRAL:         \${STELAR_X_ROOT}/baselines/ASTRAL
-  TreeQMC:        \${STELAR_X_ROOT}/baselines/TREE-QMC
-  wQFMtree:       \${STELAR_X_ROOT}/baselines/wQFM-TREE
-  SuperTriplets:  \${STELAR_X_ROOT}/baselines/SuperTriplets
-  TMC:            \${STELAR_X_ROOT}/baselines/TMC
+  STELAR-Pro:       Auto-detected from script location
+  ASTER:          \${STELAR_PRO_ROOT}/baselines/ASTER
+  ASTRAL:         \${STELAR_PRO_ROOT}/baselines/ASTRAL
+  TreeQMC:        \${STELAR_PRO_ROOT}/baselines/TREE-QMC
+  wQFMtree:       \${STELAR_PRO_ROOT}/baselines/wQFM-TREE
+  SuperTriplets:  \${STELAR_PRO_ROOT}/baselines/SuperTriplets
+  TMC:            \${STELAR_PRO_ROOT}/baselines/TMC
 EOF
       exit 0
       ;;
@@ -773,7 +773,7 @@ if [[ -n "$METHODS_ARG" ]]; then
   for local_method in "${user_methods_raw[@]}"; do
     normalized_method=$(normalize_algorithm_name "$local_method") || {
       echo -e "${RED}Error: Unsupported method '$local_method'.${NC}"
-      echo "Supported methods: stelarx, aster, astral, treeqmc, wqfmtree, supertriplets, stp-nni, tmc"
+      echo "Supported methods: stelar-pro, aster, astral, treeqmc, wqfmtree, supertriplets, stp-nni, tmc"
       exit 1
     }
     ALGORITHMS+=("$normalized_method")
@@ -790,11 +790,11 @@ if [[ "$GENERIC_OPTS_SET" == true || "$GENERIC_OPTS_LIST_SET" == true ]]; then
 
   if [[ "$GENERIC_OPTS_LIST_SET" == true ]]; then
     case "${ALGORITHMS[0]}" in
-      stelarx)
+      stelar-pro)
         STELAR_OPTS_LIST_RAW="$GENERIC_OPTS_LIST_RAW"
         ;;
       *)
-        echo -e "${RED}Error: --opts-list is currently supported only for stelarx in this script.${NC}"
+        echo -e "${RED}Error: --opts-list is currently supported only for stelar-pro in this script.${NC}"
         exit 1
         ;;
     esac
@@ -817,12 +817,12 @@ if [[ -n "$FOLDERS_ARG" ]]; then
   folders=("${user_folders[@]}")
 fi
 
-# derive STELAR_X_ROOT from script location if not set
-if [[ -z "${STELAR_X_ROOT}" ]]; then
-  STELAR_X_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+# derive STELAR_PRO_ROOT from script location if not set
+if [[ -z "${STELAR_PRO_ROOT}" ]]; then
+  STELAR_PRO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 fi
 
-PYTHON_BIN="${STELARX_PYTHON:-${STELAR_X_ROOT%/}/.venv/bin/python}"
+PYTHON_BIN="${STELAR_PRO_PYTHON:-${STELAR_PRO_ROOT%/}/.venv/bin/python}"
 if [[ ! -x "$PYTHON_BIN" ]]; then
   PYTHON_BIN="$(command -v python3 || true)"
 fi
@@ -836,42 +836,42 @@ if [[ -z "${DATASET_DIR}" ]]; then
   DATASET_DIR="${BASE_DIR%/}/datasets/standard"
 fi
 
-# derive ASTER_ROOT from STELAR_X_ROOT if not set
+# derive ASTER_ROOT from STELAR_PRO_ROOT if not set
 if [[ -z "${ASTER_ROOT}" ]]; then
-  ASTER_ROOT="${STELAR_X_ROOT%/}/baselines/ASTER"
+  ASTER_ROOT="${STELAR_PRO_ROOT%/}/baselines/ASTER"
 fi
 
 # derive ASTRAL_ROOT from BASE_DIR if not set
 if [[ -z "${ASTRAL_ROOT}" ]]; then
-  ASTRAL_ROOT="${STELAR_X_ROOT%/}/baselines/ASTRAL"
+  ASTRAL_ROOT="${STELAR_PRO_ROOT%/}/baselines/ASTRAL"
 fi
 
 # derive TREEQMC_ROOT from BASE_DIR if not set
 if [[ -z "${TREEQMC_ROOT}" ]]; then
-  TREEQMC_ROOT="${STELAR_X_ROOT%/}/baselines/TREE-QMC"
+  TREEQMC_ROOT="${STELAR_PRO_ROOT%/}/baselines/TREE-QMC"
 fi
 
 # derive WQFMTREE_ROOT from BASE_DIR if not set
 if [[ -z "${WQFMTREE_ROOT}" ]]; then
-  WQFMTREE_ROOT="${STELAR_X_ROOT%/}/baselines/wQFM-TREE"
+  WQFMTREE_ROOT="${STELAR_PRO_ROOT%/}/baselines/wQFM-TREE"
 fi
 
-# derive SUPERTRIPLETS_ROOT from STELAR_X_ROOT if not set
+# derive SUPERTRIPLETS_ROOT from STELAR_PRO_ROOT if not set
 if [[ -z "${SUPERTRIPLETS_ROOT}" ]]; then
-  SUPERTRIPLETS_ROOT="${STELAR_X_ROOT%/}/baselines/SuperTriplets"
+  SUPERTRIPLETS_ROOT="${STELAR_PRO_ROOT%/}/baselines/SuperTriplets"
 fi
 
-# derive TMC_ROOT from STELAR_X_ROOT if not set
+# derive TMC_ROOT from STELAR_PRO_ROOT if not set
 if [[ -z "${TMC_ROOT}" ]]; then
-  TMC_ROOT="${STELAR_X_ROOT%/}/baselines/TMC"
+  TMC_ROOT="${STELAR_PRO_ROOT%/}/baselines/TMC"
 fi
 
-# derive monitor wrappers from STELAR_X_ROOT
+# derive monitor wrappers from STELAR_PRO_ROOT
 if [[ -z "${RUN_WITH_MONITOR_SCRIPT}" ]]; then
-  RUN_WITH_MONITOR_SCRIPT="${STELAR_X_ROOT%/}/run-stelarx-with-monitor.sh"
+  RUN_WITH_MONITOR_SCRIPT="${STELAR_PRO_ROOT%/}/run-stelar-pro-with-monitor.sh"
 fi
 if [[ -z "${RUN_BASELINE_WITH_MONITOR_SCRIPT}" ]]; then
-  RUN_BASELINE_WITH_MONITOR_SCRIPT="${STELAR_X_ROOT%/}/stelar-x-artifacts/run-baseline-with-monitor.sh"
+  RUN_BASELINE_WITH_MONITOR_SCRIPT="${STELAR_PRO_ROOT%/}/stelar-pro-artifacts/run-baseline-with-monitor.sh"
 fi
 
 print_header
@@ -982,9 +982,9 @@ for folder in "${folders[@]}"; do
                 # output directory for this replicate and algorithm
                 OUT_DIR="${DATASET_DIR%/}/$folder/$GT_FOLDER/${algorithm}_outputs"
 
-                if [[ "$algorithm" == "stelarx" ]]; then
-                    for STELARX_OPTS_ITEM in "${STELAR_OPTS_LIST[@]}"; do
-                        STELAR_OPTS="$STELARX_OPTS_ITEM"
+                if [[ "$algorithm" == "stelar-pro" ]]; then
+                    for STELAR_PRO_OPTS_ITEM in "${STELAR_OPTS_LIST[@]}"; do
+                        STELAR_OPTS="$STELAR_PRO_OPTS_ITEM"
                         if ! run_algorithm_and_write_stats "$ALL_GT_FILE" "$TRUE_TREE" "$OUT_DIR" "$REPL" "$folder" "$inner_folder" "$algorithm"; then
                             echo -e "      ${RED}Failed to process $algorithm for ${folder}/${inner_folder}/${REPL}${NC}"
                             echo -e "      ${YELLOW}Continuing with next setting or algorithm...${NC}"
@@ -1007,4 +1007,4 @@ done
 
 echo -e "${GREEN}Dataset processing complete!${NC}"
 echo "Check output directories for 'output-<alg>.tre' and 'stat-<alg>.csv' files."
-echo "Output directories: stelarx_outputs, aster_outputs, astral_outputs, treeqmc_outputs, wqfmtree_outputs, supertriplets_outputs, stp-nni_outputs, tmc_outputs"
+echo "Output directories: stelar-pro-outputs, aster_outputs, astral_outputs, treeqmc_outputs, wqfmtree_outputs, supertriplets_outputs, stp-nni_outputs, tmc_outputs"

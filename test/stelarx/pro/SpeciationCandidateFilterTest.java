@@ -7,6 +7,7 @@ import stelarx.hash.TaxonHasher;
 import stelarx.partition.PartitionTable;
 import stelarx.taxon.TaxonRegistry;
 import stelarx.tree.Tree;
+import stelarx.tree.TreeNode;
 import stelarx.tree.TreeParser;
 
 import java.nio.charset.StandardCharsets;
@@ -22,19 +23,19 @@ public final class SpeciationCandidateFilterTest {
         Files.createDirectories(work);
 
         checkTree(work.resolve("duplication.tre"),
-            "(((A,B)D,(C,D)),(E,F));\n", 9, 4, 4, 0, 2);
+            "(((A,B)D,(C,D)),(E,F));\n", 10, 4, 4);
         // This directly exercises TreeParser's legacy in-memory fallback. Normal
         // Pro inference resolves before tagging, so those serialized refinement
         // nodes receive event tags and are covered by GeneTreePolytomyResolverTest.
         checkTree(work.resolve("untagged-parser-fallback.tre"),
-            "((A,B,C),(D,E));\n", 7, 3, 3, 0, 2);
+            "((A,B,C),(D,E));\n", 8, 3, 3);
 
         System.out.println("STELAR-Pro speciation candidate filter: PASS");
     }
 
     private static void checkTree(Path input, String newick,
                                   int expectedClusters, int expectedPartitions,
-                                  int expectedTransitions, int skippedStart, int skippedEnd)
+                                  int expectedTransitions)
             throws Exception {
         Files.writeString(input, newick, StandardCharsets.UTF_8);
         TaxonRegistry registry = new TaxonRegistry();
@@ -45,11 +46,7 @@ public final class SpeciationCandidateFilterTest {
         UniqueTaxonSubtreeHashes unique = new UniqueTaxonSubtreeHashes(trees, hasher);
         ClusterTable clusters = new ClusterTable(trees, pref, registry.size(), unique);
         check(clusters.size() == expectedClusters, "candidate cluster count");
-        boolean skippedClusterPresent = clusters.entries().stream().anyMatch(entry ->
-            !entry.exemplar.complement
-                && entry.exemplar.left == skippedStart
-                && entry.exemplar.right == skippedEnd);
-        check(!skippedClusterPresent, "non-speciation cluster was retained");
+        verifyNonSpeciationChildSides(trees.get(0).root, clusters);
 
         PartitionTable partitions = new PartitionTable(trees, pref, unique);
         int partitionOccurrences = partitions.entries().stream()
@@ -60,6 +57,25 @@ public final class SpeciationCandidateFilterTest {
         DPTable dp = new DPTable(trees, pref, clusters, unique);
         check(dp.numEmitted() == expectedTransitions, "transition emission count");
         check(dp.numUniqueSplits() == expectedTransitions, "unique transition count");
+    }
+
+    private static void verifyNonSpeciationChildSides(
+            TreeNode node, ClusterTable clusters) {
+        if (node.isLeaf()) return;
+        TreeNode[] children = node.isPolytomous()
+            ? node.children : new TreeNode[]{node.left, node.right};
+        if (node.isSpeciation()) {
+            for (TreeNode child : children) {
+                if (child.isLeaf() || child.isSpeciation()) continue;
+                boolean present = clusters.entries().stream().anyMatch(entry ->
+                    entry.exemplar.treeIndex == 0
+                        && entry.exemplar.left == child.rangeStart
+                        && entry.exemplar.right == child.rangeEnd);
+                check(present,
+                    "non-speciation child set of a speciation split was unavailable");
+            }
+        }
+        for (TreeNode child : children) verifyNonSpeciationChildSides(child, clusters);
     }
 
     private static void check(boolean condition, String message) {

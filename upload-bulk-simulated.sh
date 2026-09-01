@@ -48,7 +48,7 @@ matching non-empty source directory are safely built before upload.
 Examples:
   ./upload-bulk-simulated.sh --dry-run
   ./upload-bulk-simulated.sh
-  ./upload-bulk-simulated.sh --all --remote-dir ph/d/simulated/stelarx-datasets/raw
+  ./upload-bulk-simulated.sh --all --remote-dir ph/d/simulated/stelar-pro-datasets/raw
 EOF
 }
 
@@ -113,7 +113,7 @@ require_positive_integer "--min-taxa" "$MIN_TAXA"
 require_positive_integer "--min-gene-trees" "$MIN_GENE_TREES"
 
 DATA_DIR="$(expand_home "$DATA_DIR")"
-DATA_DIR="$(stelarx_prepare_simphy_data_dir "$DATA_DIR")"
+DATA_DIR="$(stelar_pro_prepare_simphy_data_dir "$DATA_DIR")"
 UPLOADER="$(realpath -m "$(expand_home "$UPLOADER")")"
 REMOTE_DIR="${REMOTE_DIR%/}"
 
@@ -293,7 +293,7 @@ while IFS= read -r -d '' archive_path; do
   fi
 done < <(find "$DATA_DIR" -maxdepth 1 -mindepth 1 -type f -name 't_*_g_*.zip' -print0 | sort -zV)
 
-echo "STELAR-X simulated dataset uploader"
+echo "STELAR-Pro simulated dataset uploader"
 echo "Data directory: $DATA_DIR"
 echo "Repository:     $REPO_ID ($REPO_TYPE)"
 echo "Remote path:    $REMOTE_DIR/"

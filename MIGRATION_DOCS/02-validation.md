@@ -4,9 +4,9 @@ The migration is checked at three levels.
 
 ## Exact small-tree oracle
 
-`test/test_stelarx_triplets.py` independently parses rooted Newick, enumerates
+`test/test_stelar_pro_triplets.py` independently parses rooted Newick, enumerates
 all taxon triples, determines the rooted pair by LCA, and compares that total to
-STELAR-X fixed-tree scoring. It does not reuse production weight code.
+STELAR-Pro fixed-tree scoring. It does not reuse production weight code.
 
 The five-taxon fixture in `test/input/test_5taxa.tre` and candidate
 `test/input/stelar_candidate_5taxa.tre` have an independently enumerated score
@@ -35,12 +35,12 @@ synthetic child groups.
 - Completion tests verify that restricting a completed tree to its original
   taxa recovers the original rooted clades.
 
-Run the full focused suite with `test/run_stelarx_tests.sh`. It builds the Java
+Run the full focused suite with `test/run_stelar_pro_tests.sh`. It builds the Java
 code, runs the independent binary and polytomy oracle, checks that completion
 preserves every original rooted triple, exercises the cluster/partition/DP
 verifiers, runs S1/S2/S3, checks product naming, and probes the native JNI
 libraries. The narrower oracle can be run alone with
-`python3 test/test_stelarx_triplets.py`.
+`python3 test/test_stelar_pro_triplets.py`.
 
 ## Representative resource comparison
 
@@ -52,10 +52,10 @@ heap limit, S1/I2, and the 200-tree `all_gt_bs_rooted_37.tre` fixture.
 | build | wall time | maximum RSS |
 |---|---:|---:|
 | original ASTRAL-X | 0.78 s | 164,732 KiB |
-| migrated STELAR-X | 0.73 s | 129,240 KiB |
+| migrated STELAR-Pro | 0.73 s | 129,240 KiB |
 
 This representative run is about 6% faster and uses about 22% less peak RSS.
-The structural reason is also checked directly: STELAR-X retains descendant
+The structural reason is also checked directly: STELAR-Pro retains descendant
 clades only and emits rooted child transitions only, eliminating the
 complement orientations and Type-2 rotations required by the unrooted search.
 The asymptotic bounds of the retained hash, DP, similarity, UPGMA, consensus,
@@ -63,7 +63,7 @@ and cross-tree implementations are unchanged.
 
 ## CUDA hardware validation
 
-`test/run_stelarx_gpu_tests.sh` runs with `--gpu-strict`, which prevents an
+`test/run_stelar_pro_gpu_tests.sh` runs with `--gpu-strict`, which prevents an
 unavailable CUDA device from being silently replaced by the normal CPU mode.
 It was run successfully on an NVIDIA GeForce RTX 3050 6GB Laptop GPU (compute
 capability 8.6), driver 580.173.02, driver API 13.0, and bundled CUDA runtime
@@ -86,7 +86,7 @@ long/double and Int128 variants.
 
 ## Comprehensive suite
 
-The broader regression entry point is `test/run_stelarx_comprehensive_tests.sh`.
+The broader regression entry point is `test/run_stelar_pro_comprehensive_tests.sh`.
 It adds seeded independent-oracle scoring and inference, forced numeric modes,
 matrix/UPGMA oracles, parser and path-safety failures, low-level arithmetic and
 large-matrix boundaries, portable packaging, CUDA batching controls, and strict

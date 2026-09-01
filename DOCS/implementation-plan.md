@@ -2,7 +2,7 @@
 
 ## Overview
 
-ASTRAL-X brings STELAR-X's integer-tuple representation and GPU acceleration to ASTRAL's
+ASTRAL-X brings STELAR-Pro's integer-tuple representation and GPU acceleration to ASTRAL's
 quartet-based species tree inference. The key innovations:
 
 1. **Integer tuple clusters**: O(1) memory per cluster instead of O(n) bitsets
@@ -56,7 +56,7 @@ astral-x/
       weight/
         WeightCalculator.java      -- Interface
         CPUWeightCalculator.java   -- CPU intersection counting
-        IntersectionCounter.java   -- Intersection via inverse index (STELAR-X style)
+        IntersectionCounter.java   -- Intersection via inverse index (STELAR-Pro style)
         TripartitionScorer.java    -- QI formula from 3x3 matrix
       gpu/
         CUDABridge.java            -- JNI/JNA bridge to CUDA kernels
@@ -92,7 +92,7 @@ Compilable Java project with CLI argument parsing, logging framework, and CUDA b
    - DEBUG: Per-stage summaries ("Tree 0: 37 leaves, postorder length 37")
    - TRACE: Per-element detail (individual cluster hashes) -- guarded by level check to avoid
      string construction overhead on large inputs
-5. `Threading.java`: Fixed thread pool (from STELAR-X pattern)
+5. `Threading.java`: Fixed thread pool (from STELAR-Pro pattern)
 6. `native/Makefile`: Compile CUDA code to shared library for JNI
 7. Shell script `build.sh` to compile Java + native code
 
@@ -115,7 +115,7 @@ Parse Newick trees into internal representation with postorder arrays and positi
 
 ### Data Structures
 
-**TaxonRegistry** (like STELAR-X's Taxon + taxaMap):
+**TaxonRegistry** (like STELAR-Pro's Taxon + taxaMap):
 - `String[] idToName` -- taxon ID -> name
 - `Map<String, Integer> nameToId` -- name -> taxon ID
 - `int count` -- total unique taxa (n)
@@ -138,8 +138,8 @@ Parse Newick trees into internal representation with postorder arrays and positi
 ### Algorithm
 1. **First pass** (can be parallel): Read all Newick lines, collect unique taxon names.
    Lock TaxonRegistry.
-2. **Second pass** (parallel, chunked like STELAR-X): Parse each Newick string:
-   - Stack-based parser (same as STELAR-X's Tree.parseFromNewick)
+2. **Second pass** (parallel, chunked like STELAR-Pro): Parse each Newick string:
+   - Stack-based parser (same as STELAR-Pro's Tree.parseFromNewick)
    - During parsing, assign postorder ranges to each node
    - Build `postorderArray` via in-order (left-to-right) leaf traversal
    - Build `positionMap` as inverse of postorderArray
@@ -479,7 +479,7 @@ where a_i = |X cap M_i|, b_j = |Y cap M_j|, c_k = |Z cap M_k|.
 Total weight: w(T) = (1/2) * sum over all gene tree tripartitions M (with frequency):
                       freq(M) * QI(T, M)
 
-### Intersection Counting (CPU, STELAR-X style)
+### Intersection Counting (CPU, STELAR-Pro style)
 
 **IntersectionCounter**:
 - `int[][] inverseIndex` -- inverseIndex[treeIdx][taxonId] = position in postorder array (-1 if absent)

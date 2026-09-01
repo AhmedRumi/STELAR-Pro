@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-compare_upgma.py — Head-to-head UPGMA guide tree comparison: STELAR-X vs ASTRAL-MP.
+compare_upgma.py — Head-to-head UPGMA guide tree comparison: STELAR-Pro vs ASTRAL-MP.
 
 Usage:
   python3 compare_upgma.py <input.tre> [--verbose]
@@ -22,10 +22,10 @@ import argparse
 from collections import defaultdict
 
 SCRIPT_DIR   = os.path.dirname(os.path.abspath(__file__))
-STELARX_ROOT = os.path.normpath(os.path.join(SCRIPT_DIR, "..", ".."))
-ASTRALMP_DIR = os.path.join(STELARX_ROOT, "astral-my")
+STELAR_PRO_ROOT = os.path.normpath(os.path.join(SCRIPT_DIR, "..", ".."))
+ASTRALMP_DIR = os.path.join(STELAR_PRO_ROOT, "astral-my")
 
-STELARX_RUN  = os.path.join(STELARX_ROOT, "run.sh")
+STELAR_PRO_RUN  = os.path.join(STELAR_PRO_ROOT, "run.sh")
 ASTRALMP_DEV = os.path.join(ASTRALMP_DIR, "dev.sh")
 
 
@@ -123,19 +123,19 @@ def parse_newick_bipartitions(newick_str):
     return bipartitions, all_leaves
 
 
-# ── STELAR-X runner ───────────────────────────────────────────────────────────
+# ── STELAR-Pro runner ───────────────────────────────────────────────────────────
 
-def run_stelarx_upgma(input_path, verbose=False):
-    """Run STELAR-X --verify-upgma and parse bipartitions from stdout."""
+def run_stelar_pro_upgma(input_path, verbose=False):
+    """Run STELAR-Pro --verify-upgma and parse bipartitions from stdout."""
     cmd = [
-        "bash", STELARX_RUN,
+        "bash", STELAR_PRO_RUN,
         "-i", input_path,
         "--verify-upgma",
         "--cpu",
         "--no-build",
     ]
     if verbose:
-        print(f"  [STELAR-X] Running: {' '.join(cmd)}")
+        print(f"  [STELAR-Pro] Running: {' '.join(cmd)}")
     result = subprocess.run(cmd, capture_output=True, text=True)
 
     # Parse UPGMA_BIPARTITIONS format
@@ -160,7 +160,7 @@ def run_stelarx_upgma(input_path, verbose=False):
                 bipartitions.add(frozenset([leaves, complement]))
 
     if taxa is None:
-        raise ValueError("Could not parse STELAR-X UPGMA bipartitions.\n"
+        raise ValueError("Could not parse STELAR-Pro UPGMA bipartitions.\n"
                          "Stdout:\n" + result.stdout[:2000])
     return bipartitions, taxa
 
@@ -224,7 +224,7 @@ def rf_distance(bips_x, taxa_x, bips_mp, taxa_mp):
 
 def main():
     parser = argparse.ArgumentParser(
-        description="STELAR-X vs ASTRAL-MP UPGMA guide tree comparison (RF distance)")
+        description="STELAR-Pro vs ASTRAL-MP UPGMA guide tree comparison (RF distance)")
     parser.add_argument("input", help="Input gene tree file (.tre)")
     parser.add_argument("--verbose", "-v", action="store_true")
     args = parser.parse_args()
@@ -237,9 +237,9 @@ def main():
     print(f"\nComparing UPGMA guide trees for: {os.path.basename(input_path)}")
     print(f"  Input: {input_path}")
 
-    print("\n  Running STELAR-X (--verify-upgma)...", end=" ", flush=True)
+    print("\n  Running STELAR-Pro (--verify-upgma)...", end=" ", flush=True)
     try:
-        bips_x, taxa_x = run_stelarx_upgma(input_path, verbose=args.verbose)
+        bips_x, taxa_x = run_stelar_pro_upgma(input_path, verbose=args.verbose)
         print(f"OK  (n={len(taxa_x)}, bipartitions={len(bips_x)})")
     except Exception as e:
         print(f"FAILED\n  Error: {e}", file=sys.stderr)
@@ -257,23 +257,23 @@ def main():
     missing_x  = taxa_mp - taxa_x
     missing_mp = taxa_x  - taxa_mp
     if missing_x:
-        print(f"  WARNING: taxa in ASTRAL-MP but not STELAR-X: {sorted(missing_x)[:5]}...")
+        print(f"  WARNING: taxa in ASTRAL-MP but not STELAR-Pro: {sorted(missing_x)[:5]}...")
     if missing_mp:
-        print(f"  WARNING: taxa in STELAR-X but not ASTRAL-MP: {sorted(missing_mp)[:5]}...")
+        print(f"  WARNING: taxa in STELAR-Pro but not ASTRAL-MP: {sorted(missing_mp)[:5]}...")
 
     rf, only_x, only_mp, shared, max_rf = rf_distance(bips_x, taxa_x, bips_mp, taxa_mp)
     norm_rf = rf / max_rf if max_rf > 0 else 0.0
 
-    print(f"\n  Bipartitions in STELAR-X:            {len(bips_x)}")
+    print(f"\n  Bipartitions in STELAR-Pro:            {len(bips_x)}")
     print(f"  Bipartitions in ASTRAL-MP:           {len(bips_mp)}")
     print(f"  Shared bipartitions:                 {shared}")
-    print(f"  Only in STELAR-X:                    {only_x}")
+    print(f"  Only in STELAR-Pro:                    {only_x}")
     print(f"  Only in ASTRAL-MP:                   {only_mp}")
     print(f"  RF distance (raw):                   {rf}")
     print(f"  RF distance (normalised, /max_rf):   {norm_rf:.4f}")
 
     if args.verbose and only_x:
-        print("\n  Bipartitions only in STELAR-X (first 5):")
+        print("\n  Bipartitions only in STELAR-Pro (first 5):")
         for bp in list(only_x)[:5] if isinstance(only_x, set) else list(bips_x - bips_mp)[:5]:
             sides = sorted(sorted(s) for s in bp)
             print(f"    {sides[0][:5]}... | {sides[1][:5]}...")

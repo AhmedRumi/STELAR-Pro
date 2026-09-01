@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# run_upgma_tests.sh — Run UPGMA guide tree comparison tests (STELAR-X vs ASTRAL-MP)
+# run_upgma_tests.sh — Run UPGMA guide tree comparison tests (STELAR-Pro vs ASTRAL-MP)
 #
 # Tests all available simulated-incomplete datasets and the hand-crafted
 # inputs that are large enough for ASTRAL-MP's -C completion to succeed.
@@ -27,7 +27,7 @@ while [[ $# -gt 0 ]]; do
     esac
 done
 
-SIMPHY_DATA="$(stelarx_prepare_simphy_data_dir "$SIMPHY_DATA")"
+SIMPHY_DATA="$(stelar_pro_prepare_simphy_data_dir "$SIMPHY_DATA")"
 
 echo "=== UPGMA Guide Tree Comparison Tests ==="
 echo ""

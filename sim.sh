@@ -6,15 +6,15 @@
 
 set -euo pipefail
 
-STELARX_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-source "${STELARX_ROOT}/scripts/phylogeny-data-dir.sh"
+STELAR_PRO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+source "${STELAR_PRO_ROOT}/scripts/phylogeny-data-dir.sh"
 
 # Defaults
 TAXA_NUM=""
 GENE_TREES=""
 REPLICATE="R1"  # Default test replicate (backward compatible)
 REPLICATES="10"  # Default number of replicates to generate
-BASE_DIR="$STELARX_ROOT"
+BASE_DIR="$STELAR_PRO_ROOT"
 SIMPHY_DIR=""
 SIMPHY_DIR_SET=false
 SIMPHY_DATA_DIR=""
@@ -37,7 +37,7 @@ Required:
 Optional:
   --replicate, -r    Test replicate number for analysis (default: ${REPLICATE})
   --replicates, -rs  Number of replicates to generate (default: ${REPLICATES})
-  --project-root     STELAR-X checkout root (default: this script's directory)
+  --project-root     STELAR-Pro checkout root (default: this script's directory)
   --base-dir, -b     Compatibility alias for --project-root
   --simphy-dir       Path to simphy dir (overrides --project-root)
   --simphy-data-dir  SimPhy data directory
@@ -84,7 +84,7 @@ if [[ "$SIMPHY_DIR_SET" = false ]]; then
   SIMPHY_DIR="${BASE_DIR%/}/simphy"
 fi
 SIMPHY_DIR="$(realpath "$SIMPHY_DIR")"
-SIMPHY_DATA_DIR="$(stelarx_prepare_simphy_data_dir "$SIMPHY_DATA_DIR")"
+SIMPHY_DATA_DIR="$(stelar_pro_prepare_simphy_data_dir "$SIMPHY_DATA_DIR")"
 
 # Construct expected output paths early (will be updated after simulation)
 OUT_DIR_TEMP="${SIMPHY_DATA_DIR%/}/t_${TAXA_NUM}_g_${GENE_TREES}_sb_${SB}_spmin_${SPMIN}_spmax_${SPMAX}"

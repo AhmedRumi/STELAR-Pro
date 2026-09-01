@@ -176,15 +176,15 @@ However, in practice, the tree-local transitions capture the vast majority of us
 
 ---
 
-## 5. Contrast with STELAR-X (Rooted/Triplet Case)
+## 5. Contrast with STELAR-Pro (Rooted/Triplet Case)
 
-In STELAR-X, the DP operates over rooted bipartitions. The candidate set CB = UGB contains only subtree bipartitions from gene trees. Crucially:
+In STELAR-Pro, the DP operates over rooted bipartitions. The candidate set CB = UGB contains only subtree bipartitions from gene trees. Crucially:
 
-**Theorem (STELAR-X, Theorem 4.1)**: For CB = UGB, every bipartition in CB is visited in the DP state space, and every transition is tree-local.
+**Theorem (STELAR-Pro, Theorem 4.1)**: For CB = UGB, every bipartition in CB is visited in the DP state space, and every transition is tree-local.
 
 **Proof sketch**: Every bipartition (A|B) ∈ UGB comes from some gene tree node u with sub(left(u)) = A and sub(right(u)) = B. The parent cluster A ∪ B = sub(u) is also a cluster from the same tree. The transition sub(u) → A | B is tree-local. By induction up to the root, every cluster is reachable.
 
-In STELAR-X, there are **no complement clusters** and **no cross-tree transitions** in the constrained case. This is a fundamental simplification that comes from working with rooted trees and triplets.
+In STELAR-Pro, there are **no complement clusters** and **no cross-tree transitions** in the constrained case. This is a fundamental simplification that comes from working with rooted trees and triplets.
 
 In ASTRAL-X (unrooted treatment), complement clusters create clusters that may span structures from multiple trees, making cross-tree transitions possible and sometimes necessary.
 

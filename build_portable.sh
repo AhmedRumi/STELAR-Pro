@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Build a self-contained STELAR-X application image and transport archive.
+# Build a self-contained STELAR-Pro application image and transport archive.
 # Target machines need neither Java nor the CUDA toolkit. NVIDIA acceleration
 # is optional; an unusable/missing driver falls back to CPU at runtime.
 set -euo pipefail
@@ -76,7 +76,7 @@ esac
 
 SOURCE_VERSION="$(sed -n 's/.*DEFAULT = "\([^"]*\)".*/\1/p' "${ROOT}/src/stelarx/Version.java" | head -1)"
 if [[ -z "$SOURCE_VERSION" ]]; then
-  echo "Error: could not determine the STELAR-X source version." >&2
+  echo "Error: could not determine the STELAR-Pro source version." >&2
   exit 1
 fi
 [[ -n "$VERSION" ]] || VERSION="$SOURCE_VERSION"
@@ -98,22 +98,22 @@ CAPABILITY="cpu"
 # There is exactly one public artifact name per OS/CPU family.  On CUDA-capable
 # platforms the richer build still contains the complete CPU implementation and
 # automatically falls back, so separate -cpu and -cuda downloads are needless.
-ARTIFACT="stelarx-${VERSION}-${PLATFORM_OS}-${PLATFORM_ARCH}"
+ARTIFACT="stelar-pro-${VERSION}-${PLATFORM_OS}-${PLATFORM_ARCH}"
 VERSION_DIR="${DIST_DIR}/${VERSION}"
 FINAL_IMAGE="${VERSION_DIR}/${ARTIFACT}"
 ARCHIVE="${VERSION_DIR}/${ARTIFACT}.tar.gz"
 MANIFEST="${VERSION_DIR}/${ARTIFACT}.manifest.json"
 if [[ "$FORCE" != true ]] && { [[ -e "$FINAL_IMAGE" ]] || [[ -e "$ARCHIVE" ]] || [[ -e "$MANIFEST" ]]; }; then
-  echo "Error: artifact already exists for STELAR-X ${VERSION} on ${PLATFORM_OS}-${PLATFORM_ARCH}." >&2
+  echo "Error: artifact already exists for STELAR-Pro ${VERSION} on ${PLATFORM_OS}-${PLATFORM_ARCH}." >&2
   echo "Use --force to replace only this platform artifact, or choose another --version." >&2
   exit 1
 fi
 mkdir -p "$VERSION_DIR"
-WORK="$(mktemp -d "${TMPDIR:-/tmp}/stelarx-portable.XXXXXX")"
+WORK="$(mktemp -d "${TMPDIR:-/tmp}/stelar-pro-portable.XXXXXX")"
 cleanup() { rm -rf "$WORK"; }
 trap cleanup EXIT
 
-echo "=== STELAR-X portable build ==="
+echo "=== STELAR-Pro portable build ==="
 echo "  Version      : $VERSION"
 echo "  Platform     : ${PLATFORM_OS}-${PLATFORM_ARCH}"
 echo "  CUDA bundle  : $INCLUDE_CUDA"
@@ -127,9 +127,9 @@ JPACKAGE_OUT="${WORK}/jpackage"
 mkdir -p "$APP_INPUT" "$JPACKAGE_OUT"
 
 JAR_MANIFEST="${WORK}/MANIFEST.MF"
-printf 'Manifest-Version: 1.0\nMain-Class: stelarx.Main\nImplementation-Title: STELAR-X\nImplementation-Version: %s\n\n' \
+printf 'Manifest-Version: 1.0\nMain-Class: stelarx.Main\nImplementation-Title: STELAR-Pro\nImplementation-Version: %s\n\n' \
     "$VERSION" > "$JAR_MANIFEST"
-jar --create --file "${APP_INPUT}/stelarx.jar" \
+jar --create --file "${APP_INPUT}/stelar-pro.jar" \
     --manifest "$JAR_MANIFEST" -C "${ROOT}/build" .
 
 if [[ "$INCLUDE_CUDA" == true ]]; then
@@ -143,10 +143,10 @@ jlink --add-modules java.base \
       --output "$RUNTIME"
 
 jpackage --type app-image \
-    --name stelarx \
+    --name stelar-pro \
     --app-version "$VERSION" \
     --input "$APP_INPUT" \
-    --main-jar stelarx.jar \
+    --main-jar stelar-pro.jar \
     --main-class stelarx.Main \
     --runtime-image "$RUNTIME" \
     --dest "$JPACKAGE_OUT" \
@@ -154,22 +154,22 @@ jpackage --type app-image \
     --java-options '-Dfile.encoding=UTF-8' \
     --java-options '-XX:InitialRAMPercentage=2.0' \
     --java-options '-XX:MaxRAMPercentage=85.0' \
-    --java-options '-XX:ErrorFile=crash_logs/stelarx-hotspot-crash-%p.log'
+    --java-options '-XX:ErrorFile=crash_logs/stelar-pro-hotspot-crash-%p.log'
 
 if [[ "$PLATFORM_OS" == "macos" ]]; then
   # jpackage produces a standard .app bundle on macOS.  Put it in a small
   # command-line-friendly distribution directory and expose one obvious entry
   # point next to it.  The symlink is preserved by the .tar.gz archive.
-  RAW_IMAGE="${JPACKAGE_OUT}/stelarx.app"
+  RAW_IMAGE="${JPACKAGE_OUT}/stelar-pro.app"
   IMAGE="${WORK}/${ARTIFACT}"
   mkdir -p "$IMAGE"
-  mv "$RAW_IMAGE" "${IMAGE}/stelarx.app"
-  install -m 0755 "${ROOT}/packaging/stelarx-launcher" "${IMAGE}/stelarx"
-  PACKAGED_LAUNCHER="${IMAGE}/stelarx"
+  mv "$RAW_IMAGE" "${IMAGE}/stelar-pro.app"
+  install -m 0755 "${ROOT}/packaging/stelar-pro-launcher" "${IMAGE}/stelar-pro"
+  PACKAGED_LAUNCHER="${IMAGE}/stelar-pro"
 else
-  IMAGE="${JPACKAGE_OUT}/stelarx"
-  install -m 0755 "${ROOT}/packaging/stelarx-launcher" "${IMAGE}/stelarx"
-  PACKAGED_LAUNCHER="${IMAGE}/stelarx"
+  IMAGE="${JPACKAGE_OUT}/stelar-pro"
+  install -m 0755 "${ROOT}/packaging/stelar-pro-launcher" "${IMAGE}/stelar-pro"
+  PACKAGED_LAUNCHER="${IMAGE}/stelar-pro"
 fi
 
 # Linux portability is bounded by the newest glibc symbol used by any bundled
@@ -191,15 +191,15 @@ cp "${ROOT}/all_gt_bs_rooted_37.tre" "${EXAMPLE_DIR}/all_gt_37.tre"
 cp "${ROOT}/true_37.tre" "${EXAMPLE_DIR}/true_37.tre"
 
 cat > "${IMAGE}/README.txt" <<EOF
-STELAR-X ${VERSION} — self-contained ${PLATFORM_OS}-${PLATFORM_ARCH} build
+STELAR-Pro ${VERSION} — self-contained ${PLATFORM_OS}-${PLATFORM_ARCH} build
 
 Run:
-  ./stelarx --help
-  ./stelarx --diagnose
-  ./stelarx -i /path/to/rooted_gene_trees.tre -o /path/to/output_species_tree.tre
+  ./stelar-pro --help
+  ./stelar-pro --diagnose
+  ./stelar-pro -i /path/to/rooted_gene_trees.tre -o /path/to/output_species_tree.tre
 
 Ready-made 37-taxon example (run from this directory):
-  ./stelarx -i example/all_gt_37.tre -o example/predicted_st_37.tre --search-space S1 -vv
+  ./stelar-pro -i example/all_gt_37.tre -o example/predicted_st_37.tre --search-space S1 -vv
 
 The example directory initially contains:
   all_gt_37.tre   input gene trees
@@ -207,15 +207,15 @@ The example directory initially contains:
 
 After the command finishes, example/predicted_st_37.tre contains the inferred
 species tree. The reference tree is provided for comparison and is not used by
-STELAR-X during inference.
+STELAR-Pro during inference.
 
 No Java installation is required. This artifact includes CUDA acceleration: ${INCLUDE_CUDA}.
 CUDA still requires a compatible NVIDIA GPU and installed NVIDIA driver. If CUDA cannot
-be used, STELAR-X automatically explains why and falls back to CPU. Use --gpu-strict only
+be used, STELAR-Pro automatically explains why and falls back to CPU. Use --gpu-strict only
 when falling back would be undesirable.
 
 Unexpected failure reports are stored in crash_logs/ under the directory from
-which you launch STELAR-X. Set STELARX_CRASH_DIR to override Java report storage.
+which you launch STELAR-Pro. Set STELAR_PRO_CRASH_DIR to override Java report storage.
 EOF
 
 {
@@ -236,8 +236,8 @@ EOF
 
 # Smoke tests use only the packaged launcher/runtime.
 VERSION_OUTPUT="$(NO_COLOR=1 "$PACKAGED_LAUNCHER" --version)"
-[[ "$VERSION_OUTPUT" == *"STELAR-X  v${VERSION}"* \
-   && "$VERSION_OUTPUT" == *"Welcome to STELAR-X version ${VERSION}!"* ]] || {
+[[ "$VERSION_OUTPUT" == *"STELAR-Pro  v${VERSION}"* \
+   && "$VERSION_OUTPUT" == *"Welcome to STELAR-Pro version ${VERSION}!"* ]] || {
   echo "Error: packaged version mismatch: ${VERSION_OUTPUT}" >&2
   exit 1
 }
@@ -289,5 +289,5 @@ cat > "$MANIFEST" <<EOF
 }
 EOF
 
-echo "Portable application ready: ${FINAL_IMAGE}/stelarx"
+echo "Portable application ready: ${FINAL_IMAGE}/stelar-pro"
 echo "Release manifest: $MANIFEST"

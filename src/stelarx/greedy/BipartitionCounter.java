@@ -146,7 +146,7 @@ public final class BipartitionCounter {
     /**
      * Aggregate existing per-side frequencies from {@link ClusterTable} into
      * per-bipartition entries.  Includes whatever ClusterTable was built from
-     * (gene trees + UPGMA guide tree, in the standard STELAR-X pipeline).
+     * (gene trees + UPGMA guide tree, in the standard STELAR-Pro pipeline).
      */
     public static List<Bipartition> collectFromClusterTable(
             ClusterTable clusterTable, int numTaxa) {

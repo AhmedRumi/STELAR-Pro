@@ -14,8 +14,8 @@ import java.time.format.DateTimeFormatter;
 
 /** Best-effort fatal report for Java exceptions and memory failures. */
 public final class FatalReporter {
-    static final String CRASH_DIR_PROPERTY = "stelarx.crashDir";
-    static final String CRASH_DIR_ENV = "STELARX_CRASH_DIR";
+    static final String CRASH_DIR_PROPERTY = "stelarpro.crashDir";
+    static final String CRASH_DIR_ENV = "STELAR_PRO_CRASH_DIR";
 
     private FatalReporter() {}
 
@@ -34,7 +34,7 @@ public final class FatalReporter {
 
         String stamp = DateTimeFormatter.ofPattern("yyyyMMdd-HHmmss")
             .withZone(ZoneOffset.UTC).format(Instant.now());
-        String name = "stelarx-crash-" + stamp + "-" + ProcessHandle.current().pid() + ".log";
+        String name = "stelar-pro-crash-" + stamp + "-" + ProcessHandle.current().pid() + ".log";
         try {
             Path report = createCrashDirectory().resolve(name);
             Files.writeString(report, text + System.lineSeparator(), StandardCharsets.UTF_8);
@@ -47,7 +47,7 @@ public final class FatalReporter {
     /**
      * Creates the configured crash directory on demand. The default is a
      * {@code crash_logs} child of the process working directory. Launchers can
-     * override it with {@code -Dstelarx.crashDir} or {@code STELARX_CRASH_DIR}.
+     * override it with {@code -Dstelarpro.crashDir} or {@code STELAR_PRO_CRASH_DIR}.
      */
     static Path createCrashDirectory() throws IOException {
         String configured = System.getProperty(CRASH_DIR_PROPERTY);
@@ -62,7 +62,7 @@ public final class FatalReporter {
             return ensureDirectory(directory);
         } catch (IOException primaryFailure) {
             Path fallback = Path.of(System.getProperty("java.io.tmpdir", "."),
-                "stelarx-crash_logs").toAbsolutePath().normalize();
+                "stelar-pro-crash-logs").toAbsolutePath().normalize();
             if (fallback.equals(directory)) throw primaryFailure;
             try {
                 return ensureDirectory(fallback);
@@ -86,7 +86,7 @@ public final class FatalReporter {
         StringWriter sw = new StringWriter();
         PrintWriter out = new PrintWriter(sw);
         out.println();
-        out.println("================ STELAR-X FATAL ERROR ================");
+        out.println("================ STELAR-Pro FATAL ERROR ================");
         out.println("Version: " + Main.VERSION);
         out.println("Time (UTC): " + Instant.now());
         out.println("Phase: " + PhaseLogger.currentPhase());
@@ -101,7 +101,7 @@ public final class FatalReporter {
         out.println("CUDA: " + (gpu.cudaAvailable()
             ? gpu.deviceName() + " (CC " + gpu.computeMajor() + "." + gpu.computeMinor() + ")"
             : "unavailable: " + gpu.detail()));
-        out.println("Command: stelarx " + quoteArgs(args));
+        out.println("Command: stelar-pro " + quoteArgs(args));
         if (failure instanceof OutOfMemoryError) {
             out.println();
             out.println("Likely remedy: close other memory-heavy jobs, use a machine with more RAM,");
