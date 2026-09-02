@@ -28,7 +28,7 @@ SB="0.000001"
 SPMIN="500000"
 SPMAX="1500000"
 USE_LEGACY_LAYOUT=false
-STELAR_PRO_OPTS="--search-space S2 -vv"
+STELAR_PRO_OPTS="-vv"
 FRESH=false
 INCOMPLETE=false
 TIME_MONITOR=true
@@ -37,40 +37,6 @@ NO_NOTIFY=false
 DEBUG=0
 
 source "${SCRIPT_ROOT}/experiment-setting-name.sh"
-
-# Extract the canonical intersection method from an opts string.
-# Returns 'prefix-sum' (the default) when not specified.
-extract_weight_method_from_opts() {
-  local raw="$1"
-  local -a tokens=()
-  local i wim_val=""
-  read -r -a tokens <<< "$raw"
-  i=0
-  while (( i < ${#tokens[@]} )); do
-    case "${tokens[$i]}" in
-      --weight-intersection-method|--intersection-method|--im)
-        if (( i + 1 < ${#tokens[@]} )); then
-          wim_val="${tokens[$((i + 1))]}"
-          ((i+=2))
-        else
-          ((i+=1))
-        fi
-        ;;
-      --weight-intersection-method=*|--intersection-method=*|--im=*)
-        wim_val="${tokens[$i]#*=}"
-        ((i+=1))
-        ;;
-      *) ((i+=1)) ;;
-    esac
-  done
-  case "${wim_val,,}" in
-    ""|i2|2|prefix-sum|prefix_sum|prefixsum|prefix)                               printf 'prefix-sum' ;;
-    i1|1|smaller-side-traversal|smaller_side_traversal|smaller-side|smallerside|legacy) printf 'smaller-side-traversal' ;;
-    i3|3|simple-tree-walk|simple_tree_walk|tree-walk)                              printf 'simple-tree-walk' ;;
-    i4|4|bitset)                                                                   printf 'bitset' ;;
-    *)                                                                             printf '%s' "$wim_val" ;;
-  esac
-}
 
 print_help() {
   cat <<EOF
@@ -109,8 +75,8 @@ Optional:
 
 Examples:
   ./test-stelar-pro-simulated.sh -t 100 -g 100 -r R1 --fresh
-  ./test-stelar-pro-simulated.sh -t 100 -g 100 -r R1 --fresh --opts "--search-space S1 --intersection-method I2 -vv"
-  The example setting is named search-space_S1__intersection-method_I2.
+  ./test-stelar-pro-simulated.sh -t 100 -g 100 -r R1 --fresh --opts "--threads 8 -vv"
+  The example setting is named threads_8.
   Verbosity is ignored; other meaningful options are appended to the name.
 EOF
 }
@@ -158,7 +124,6 @@ PYTHON_BIN="${STELAR_PRO_PYTHON:-${STELAR_PRO_ROOT}/.venv/bin/python}"
 [[ -x "$PYTHON_BIN" ]] || PYTHON_BIN="python3"
 
 SETTING_NAME="$(build_setting_name_from_opts "$STELAR_PRO_OPTS")"
-WEIGHT_METHOD="$(extract_weight_method_from_opts "$STELAR_PRO_OPTS")"
 
 PAIR="${TAXA_NUM}_${GENE_TREES}"
 if [[ "$USE_LEGACY_LAYOUT" == true ]]; then
@@ -328,7 +293,6 @@ fi
 
 echo
 echo "STELAR-Pro finished in ${RUNNING_TIME}s (exit code ${STELAR_PRO_EXIT_CODE})"
-echo "Weight method: ${WEIGHT_METHOD}"
 echo "RF rate: ${RF_RATE}"
 echo "Triplet score: ${OPTIMAL_TRIPLET_SCORE}"
 echo "Max CPU RAM (MB): ${MAX_CPU_MB}"
@@ -342,7 +306,6 @@ if [[ "$NO_NOTIFY" == false ]] && command -v curl >/dev/null 2>&1; then
   CSV_ROW="stelar-pro,${SETTING_NAME},${TAXA_NUM},${GENE_TREES},${REPLICATE},${SB},${SPMIN},${SPMAX},${RF_RATE},${OPTIMAL_TRIPLET_SCORE},${RUNNING_TIME},${MAX_CPU_MB},${MAX_GPU_MB}"
   curl -s -d "${STATUS_EMOJI} STELAR-Pro ${STATUS_TEXT} for ${TAXA_NUM} taxa and ${GENE_TREES} gene trees
 
-Weight method: ${WEIGHT_METHOD}
 RF Rate: ${RF_RATE}
 Triplet score: ${OPTIMAL_TRIPLET_SCORE}
 Running time: ${RUNNING_TIME}s

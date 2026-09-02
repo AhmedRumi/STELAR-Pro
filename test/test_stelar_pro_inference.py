@@ -13,7 +13,6 @@ import tempfile
 from test_stelar_pro_differential import annotate, oracle_score, parse_newick
 
 ROOT = pathlib.Path(__file__).resolve().parents[1]
-METHODS = ("I1", "I2", "I3", "I4")
 INCOMPLETE = ROOT / "test/input/test_incomplete.tre"
 POLYTOMY = ROOT / "test/input/stelar_polytomy_incomplete_6taxa.tre"
 
@@ -23,23 +22,22 @@ def read_trees(path: pathlib.Path):
 
 
 def run_inference(genes_path: pathlib.Path, output_path: pathlib.Path,
-                  preset: str, method: str, compute: str,
+                  compute: str,
                   extra: tuple[str, ...] = ()) -> tuple[str, int]:
     command = [
         "java", "-Djava.library.path=" + str(ROOT / "native"),
         "-cp", str(ROOT / "build"), "stelarx.Main", compute, "-q",
         "-i", str(genes_path), "-o", str(output_path),
-        "--search-space", preset, "--intersection-method", method,
         *extra,
     ]
     run = subprocess.run(command, cwd=ROOT, text=True,
                          stdout=subprocess.PIPE, stderr=subprocess.STDOUT)
     if run.returncode:
-        raise AssertionError(f"inference failed ({preset}/{method}/{extra}):\n{run.stdout}")
+        raise AssertionError(f"inference failed ({extra}):\n{run.stdout}")
     if not output_path.is_file() or not output_path.read_text().strip():
-        raise AssertionError(f"inference emitted no species tree ({preset}/{method})")
+        raise AssertionError("inference emitted no species tree")
     if compute == "--gpu-strict" and "[STELAR-Pro GPU] weight" not in run.stdout:
-        raise AssertionError(f"strict CUDA inference used no GPU weight phase ({preset}/{method})")
+        raise AssertionError("strict CUDA inference used no GPU weight phase")
     matches = re.findall(r"(?:Final triplet score\s*=|Triplet score\s+)([0-9]+)", run.stdout)
     if not matches:
         raise AssertionError(f"inference emitted no final triplet score:\n{run.stdout}")
@@ -75,34 +73,22 @@ def main() -> int:
     with tempfile.TemporaryDirectory(prefix="stelar-pro-inference-") as directory:
         work = pathlib.Path(directory)
 
-        # Each search-space preset must be invariant across all four intersection
-        # engines; every reported objective is independently re-enumerated.
-        for preset in ("S1", "S2", "S3"):
-            baseline_tree = None
-            for method in METHODS:
-                output = work / f"incomplete-{preset}-{method}.tre"
-                tree, score = run_inference(INCOMPLETE, output, preset, method, compute)
-                validate_run(INCOMPLETE, tree, score)
-                if baseline_tree is None:
-                    baseline_tree = tree
-                elif tree != baseline_tree:
-                    raise AssertionError(f"{preset} topology differs across methods")
-                executions += 1
+        # Omitting search/scoring selectors is intentional: this is the product's
+        # built-in S1 inference path, and its objective is independently enumerated.
+        baseline_path = work / "incomplete-default.tre"
+        baseline_tree, baseline_score = run_inference(
+            INCOMPLETE, baseline_path, compute)
+        validate_run(INCOMPLETE, baseline_tree, baseline_score)
+        executions += 1
 
         # Native unresolved scoring and default deterministic preprocessing both
         # need end-to-end coverage on incomplete internal polytomies.
         for keep in (False, True):
-            baseline_tree = None
             extra = ("--keep-polytomy-during-inference",) if keep else ()
-            for method in METHODS:
-                output = work / f"poly-{'keep' if keep else 'refine'}-{method}.tre"
-                tree, score = run_inference(POLYTOMY, output, "S2", method, compute, extra)
-                validate_run(POLYTOMY, tree, score)
-                if baseline_tree is None:
-                    baseline_tree = tree
-                elif tree != baseline_tree:
-                    raise AssertionError("polytomy topology differs across methods")
-                executions += 1
+            output = work / f"poly-{'keep' if keep else 'refine'}.tre"
+            tree, score = run_inference(POLYTOMY, output, compute, extra)
+            validate_run(POLYTOMY, tree, score)
+            executions += 1
 
         # Threading, hash seed count, and reachability pruning are implementation
         # choices and must not change this deterministic fixture's result.
@@ -114,15 +100,10 @@ def main() -> int:
                 ("seed-4", ("--seeds", "4")),
                 ("unpruned", ("--no-prune-search-space",)),
             )
-            baseline_path = work / "determinism-baseline.tre"
-            baseline_tree, baseline_score = run_inference(
-                INCOMPLETE, baseline_path, "S2", "I2", compute)
-            validate_run(INCOMPLETE, baseline_tree, baseline_score)
-            executions += 1
             for label, extra in variants:
                 tree, score = run_inference(
                     INCOMPLETE, work / f"determinism-{label}.tre",
-                    "S2", "I2", compute, extra)
+                    compute, extra)
                 validate_run(INCOMPLETE, tree, score)
                 if tree != baseline_tree or score != baseline_score:
                     raise AssertionError(f"determinism variant changed result: {label}")

@@ -43,9 +43,7 @@ Optional:
   --reference-species-tree  Reference species tree for RF rate calculation
   --threads, --num-threads, -t, -T
                          CPU worker threads
-  --search-space S1..S3  Search-space preset
-  --intersection-method I1..I4
-                         Intersection method preset
+  --search-space S1..S3  Search-space preset (default: S1; S2/S3 reserved)
   --keep-polytomy-during-inference
                          Preserve input polytomies during inference; final scoring
                          always preserves the input topology
@@ -76,11 +74,15 @@ while [[ $# -gt 0 ]]; do
     --no-notify|-nn) NO_NOTIFY=true; shift ;;
     --debug) DEBUG=1; shift ;;
     --help|-h) print_help; exit 0 ;;
+    --intersection-method|--im|--weight-intersection-method)
+      echo "Error: $1 was removed; STELAR-Pro uses one built-in intersection implementation." >&2
+      exit 2
+      ;;
     --auto|--cpu|--gpu|--gpu-strict|--rooted|--unrooted|--keep-polytomy-during-inference|--anchor-outgroup|--anchor|--no-anchor-outgroup|--no-anchor|--no-prune-search-space|--no-gpu-batch|--consensus-experimental|--stepb-fast-restriction|--stepb-quadratic-nn-balls|--stepb-random-leftover-resolution|--stepb-process-large-polytomies|--resolve-input-gene-tree-polytomies|--verify-parse|--verify-hash|--verify-clusters|--verify-partitions|--verify-dp|--verify-weights|--verify-distance-matrix|--verify-similarity-matrix|--verify-upgma|--verify-greedy-consensus|--autocomplete-incomplete-gene-trees|-v|-vv|-vvv|-q|--quiet)
       STELAR_PRO_ARGS+=("$1")
       shift
       ;;
-    --search-space|--intersection-method|--im|--weight-intersection-method|--search-mode|--log-file|-t|-T|--threads|--num-threads|-m|--seeds|--anchor-taxon|--gpu-batch-size|--gpu-batches|--gpu-vram-control-factor|--gpu-vram-occupancy-factor|--gpu-treewalk-vram-cap-mb|--gpu-progress-interval|--gpu-dp-state-space-construction-output-cap|--gpu-dp-state-space-progress-time-interval|--gpu-dp-state-space-progress-max-steps|--gpu-dist-tile-size|--gpu-sim-vram-cap-mb|--completion-method|--stepb-restriction|--large-n-score-type|--large-score-type|--taxa-file|--species-list|--species-list-file)
+    --search-space|--search-mode|--log-file|-t|-T|--threads|--num-threads|-m|--seeds|--anchor-taxon|--gpu-batch-size|--gpu-batches|--gpu-vram-control-factor|--gpu-vram-occupancy-factor|--gpu-treewalk-vram-cap-mb|--gpu-progress-interval|--gpu-dp-state-space-construction-output-cap|--gpu-dp-state-space-progress-time-interval|--gpu-dp-state-space-progress-max-steps|--gpu-dist-tile-size|--gpu-sim-vram-cap-mb|--completion-method|--stepb-restriction|--large-n-score-type|--large-score-type|--taxa-file|--species-list|--species-list-file)
       STELAR_PRO_ARGS+=("$1" "$2")
       shift 2
       ;;
@@ -194,26 +196,11 @@ else
   GPU_MONITOR=false
 fi
 
-# Canonical weight-intersection-method (default prefix-sum) for logs/notifications.
-WEIGHT_METHOD="prefix-sum"
-for ((wi = 0; wi < ${#STELAR_PRO_ARGS[@]}; wi++)); do
-  if [[ "${STELAR_PRO_ARGS[$wi]}" == "--weight-intersection-method" || "${STELAR_PRO_ARGS[$wi]}" == "--intersection-method" || "${STELAR_PRO_ARGS[$wi]}" == "--im" ]] && (( wi + 1 < ${#STELAR_PRO_ARGS[@]} )); then
-    case "${STELAR_PRO_ARGS[$((wi + 1))],,}" in
-      1|i1|smaller-side-traversal|smaller_side_traversal|smaller-side|smallerside|legacy) WEIGHT_METHOD="smaller-side-traversal" ;;
-      2|i2|prefix-sum|prefix_sum|prefixsum|prefix)                                        WEIGHT_METHOD="prefix-sum" ;;
-      3|i3|simple-tree-walk|tree-walk|treewalk|simple)                                    WEIGHT_METHOD="simple-tree-walk" ;;
-      4|i4|bitset|bitsets|bit-set)                                                        WEIGHT_METHOD="bitset" ;;
-      *)                                                                            WEIGHT_METHOD="${STELAR_PRO_ARGS[$((wi + 1))]}" ;;
-    esac
-  fi
-done
-
 echo "=== STELAR-Pro Monitor Wrapper ==="
 echo "Input file:     $INPUT_FILE"
 echo "Output file:    $OUTPUT_FILE"
 echo "STELAR-Pro root:  $STELAR_PRO_ROOT"
 echo "STELAR-Pro opts:  ${STELAR_PRO_ARGS[*]:-(defaults)}"
-echo "Weight method:  $WEIGHT_METHOD"
 if [[ -n "$REFERENCE_SPECIES_TREE" ]]; then
   echo "Reference tree: $REFERENCE_SPECIES_TREE"
 fi
@@ -320,7 +307,6 @@ if [[ "$NO_NOTIFY" == false ]] && command -v curl >/dev/null 2>&1; then
   STATUS_TEXT=$(if [[ $STELAR_PRO_EXIT_CODE -eq 0 ]]; then echo "completed"; else echo "failed (exit $STELAR_PRO_EXIT_CODE)"; fi)
   NOTIFY_BODY="${STATUS_EMOJI} STELAR-Pro ${STATUS_TEXT}
 
-Weight method: ${WEIGHT_METHOD}
 Running time: ${RUNNING_TIME}s
 Max CPU RAM: ${MAX_CPU_MB} MB
 Max GPU VRAM: ${MAX_GPU_MB} MB

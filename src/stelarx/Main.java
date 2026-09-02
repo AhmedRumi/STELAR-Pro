@@ -657,12 +657,9 @@ public class Main {
                 case "--prune-search-space", "--prune-unreachable" ->
                     cfg.setPruneUnreachableSplits(true);
                 case "--intersection-method", "--im", "--weight-intersection-method" -> {
-                    if (++i >= args.length) return false;
-                    try { CliPresets.applyIntersectionMethod(args[i], cfg); }
-                    catch (IllegalArgumentException e) {
-                        System.err.println(e.getMessage());
-                        return false;
-                    }
+                    System.err.println(args[i] + " was removed; STELAR-Pro now uses one "
+                        + "built-in duplicate-aware intersection implementation.");
+                    return false;
                 }
                 case "--large-n-score-type", "--large-score-type" -> {
                     if (++i >= args.length) return false;
@@ -998,11 +995,9 @@ public class Main {
               -vv | -vvv                       Debug or trace logging
 
             Search and scoring:
-              --search-space S1                Current STELAR-Pro search path
-              --intersection-method I1         Current STELAR-Pro scoring method (default)
-              --im I1                          Short form of --intersection-method
+              --search-space S1|S2|S3          Search-space path (default: S1;
+                                                 S2/S3 are reserved for future versions)
               --search-mode local|full         Legacy/advanced DP search control
-              --weight-intersection-method M   Legacy alias; named values remain supported
               --large-n-score-type T            int128 (exact) | double
               --no-prune-search-space           Disable reachability pruning
               --rooted | --unrooted             Compatibility flags; normal STELAR-Pro runs
@@ -1282,10 +1277,10 @@ public class Main {
 
     /** Keep incomplete STELAR-Pro paths from being selected accidentally. */
     private static void validateCurrentProScope(Config cfg) {
-        if (cfg.getWeightIntersectionMethod()
-                != Config.WeightIntersectionMethod.SMALLER_SIDE_TRAVERSAL) {
+        if (cfg.getSearchSpace() != Config.SearchSpace.S1) {
             throw new UnsupportedOperationException(
-                "STELAR-Pro currently supports only intersection method I1");
+                cfg.getSearchSpace() + " is reserved for a future STELAR-Pro implementation; "
+                + "the current release uses S1 by default");
         }
         if (cfg.getSearchMode() != Config.SearchMode.LOCAL
                 || cfg.isAutoCompleteIncompleteTrees()

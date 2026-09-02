@@ -2,9 +2,9 @@
 """Accuracy and resource-regression benchmark for STELAR-Pro.
 
 This is deliberately a small, repeatable development-host benchmark rather
-than a noisy microbenchmark. It validates every S×I combination, exact scaling
-under replicated gene observations, CPU/CUDA parity, and optionally compares
-S1/I2 against a separately built reference checkout.
+than a noisy microbenchmark. It validates the built-in S1/scoring path, exact
+scaling under replicated gene observations, CPU/CUDA parity, and optionally
+compares default CPU resources against a separately built reference checkout.
 """
 
 from __future__ import annotations
@@ -22,8 +22,6 @@ from test_stelar_pro_differential import oracle_score, parse_newick
 ROOT = pathlib.Path(__file__).resolve().parents[1]
 GENES = ROOT / "all_gt_bs_rooted_37.tre"
 SPECIES = ROOT / "true_37.tre"
-METHODS = ("I1", "I2", "I3", "I4")
-PRESETS = ("S1", "S2", "S3")
 TIME = pathlib.Path("/usr/bin/time")
 
 
@@ -77,7 +75,7 @@ def median_benchmark(root: pathlib.Path, compute: str, repeats: int,
         output_tree = work / f"{label}-{repeat}.tre"
         command = java_command(
             root, compute, "-i", str(GENES), "-o", str(output_tree),
-            "--search-space", "S1", "--intersection-method", "I2", *extra)
+            *extra)
         samples.append(timed_run(command, work / f"{label}-{repeat}.metrics", root,
                                  require_gpu=compute == "--gpu-strict"))
         trees.append(output_tree.read_text().strip())
@@ -95,7 +93,7 @@ def main() -> int:
     parser = argparse.ArgumentParser()
     parser.add_argument("--require-gpu", action="store_true")
     parser.add_argument("--reference-dir", type=pathlib.Path,
-                        help="built pre-migration checkout for S1/I2 resource comparison")
+                        help="built pre-migration checkout for default CPU resource comparison")
     parser.add_argument("--repeats", type=int, default=3)
     parser.add_argument("--scales", type=int, nargs="+", default=(1, 4, 16))
     parser.add_argument("--json", type=pathlib.Path, help="optional result file")
@@ -132,46 +130,35 @@ def main() -> int:
             results["baseline"]["rss_ratio"] = rss_ratio
             # Wide enough for normal host noise, strict enough to catch a material regression.
             if time_ratio > 1.35:
-                raise AssertionError(f"S1/I2 CPU time regression: ratio={time_ratio:.3f}")
+                raise AssertionError(f"default CPU time regression: ratio={time_ratio:.3f}")
             if rss_ratio > 1.25:
-                raise AssertionError(f"S1/I2 CPU RSS regression: ratio={rss_ratio:.3f}")
+                raise AssertionError(f"default CPU RSS regression: ratio={rss_ratio:.3f}")
 
         computes = ["--cpu"] + (["--gpu-strict"] if args.require_gpu else [])
-        canonical: dict[tuple[str, str], tuple[int, str]] = {}
+        canonical: tuple[int, str] | None = None
         for compute in computes:
             compute_name = "gpu" if compute == "--gpu-strict" else "cpu"
-            for preset in PRESETS:
-                preset_tree = None
-                preset_score = None
-                for method in METHODS:
-                    label = f"mode-{compute_name}-{preset}-{method}"
-                    output_tree = work / f"{label}.tre"
-                    command = java_command(
-                        ROOT, compute, "-i", str(GENES), "-o", str(output_tree),
-                        "--search-space", preset, "--intersection-method", method)
-                    sample = timed_run(command, work / f"{label}.metrics", ROOT,
-                                       require_gpu=compute == "--gpu-strict")
-                    tree = output_tree.read_text().strip()
-                    results["all_modes"][label] = {
-                        key: sample[key] for key in ("seconds", "rss_kib", "score")
-                    }
-                    if preset_tree is None:
-                        preset_tree, preset_score = tree, sample["score"]
-                    elif tree != preset_tree or sample["score"] != preset_score:
-                        raise AssertionError(f"{compute_name}/{preset} differs across I1-I4")
-                    if compute_name == "cpu":
-                        canonical[(preset, method)] = (sample["score"], tree)
-                    elif canonical[(preset, method)] != (sample["score"], tree):
-                        raise AssertionError(f"CPU/GPU mismatch for {preset}/{method}")
-                if compute_name == "cpu":
-                    inferred_oracle = oracle_score(parse_decorated_newick(preset_tree), large_genes)
-                    if inferred_oracle != preset_score:
-                        raise AssertionError(
-                            f"independent inferred-tree score mismatch for {preset}: "
-                            f"{inferred_oracle} != {preset_score}")
-                    results["all_modes"][f"oracle-{preset}"] = {
-                        "score": inferred_oracle
-                    }
+            label = f"mode-{compute_name}-default"
+            output_tree = work / f"{label}.tre"
+            command = java_command(
+                ROOT, compute, "-i", str(GENES), "-o", str(output_tree))
+            sample = timed_run(command, work / f"{label}.metrics", ROOT,
+                               require_gpu=compute == "--gpu-strict")
+            tree = output_tree.read_text().strip()
+            results["all_modes"][label] = {
+                key: sample[key] for key in ("seconds", "rss_kib", "score")
+            }
+            result = (sample["score"], tree)
+            if compute_name == "cpu":
+                canonical = result
+                inferred_oracle = oracle_score(parse_decorated_newick(tree), large_genes)
+                if inferred_oracle != sample["score"]:
+                    raise AssertionError(
+                        "independent inferred-tree score mismatch: "
+                        f"{inferred_oracle} != {sample['score']}")
+                results["all_modes"]["oracle-default"] = {"score": inferred_oracle}
+            elif canonical != result:
+                raise AssertionError("CPU/GPU mismatch for the default path")
 
         base_lines = [line for line in GENES.read_text().splitlines() if line.strip()]
         for scale in args.scales:
@@ -179,38 +166,31 @@ def main() -> int:
             scaled_path.write_text("\n".join(base_lines * scale) + "\n")
             for compute in computes:
                 compute_name = "gpu" if compute == "--gpu-strict" else "cpu"
-                base_rss = None
-                base_time = None
-                for method in METHODS:
-                    label = f"scale-{compute_name}-x{scale}-{method}"
-                    command = java_command(
-                        ROOT, compute, "-i", str(scaled_path),
-                        "--score-species-tree", str(SPECIES),
-                        "--intersection-method", method)
-                    sample = timed_run(command, work / f"{label}.metrics", ROOT,
-                                       require_gpu=compute == "--gpu-strict")
-                    if sample["score"] != oracle * scale:
-                        raise AssertionError(
-                            f"nonlinear score at x{scale}/{compute_name}/{method}: "
-                            f"{sample['score']} != {oracle * scale}")
-                    results["scaling"][label] = {
-                        key: sample[key] for key in ("seconds", "rss_kib", "score")
-                    }
-                    if scale == min(args.scales):
-                        base_rss = sample["rss_kib"] if base_rss is None else max(base_rss, sample["rss_kib"])
-                        base_time = sample["seconds"] if base_time is None else max(base_time, sample["seconds"])
+                label = f"scale-{compute_name}-x{scale}"
+                command = java_command(
+                    ROOT, compute, "-i", str(scaled_path),
+                    "--score-species-tree", str(SPECIES))
+                sample = timed_run(command, work / f"{label}.metrics", ROOT,
+                                   require_gpu=compute == "--gpu-strict")
+                if sample["score"] != oracle * scale:
+                    raise AssertionError(
+                        f"nonlinear score at x{scale}/{compute_name}: "
+                        f"{sample['score']} != {oracle * scale}")
+                results["scaling"][label] = {
+                    key: sample[key] for key in ("seconds", "rss_kib", "score")
+                }
 
-        # Aggregate scaling guards across methods. JVM startup dominates x1, so
-        # use generous bounds that detect explosions without making timing flaky.
+        # JVM startup dominates x1, so use generous bounds that detect explosions
+        # without making timing flaky.
         for compute_name in ("cpu", "gpu") if args.require_gpu else ("cpu",):
             low = min(args.scales)
             high = max(args.scales)
-            low_rows = [results["scaling"][f"scale-{compute_name}-x{low}-{m}"] for m in METHODS]
-            high_rows = [results["scaling"][f"scale-{compute_name}-x{high}-{m}"] for m in METHODS]
-            low_rss = max(row["rss_kib"] for row in low_rows)
-            high_rss = max(row["rss_kib"] for row in high_rows)
-            low_time = max(row["seconds"] for row in low_rows)
-            high_time = max(row["seconds"] for row in high_rows)
+            low_row = results["scaling"][f"scale-{compute_name}-x{low}"]
+            high_row = results["scaling"][f"scale-{compute_name}-x{high}"]
+            low_rss = low_row["rss_kib"]
+            high_rss = high_row["rss_kib"]
+            low_time = low_row["seconds"]
+            high_time = high_row["seconds"]
             if high_rss > low_rss + 512 * 1024:
                 raise AssertionError(f"{compute_name} RSS grew by more than 512 MiB")
             if high_time > low_time * (2.0 * high / low) + 2.0:
@@ -221,16 +201,15 @@ def main() -> int:
 
     print("STELAR-Pro scalability/accuracy benchmark: PASS")
     print(f"  independent 37-taxon fixed-tree score: {oracle}")
-    print(f"  current S1/I2 CPU median: {current['seconds_median']:.3f}s, "
+    print(f"  current default CPU median: {current['seconds_median']:.3f}s, "
           f"{current['rss_kib_median'] / 1024:.1f} MiB RSS ({args.repeats} runs)")
     if args.reference_dir is not None:
         reference = results["baseline"]["reference"]
-        print(f"  reference S1/I2 CPU median: {reference['seconds_median']:.3f}s, "
+        print(f"  reference default CPU median: {reference['seconds_median']:.3f}s, "
               f"{reference['rss_kib_median'] / 1024:.1f} MiB RSS")
         print(f"  current/reference: time={results['baseline']['time_ratio']:.3f}x, "
               f"RSS={results['baseline']['rss_ratio']:.3f}x")
-    print(f"  all-mode parity: {len(computes) * len(PRESETS) * len(METHODS)} "
-          "S×I×compute runs")
+    print(f"  compute parity: {len(computes)} default-path inference runs")
     print(f"  scaling parity: {len(results['scaling'])} fixed-tree runs at "
           + ", ".join(f"x{scale}" for scale in args.scales))
     return 0

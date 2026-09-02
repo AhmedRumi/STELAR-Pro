@@ -67,11 +67,8 @@ Optional:
   --gpu              Force GPU mode
   --auto             Automatically select CUDA or CPU (default)
   --gpu-strict       Require CUDA; do not fall back to CPU
-  --search-space     S1 (current STELAR-Pro path)
-  --intersection-method, --im
-                     I1 (current STELAR-Pro method)
+  --search-space     S1 (default); S2/S3 are reserved for future versions
   --search-mode      local | full
-  --weight-intersection-method  smaller-side-traversal (current STELAR-Pro method)
   --no-prune-search-space  Disable the DP-reachability weight prune (default: on)
   --threads, --num-threads, -t
                      Thread count
@@ -158,12 +155,16 @@ while [[ $# -gt 0 ]]; do
       COMPUTE_MODE_SET=true
       shift
       ;;
+    --intersection-method|--im|--weight-intersection-method)
+      echo -e "${RED}Error: $1 was removed; STELAR-Pro uses one built-in duplicate-aware intersection implementation.${NC}"
+      exit 2
+      ;;
     --score-species-tree|--species-tree|--score|-c)
       SCORE_SPECIES_TREE="$2"
       PROGRAM_ARGS+=("$1" "$2")
       shift 2
       ;;
-    --search-space|--intersection-method|--im|--search-mode|-t|--threads|--num-threads|-m|--seeds|--weight-intersection-method|--large-n-score-type|--large-score-type|--anchor-taxon|--gpu-batch-size|--gpu-batches|--gpu-vram-control-factor|--gpu-vram-occupancy-factor|--gpu-treewalk-vram-cap-mb|--gpu-progress-interval|--gpu-dp-state-space-construction-output-cap|--gpu-dp-state-space-progress-time-interval|--gpu-dp-state-space-progress-max-steps|--gpu-dist-tile-size|--gpu-sim-vram-cap-mb|--dump-clusters|--dump-completed-gene-trees|--completion-method|--stepb-restriction|--taxa-file|--species-list|--species-list-file|--taxa-set|--taxa-operation|--astral-pro-executable|--gene-species-map)
+    --search-space|--search-mode|-t|--threads|--num-threads|-m|--seeds|--large-n-score-type|--large-score-type|--anchor-taxon|--gpu-batch-size|--gpu-batches|--gpu-vram-control-factor|--gpu-vram-occupancy-factor|--gpu-treewalk-vram-cap-mb|--gpu-progress-interval|--gpu-dp-state-space-construction-output-cap|--gpu-dp-state-space-progress-time-interval|--gpu-dp-state-space-progress-max-steps|--gpu-dist-tile-size|--gpu-sim-vram-cap-mb|--dump-clusters|--dump-completed-gene-trees|--completion-method|--stepb-restriction|--taxa-file|--species-list|--species-list-file|--taxa-set|--taxa-operation|--astral-pro-executable|--gene-species-map)
       PROGRAM_ARGS+=("$1" "$2")
       shift 2
       ;;

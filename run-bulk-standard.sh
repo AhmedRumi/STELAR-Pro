@@ -38,12 +38,9 @@ ALGORITHMS=("stelar-pro")
 
 
 # Algorithm-specific options
-# STELAR-Pro examples:
-# GENERIC_OPTS="--search-space S2 --intersection-method I2 -vv"
-# GENERIC_OPTS_LIST_RAW="--search-space S1 -vv;--search-space S2 -vv;--search-space S3 -vv"
-# The setting-name encoder ignores verbosity. The single setting above becomes:
-#   search-space_S2__intersection-method_I2
-STELAR_OPTS="--search-space S2 -vv"
+# STELAR-Pro example: GENERIC_OPTS="--threads 8 -vv".
+# The setting-name encoder ignores verbosity; that setting becomes threads_8.
+STELAR_OPTS="-vv"
 STELAR_OPTS_LIST_RAW=""
 STELAR_OPTS_LIST=()
 ASTER_OPTS="-t 16"  # ASTER thread count
@@ -742,7 +739,7 @@ Multi-algorithm dataset runner supporting STELAR-Pro, ASTER, ASTRAL, TreeQMC, wQ
 
 Algorithms available: stelar-pro, aster, astral, treeqmc, wqfmtree, supertriplets, stp-nni, tmc
 Example STELAR-Pro setting sweep:
-  --method "stelar-pro" --opts-list "--search-space S1 -vv;--search-space S2 -vv;--search-space S3 -vv"
+  --method "stelar-pro" --opts-list "--threads 8 -vv;--threads 16 -vv"
 Algorithm root directories:
   STELAR-Pro:       Auto-detected from script location
   ASTER:          \${STELAR_PRO_ROOT}/baselines/ASTER

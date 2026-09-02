@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Independent rooted-triplet oracle and scoring-path parity test."""
+"""Independent rooted-triplet oracle for the built-in STELAR-Pro scorer."""
 
 from __future__ import annotations
 
@@ -18,7 +18,6 @@ UNROOTED = ROOT / "test/input/tc9_unrooted_simple.tre"
 POLYTOMY_GENES = ROOT / "test/input/stelar_polytomy_5taxa.tre"
 INCOMPLETE_POLYTOMY_GENES = ROOT / "test/input/stelar_polytomy_incomplete_6taxa.tre"
 SIX_TAXON_CANDIDATE = ROOT / "test/input/stelar_candidate_6taxa.tre"
-INCOMPLETE_GENES = ROOT / "test/input/test_incomplete.tre"
 
 
 class Node:
@@ -88,47 +87,21 @@ def oracle_score(species: Node, genes: list[Node]) -> int:
     return total
 
 
-def stelar_score(method: str, genes_path: pathlib.Path = GENES,
+def stelar_score(genes_path: pathlib.Path = GENES,
                  candidate_path: pathlib.Path = CANDIDATE) -> int:
     command = [
         "java", "-cp", str(ROOT / "build"), "stelarx.Main",
         "-i", str(genes_path), "--score-species-tree", str(candidate_path),
-        "--cpu", "--intersection-method", method, "-q",
+        "--cpu", "-q",
     ]
     run = subprocess.run(command, cwd=ROOT, text=True,
                          stdout=subprocess.PIPE, stderr=subprocess.STDOUT)
     if run.returncode:
-        raise AssertionError(f"{method} failed:\n{run.stdout}")
+        raise AssertionError(f"built-in scorer failed:\n{run.stdout}")
     match = re.search(r"^TRIPLET_SCORE:\s*(\d+)\s*$", run.stdout, re.MULTILINE)
     if not match:
-        raise AssertionError(f"{method} emitted no triplet score:\n{run.stdout}")
+        raise AssertionError(f"built-in scorer emitted no triplet score:\n{run.stdout}")
     return int(match.group(1))
-
-
-def verify_root_preserving_completion() -> None:
-    with tempfile.TemporaryDirectory(prefix="stelar-pro-completion-") as directory:
-        completed_path = pathlib.Path(directory) / "completed.tre"
-        species_path = pathlib.Path(directory) / "species.tre"
-        command = [
-            "java", "-cp", str(ROOT / "build"), "stelarx.Main",
-            "-i", str(INCOMPLETE_GENES), "--cpu", "-q", "--search-space", "S2",
-            "--dump-completed-gene-trees", str(completed_path), "-o", str(species_path),
-        ]
-        run = subprocess.run(command, cwd=ROOT, text=True,
-                             stdout=subprocess.PIPE, stderr=subprocess.STDOUT)
-        if run.returncode:
-            raise AssertionError(f"root-preserving completion failed:\n{run.stdout}")
-
-        originals = [parse_newick(line) for line in INCOMPLETE_GENES.read_text().splitlines()
-                     if line.strip()]
-        completed = [parse_newick(line) for line in completed_path.read_text().splitlines()
-                     if line.strip()]
-        assert len(completed) == len(originals)
-        all_taxa = set().union(*(leaves(tree) for tree in originals))
-        for index, (before, after) in enumerate(zip(originals, completed)):
-            assert leaves(after) == all_taxa, (index, leaves(after), all_taxa)
-            for triple in itertools.combinations(sorted(leaves(before)), 3):
-                assert rooted_pair(before, triple) == rooted_pair(after, triple), (index, triple)
 
 
 def main() -> int:
@@ -139,17 +112,14 @@ def main() -> int:
     candidate = parse_newick(CANDIDATE.read_text())
     expected = oracle_score(candidate, genes)
     assert expected == 21, expected
-    scores = {method: stelar_score(method) for method in ("I1", "I2", "I3", "I4")}
-    assert set(scores.values()) == {expected}, scores
+    score = stelar_score()
+    assert score == expected, (score, expected)
 
     polytomy_genes = [parse_newick(line) for line in POLYTOMY_GENES.read_text().splitlines()
                       if line.strip()]
     polytomy_expected = oracle_score(candidate, polytomy_genes)
-    polytomy_scores = {
-        method: stelar_score(method, POLYTOMY_GENES)
-        for method in ("I1", "I2", "I3", "I4")
-    }
-    assert set(polytomy_scores.values()) == {polytomy_expected}, polytomy_scores
+    polytomy_score = stelar_score(POLYTOMY_GENES)
+    assert polytomy_score == polytomy_expected, (polytomy_score, polytomy_expected)
 
     incomplete_polytomy_genes = [
         parse_newick(line) for line in INCOMPLETE_POLYTOMY_GENES.read_text().splitlines()
@@ -158,14 +128,10 @@ def main() -> int:
     six_taxon_candidate = parse_newick(SIX_TAXON_CANDIDATE.read_text())
     incomplete_polytomy_expected = oracle_score(
         six_taxon_candidate, incomplete_polytomy_genes)
-    incomplete_polytomy_scores = {
-        method: stelar_score(method, INCOMPLETE_POLYTOMY_GENES, SIX_TAXON_CANDIDATE)
-        for method in ("I1", "I2", "I3", "I4")
-    }
-    assert set(incomplete_polytomy_scores.values()) == {incomplete_polytomy_expected}, \
-        incomplete_polytomy_scores
-
-    verify_root_preserving_completion()
+    incomplete_polytomy_score = stelar_score(
+        INCOMPLETE_POLYTOMY_GENES, SIX_TAXON_CANDIDATE)
+    assert incomplete_polytomy_score == incomplete_polytomy_expected, (
+        incomplete_polytomy_score, incomplete_polytomy_expected)
 
     with tempfile.TemporaryDirectory(prefix="stelar-pro-expected-crash-") as directory:
         reject_env = os.environ.copy()
@@ -178,9 +144,8 @@ def main() -> int:
     assert rejected.returncode != 0
     assert "never roots input trees arbitrarily" in rejected.stdout
 
-    print(f"PASS: binary={expected} {scores}; polytomy={polytomy_expected} "
-          f"{polytomy_scores}; incomplete-polytomy={incomplete_polytomy_expected} "
-          f"{incomplete_polytomy_scores}; completion root preserved; unrooted rejected")
+    print(f"PASS: binary={score}; polytomy={polytomy_score}; "
+          f"incomplete-polytomy={incomplete_polytomy_score}; unrooted rejected")
     return 0
 
 

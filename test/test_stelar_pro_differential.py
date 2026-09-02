@@ -17,7 +17,6 @@ import subprocess
 import tempfile
 
 ROOT = pathlib.Path(__file__).resolve().parents[1]
-METHODS = ("I1", "I2", "I3", "I4")
 
 
 class Node:
@@ -198,7 +197,7 @@ def generated_cases(count: int, seed: int) -> list[Case]:
     return cases
 
 
-def run_score(case: Case, method: str, work: pathlib.Path, compute: str,
+def run_score(case: Case, work: pathlib.Path, compute: str,
               numeric: str = "long", threads: int | None = None) -> int:
     genes_path = work / f"{case.name}.genes.tre"
     species_path = work / f"{case.name}.species.tre"
@@ -210,7 +209,6 @@ def run_score(case: Case, method: str, work: pathlib.Path, compute: str,
         "java", "-Djava.library.path=" + str(ROOT / "native"),
         "-cp", str(ROOT / "build"), "stelarx.Main", compute, "-q",
         "-i", str(genes_path), "--score-species-tree", str(species_path),
-        "--intersection-method", method,
     ]
     env = os.environ.copy()
     if numeric != "long":
@@ -221,13 +219,13 @@ def run_score(case: Case, method: str, work: pathlib.Path, compute: str,
     run = subprocess.run(command, cwd=ROOT, env=env, text=True,
                          stdout=subprocess.PIPE, stderr=subprocess.STDOUT)
     if run.returncode:
-        raise AssertionError(f"{case.name}/{method}/{compute}/{numeric} failed:\n{run.stdout}")
+        raise AssertionError(f"{case.name}/{compute}/{numeric} failed:\n{run.stdout}")
     match = re.search(r"^TRIPLET_SCORE:\s*([0-9]+(?:[.]0+)?)\s*$",
                       run.stdout, re.MULTILINE)
     if not match:
-        raise AssertionError(f"{case.name}/{method} emitted no score:\n{run.stdout}")
+        raise AssertionError(f"{case.name} emitted no score:\n{run.stdout}")
     if compute == "--gpu-strict" and "[STELAR-Pro GPU] weight" not in run.stdout:
-        raise AssertionError(f"{case.name}/{method} did not execute a GPU weight phase")
+        raise AssertionError(f"{case.name} did not execute a GPU weight phase")
     return int(float(match.group(1)))
 
 
@@ -253,17 +251,18 @@ def main() -> int:
     with tempfile.TemporaryDirectory(prefix="stelar-pro-differential-") as directory:
         work = pathlib.Path(directory)
         for case in cases:
-            scores = {method: run_score(case, method, work, compute) for method in METHODS}
-            if set(scores.values()) != {case.expected}:
-                raise AssertionError(f"{case.name}: oracle={case.expected}, actual={scores}")
-            assertions += len(scores)
+            actual = run_score(case, work, compute)
+            if actual != case.expected:
+                raise AssertionError(
+                    f"{case.name}: oracle={case.expected}, actual={actual}")
+            assertions += 1
 
         # Exercise serial and parallel CPU implementations on representative binary,
         # polytomous, and incomplete inputs. GPU kernels are thread-count independent.
         if not args.gpu:
             for case in (cases[0], cases[2], cases[3], cases[-1]):
                 for threads in (1, min(4, os.cpu_count() or 1)):
-                    actual = run_score(case, "I2", work, compute, threads=threads)
+                    actual = run_score(case, work, compute, threads=threads)
                     if actual != case.expected:
                         raise AssertionError(f"{case.name}: threads={threads}, score={actual}")
                     assertions += 1
@@ -272,13 +271,12 @@ def main() -> int:
         if not args.skip_numeric:
             for case in (cases[2], cases[3], cases[5]):
                 for numeric in ("int128", "double"):
-                    for method in METHODS:
-                        actual = run_score(case, method, work, compute, numeric=numeric)
-                        if actual != case.expected:
-                            raise AssertionError(
-                                f"{case.name}/{method}/{numeric}: "
-                                f"oracle={case.expected}, actual={actual}")
-                        assertions += 1
+                    actual = run_score(case, work, compute, numeric=numeric)
+                    if actual != case.expected:
+                        raise AssertionError(
+                            f"{case.name}/{numeric}: "
+                            f"oracle={case.expected}, actual={actual}")
+                    assertions += 1
 
     print(f"STELAR-Pro differential oracle: PASS ({len(cases)} cases, "
           f"{assertions} scorer executions, seed=0x{args.seed:x}, "

@@ -49,19 +49,19 @@ javac -cp "${ROOT}/build" -d "$TEST_CLASSES" \
 
 CP="${ROOT}/build:${TEST_CLASSES}"
 echo "Running arithmetic, dispatch, threading, and matrix unit tests..."
-java -cp "$CP" stelar-pro.CliPresetsTest
-java -cp "$CP" stelar-pro.util.Int128Test
-java -cp "$CP" stelar-pro.weight.WeightModeBoundaryTest
-STELAR_PRO_WEIGHT_FORCE_DOUBLE=1 java -cp "$CP" stelar-pro.weight.WeightModeBoundaryTest double
-STELAR_PRO_WEIGHT_FORCE_LONG=1 java -cp "$CP" stelar-pro.weight.WeightModeBoundaryTest long
-java -cp "$CP" stelar-pro.completion.PackedMatrixBoundaryTest
-java -cp "$CP" stelar-pro.FatalReporterTest "${WORK}/fatal-reporter"
-java -cp "$CP" stelar-pro.cluster.ResidualLookupTest \
+java -cp "$CP" stelarx.CliPresetsTest
+java -cp "$CP" stelarx.util.Int128Test
+java -cp "$CP" stelarx.weight.WeightModeBoundaryTest
+STELAR_PRO_WEIGHT_FORCE_DOUBLE=1 java -cp "$CP" stelarx.weight.WeightModeBoundaryTest double
+STELAR_PRO_WEIGHT_FORCE_LONG=1 java -cp "$CP" stelarx.weight.WeightModeBoundaryTest long
+java -cp "$CP" stelarx.completion.PackedMatrixBoundaryTest
+java -cp "$CP" stelarx.FatalReporterTest "${WORK}/fatal-reporter"
+java -cp "$CP" stelarx.cluster.ResidualLookupTest \
   "${ROOT}/test/input/test_incomplete.tre"
-java -cp "$CP" stelar-pro.pro.GeneTreeRooterTaggerTest "${WORK}/root-and-tag"
-java -cp "$CP" stelar-pro.pro.GeneTreePolytomyResolverTest "${WORK}/polytomy-resolution"
-java -cp "$CP" stelar-pro.pro.DuplicateAwareCandidateTest "${WORK}/duplicate-candidates"
-java -cp "$CP" stelar-pro.tree.GeneTreeEventTagTest "${WORK}/event-tags"
+java -cp "$CP" stelarx.pro.GeneTreeRooterTaggerTest "${WORK}/root-and-tag"
+java -cp "$CP" stelarx.pro.GeneTreePolytomyResolverTest "${WORK}/polytomy-resolution"
+java -cp "$CP" stelarx.pro.DuplicateAwareCandidateTest "${WORK}/duplicate-candidates"
+java -cp "$CP" stelarx.tree.GeneTreeEventTagTest "${WORK}/event-tags"
 java -Xmx1g -cp "$CP" PackedPreflightTest
 java -cp "$CP" ThreadingFailureTest
 if [[ $QUICK -eq 0 ]]; then
@@ -69,7 +69,7 @@ if [[ $QUICK -eq 0 ]]; then
 fi
 
 echo "Running rooted parser/polytomy/completion lifecycle tests..."
-java -cp "$CP" stelar-pro.completion.RootedPolytomyLifecycleTest \
+java -cp "$CP" stelarx.completion.RootedPolytomyLifecycleTest \
   "${ROOT}/test/input/stelar_polytomy_incomplete_6taxa.tre"
 java -cp "$CP" PackedSimilarityParityTest "${ROOT}/test/input/test_incomplete.tre"
 java -cp "$CP" SimilarityArgminTest \
@@ -95,7 +95,7 @@ python3 "${ROOT}/test/test_distance_matrix.py" --stelar-pro-root "$ROOT" \
 python3 "${ROOT}/test/test_upgma.py" --stelar-pro-root "$ROOT" \
   --seeds "${MATRIX_SEEDS[@]}"
 
-echo "Running migration-focused verifiers and S1/S2/S3 smoke tests..."
+echo "Running migration-focused verifiers and default-S1 smoke tests..."
 STELAR_PRO_SKIP_BUILD=1 "${ROOT}/test/run_stelar_pro_tests.sh"
 
 JAVA=(java -Dstelarpro.crashDir="${WORK}/expected-failure-crash_logs" \
@@ -129,8 +129,21 @@ for invalid in species-missing species-unknown species-multiple species-root-pol
     --score-species-tree "${WORK}/${invalid}.tre"
 done
 expect_failure unrooted-mode "${JAVA[@]}" --cpu -q --unrooted -i "${WORK}/valid-genes.tre"
-expect_failure bad-method "${JAVA[@]}" --cpu -q -i "${WORK}/valid-genes.tre" --im I5
 expect_failure bad-preset "${JAVA[@]}" --cpu -q -i "${WORK}/valid-genes.tre" --search-space S4
+grep -q "unknown search space" "${WORK}/reject-bad-preset.log"
+for preset in S2 S3; do
+  label="reserved-${preset}"
+  expect_failure "$label" "${JAVA[@]}" --cpu -q \
+    -i "${WORK}/valid-genes.tre" --search-space "$preset"
+  grep -Fq "${preset} is reserved for a future STELAR-Pro implementation" \
+    "${WORK}/reject-${label}.log"
+done
+for option in --intersection-method --im --weight-intersection-method; do
+  label="removed-${option#--}"
+  expect_failure "$label" "${JAVA[@]}" --cpu -q \
+    -i "${WORK}/valid-genes.tre" "$option" I1
+  grep -Fq -- "${option} was removed" "${WORK}/reject-${label}.log"
+done
 expect_failure bad-numeric "${JAVA[@]}" --cpu -q -i "${WORK}/valid-genes.tre" \
   --large-n-score-type decimal
 expect_failure input-output-collision "${JAVA[@]}" --cpu -q \
@@ -157,16 +170,19 @@ printf '((A:0.1,B:2.0)95:0.3,(C:0.4,D:0.5)88:0.6);\n((A,C),(B,D));\n' \
   >"${WORK}/decorated-genes.tre"
 printf '((A:3.0,B:4.0)77:1.0,(C:2.0,D:8.0)66:1.5);\n' \
   >"${WORK}/decorated-species.tre"
-for method in I1 I2 I3 I4; do
-  decorated_output="$("${JAVA[@]}" --cpu -q -i "${WORK}/decorated-genes.tre" \
-    --score-species-tree "${WORK}/decorated-species.tre" --im "$method" 2>&1)"
-  [[ "$(sed -n 's/^TRIPLET_SCORE: //p' <<<"$decorated_output" | tail -1)" == 4 ]]
-done
+decorated_output="$("${JAVA[@]}" --cpu -q -i "${WORK}/decorated-genes.tre" \
+  --score-species-tree "${WORK}/decorated-species.tre" 2>&1)"
+[[ "$(sed -n 's/^TRIPLET_SCORE: //p' <<<"$decorated_output" | tail -1)" == 4 ]]
 
 NO_COLOR=1 "${ROOT}/stelar-pro" --no-build --version >"${WORK}/version.log" 2>&1
 grep -q "STELAR-Pro  v" "${WORK}/version.log"
 NO_COLOR=1 "${ROOT}/stelar-pro" --no-build --help >"${WORK}/help.log" 2>&1
-grep -q -- "--intersection-method, --im" "${WORK}/help.log"
+grep -q -- "--search-space" "${WORK}/help.log"
+grep -q -- "S2/S3 are reserved" "${WORK}/help.log"
+if grep -q -- "--intersection-method\|--weight-intersection-method" "${WORK}/help.log"; then
+  echo "Removed intersection options are still advertised in help" >&2
+  exit 1
+fi
 
 if [[ $PACKAGING -eq 1 ]]; then
   echo "Building and smoke-testing a self-contained CPU package..."

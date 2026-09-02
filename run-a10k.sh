@@ -13,7 +13,7 @@ START_REP=""
 END_REP=""
 FRESH=false
 STELAR_PRO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-STELAR_PRO_OPTS="--search-space S2 -vv"
+STELAR_PRO_OPTS="-vv"
 STELAR_PRO_OPTS_LIST_RAW=""
 TIME_MONITOR=true
 GPU_MONITOR=true
@@ -44,14 +44,7 @@ csv_get_field() {
   echo ""
 }
 
-# Example single setting:
-# STELAR_PRO_OPTS="--search-space S2 --intersection-method I2"
-#
-# Example sweep over search-space presets:
-# STELAR_PRO_OPTS_LIST_RAW="--search-space S1;--search-space S2;--search-space S3"
-#
-# This becomes search-space_S2__intersection-method_I2. Verbosity flags such as
-# -v/-vv are ignored when constructing the setting name.
+# Verbosity flags such as -v/-vv are ignored when constructing setting names.
 
 print_help() {
   cat <<EOF
@@ -76,11 +69,9 @@ Optional:
   --no-notify, -nn     Disable ntfy notifications
 
 Examples:
-  ./run-a10k.sh --data-dir /path/to/10k-astral-dataset --tree-type estimated --opts "--search-space S1 --intersection-method I2 -vv"
-  ./run-a10k.sh --data-dir /path/to/10k-astral-dataset --tree-type "true;estimated" --opts "--search-space S1 --intersection-method I2 -vv"
-  ./run-a10k.sh --data-dir /path/to/10k-astral-dataset --tree-type estimated --opts "--search-space S2 --intersection-method I2 -vv"
-  ./run-a10k.sh --data-dir /path/to/10k-astral-dataset --tree-type estimated --opts-list "--search-space S1 -vv;--search-space S2 -vv;--search-space S3 -vv"
-  The first example setting is search-space_S1__intersection-method_I2.
+  ./run-a10k.sh --data-dir /path/to/10k-astral-dataset --tree-type estimated --opts "--threads 8 -vv"
+  ./run-a10k.sh --data-dir /path/to/10k-astral-dataset --tree-type "true;estimated" --opts "--gpu-strict -vv"
+  The first example setting is threads_8.
   Verbosity is ignored; other meaningful options are appended to the name.
 EOF
 }

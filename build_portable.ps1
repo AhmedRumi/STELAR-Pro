@@ -201,7 +201,7 @@ which you launch STELAR-Pro. Set STELAR_PRO_CRASH_DIR to override Java report st
     & $Launcher --cpu --diagnose | Out-Null
     if ($LASTEXITCODE -ne 0) { throw "Packaged --diagnose smoke test failed." }
     $SmokeTree = Join-Path $Work "smoke-species-tree.tre"
-    & $Launcher --cpu --search-space S2 -q `
+    & $Launcher --cpu -q `
         -i (Join-Path $ExampleDir "all_gt_37.tre") -o $SmokeTree `
         --log-file (Join-Path $Work "smoke-run.log")
     if ($LASTEXITCODE -ne 0 -or -not (Test-Path $SmokeTree) -or

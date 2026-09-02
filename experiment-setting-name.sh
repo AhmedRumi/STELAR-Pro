@@ -15,21 +15,9 @@ canonical_search_space_name() {
   local value="${1,,}"
   value="${value//_/-}"
   case "$value" in
-    1|s1|incomplete-local) printf 'S1' ;;
-    2|s2|complete-full)    printf 'S2' ;;
-    3|s3|exhaustive)       printf 'S3' ;;
-    *) sanitize_setting_part "$1" ;;
-  esac
-}
-
-canonical_intersection_method_name() {
-  local value="${1,,}"
-  value="${value//_/-}"
-  case "$value" in
-    1|i1|smaller-side-traversal|smaller-side|smallerside|legacy) printf 'I1' ;;
-    2|i2|prefix-sum|prefixsum|prefix)                            printf 'I2' ;;
-    3|i3|simple-tree-walk|tree-walk|treewalk|simple)             printf 'I3' ;;
-    4|i4|bitset|bitsets|bit-set)                                 printf 'I4' ;;
+    1|s1) printf 'S1' ;;
+    2|s2) printf 'S2' ;;
+    3|s3) printf 'S3' ;;
     *) sanitize_setting_part "$1" ;;
   esac
 }
@@ -56,27 +44,26 @@ build_setting_name_from_opts() {
         ((i+=1))
         continue
         ;;
-      --search-space|--intersection-method|--im|--weight-intersection-method)
+      --intersection-method|--im|--weight-intersection-method)
+        echo "Error: $token was removed from STELAR-Pro." >&2
+        return 2
+        ;;
+      --search-space)
         if (( i + 1 >= ${#tokens[@]} )); then
           ((i+=1))
           continue
         fi
         value="${tokens[$((i + 1))]}"
-        if [[ "$token" == "--search-space" ]]; then
-          parts+=("search-space_$(canonical_search_space_name "$value")")
-        else
-          parts+=("intersection-method_$(canonical_intersection_method_name "$value")")
-        fi
+        parts+=("search-space_$(canonical_search_space_name "$value")")
         ((i+=2))
         ;;
-      --search-space=*|--intersection-method=*|--im=*|--weight-intersection-method=*)
+      --intersection-method=*|--im=*|--weight-intersection-method=*)
+        echo "Error: ${token%%=*} was removed from STELAR-Pro." >&2
+        return 2
+        ;;
+      --search-space=*)
         value="${token#*=}"
-        key="${token%%=*}"
-        if [[ "$key" == "--search-space" ]]; then
-          parts+=("search-space_$(canonical_search_space_name "$value")")
-        else
-          parts+=("intersection-method_$(canonical_intersection_method_name "$value")")
-        fi
+        parts+=("search-space_$(canonical_search_space_name "$value")")
         ((i+=1))
         ;;
       -t|-T|--threads|--num-threads)

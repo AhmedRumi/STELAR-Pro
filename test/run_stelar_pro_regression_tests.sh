@@ -12,6 +12,17 @@ fi
 python3 "${ROOT}/test/test_stelar_pro_triplets.py"
 "${ROOT}/test/test_triplet_reporting.sh"
 
+JAVA=(java -Dstelarpro.crashDir="${WORK}/expected-failure-crash-logs" \
+  -cp "${ROOT}/build" stelarx.Main)
+expect_failure() {
+  local label="$1"
+  shift
+  if "$@" >"${WORK}/${label}.log" 2>&1; then
+    echo "Expected failure was accepted: ${label}" >&2
+    exit 1
+  fi
+}
+
 for verifier in --verify-clusters --verify-partitions --verify-dp; do
   java -cp "${ROOT}/build" stelarx.Main --cpu -q \
     -i "${ROOT}/test/input/test_5taxa.tre" "$verifier" \
@@ -19,12 +30,26 @@ for verifier in --verify-clusters --verify-partitions --verify-dp; do
   grep -q "ALL ASSERTIONS PASSED" "${WORK}/${verifier#--}.log"
 done
 
-for preset in S1 S2 S3; do
-  java -cp "${ROOT}/build" stelarx.Main --cpu -q \
-    -i "${ROOT}/test/input/test_incomplete.tre" --search-space "$preset" \
-    -o "${WORK}/${preset}.tre" >"${WORK}/${preset}.log" 2>&1
-  test -s "${WORK}/${preset}.tre"
-  grep -q "Triplet score" "${WORK}/${preset}.log"
+java -cp "${ROOT}/build" stelarx.Main --cpu -q \
+  -i "${ROOT}/test/input/test_incomplete.tre" \
+  -o "${WORK}/default.tre" >"${WORK}/default.log" 2>&1
+test -s "${WORK}/default.tre"
+grep -q "Triplet score" "${WORK}/default.log"
+
+for preset in S2 S3; do
+  expect_failure "reserved-${preset}" \
+    "${JAVA[@]}" --cpu -q \
+      -i "${ROOT}/test/input/test_incomplete.tre" --search-space "$preset"
+  grep -qF "$preset is reserved for a future STELAR-Pro implementation" \
+    "${WORK}/reserved-${preset}.log"
+done
+
+for option in --intersection-method --im --weight-intersection-method; do
+  label="removed-${option#--}"
+  expect_failure "$label" \
+    "${JAVA[@]}" --cpu -q \
+      -i "${ROOT}/test/input/test_incomplete.tre" "$option" I1
+  grep -qF "$option was removed" "${WORK}/${label}.log"
 done
 
 NO_COLOR=1 "${ROOT}/stelar-pro" --no-build --version >"${WORK}/version.log" 2>&1

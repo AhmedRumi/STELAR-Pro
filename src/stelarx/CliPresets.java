@@ -27,43 +27,12 @@ final class CliPresets {
         cfg.setResolveInputGeneTreePolytomies(false);
 
         switch (preset) {
-            case "1", "s1", "incomplete-local" -> {
-                // Baseline: original trees and tree-local candidate splits.
-            }
-            case "2", "s2", "complete-full" ->
-                applyCompleteFull(cfg);
-            case "3", "s3", "exhaustive" -> {
-                applyCompleteFull(cfg);
-                cfg.setConsensusExperimental(true);
-                cfg.setStepBQuadraticNnBalls(true);
-                cfg.setStepBRandomLeftoverResolution(true);
-                cfg.setStepBProcessLargePolytomies(true);
-                cfg.setResolveInputGeneTreePolytomies(true);
-            }
+            case "1", "s1" -> cfg.setSearchSpace(Config.SearchSpace.S1);
+            case "2", "s2" -> cfg.setSearchSpace(Config.SearchSpace.S2);
+            case "3", "s3" -> cfg.setSearchSpace(Config.SearchSpace.S3);
             default -> throw new IllegalArgumentException(
                 "unknown search space '" + value + "' (expected S1-S3 or 1-3)");
         }
-    }
-
-    static void applyIntersectionMethod(String value, Config cfg) {
-        String method = normalize(value);
-        switch (method) {
-            case "1", "i1", "smaller-side-traversal", "smaller-side", "smallerside", "legacy" ->
-                cfg.setWeightIntersectionMethod(Config.WeightIntersectionMethod.SMALLER_SIDE_TRAVERSAL);
-            case "2", "i2", "prefix-sum", "prefixsum", "prefix" ->
-                cfg.setWeightIntersectionMethod(Config.WeightIntersectionMethod.PREFIX_SUM);
-            case "3", "i3", "simple-tree-walk", "tree-walk", "treewalk", "simple" ->
-                cfg.setWeightIntersectionMethod(Config.WeightIntersectionMethod.SIMPLE_TREE_WALK);
-            case "4", "i4", "bitset", "bitsets", "bit-set" ->
-                cfg.setWeightIntersectionMethod(Config.WeightIntersectionMethod.BITSET);
-            default -> throw new IllegalArgumentException(
-                "unknown intersection method '" + value + "' (expected I1-I4 or 1-4)");
-        }
-    }
-
-    private static void applyCompleteFull(Config cfg) {
-        cfg.setAutoCompleteIncompleteTrees(true);
-        cfg.setSearchMode(Config.SearchMode.FULL);
     }
 
     private static String normalize(String value) {

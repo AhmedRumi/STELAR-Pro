@@ -1,0 +1,4 @@
+RF rate: 0.0609137056
+RF distance: 24/394
+Taxa: 200
+Splits: output=197, true=197, shared=185

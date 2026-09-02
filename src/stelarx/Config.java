@@ -2,6 +2,8 @@ package stelarx;
 
 public class Config {
     public enum ComputeMode      { AUTO, CPU, GPU }
+    /** S2 and S3 are reserved for future STELAR-Pro search-space implementations. */
+    public enum SearchSpace      { S1, S2, S3 }
     public enum SearchMode       { LOCAL, FULL }
     /**
      * Which matrix is used to guide taxon insertion when auto-completing
@@ -12,8 +14,8 @@ public class Config {
     public enum CompletionMethod { SIMILARITY, DISTANCE }
 
     /**
-     * How the GPU weight kernel counts gene-tree ↔ candidate-cluster intersections.
-     * CLI: --weight-intersection-method {prefix-sum | smaller-side-traversal}
+     * Internal weight-kernel implementations retained from development. STELAR-Pro
+     * exposes one fixed duplicate-aware intersection path; these are not CLI choices.
      *   PREFIX_SUM             — default. Per-tree leaf prefix sums (with its own
      *                            shared/auto-global adaptive sub-paths); each
      *                            intersection is an O(1) prefix difference. Builds
@@ -92,8 +94,10 @@ public class Config {
      * input multifurcations, independently of this setting.
      */
     private boolean keepPolytomyDuringInference = false;
+    private SearchSpace searchSpace = SearchSpace.S1;
     private SearchMode searchMode = SearchMode.LOCAL;
-    private WeightIntersectionMethod weightIntersectionMethod = WeightIntersectionMethod.SMALLER_SIDE_TRAVERSAL;
+    private final WeightIntersectionMethod weightIntersectionMethod =
+        WeightIntersectionMethod.SMALLER_SIDE_TRAVERSAL;
     private LargeScoreType largeScoreType = LargeScoreType.INT128;
 
     /**
@@ -276,10 +280,11 @@ public class Config {
     public void setKeepPolytomyDuringInference(boolean keep) {
         this.keepPolytomyDuringInference = keep;
     }
+    public SearchSpace getSearchSpace()        { return searchSpace; }
+    public void setSearchSpace(SearchSpace s)  { this.searchSpace = s; }
     public SearchMode getSearchMode()          { return searchMode; }
     public void setSearchMode(SearchMode s)   { this.searchMode = s; }
     public WeightIntersectionMethod getWeightIntersectionMethod()        { return weightIntersectionMethod; }
-    public void setWeightIntersectionMethod(WeightIntersectionMethod m)  { this.weightIntersectionMethod = m; }
 
     public LargeScoreType getLargeScoreType()        { return largeScoreType; }
     public void setLargeScoreType(LargeScoreType t)  { this.largeScoreType = t; }

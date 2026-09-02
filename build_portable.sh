@@ -5,6 +5,9 @@
 set -euo pipefail
 
 ROOT="$(cd "$(dirname "$0")" && pwd)"
+if ! command -v nvcc >/dev/null 2>&1 && [[ -x /usr/local/cuda/bin/nvcc ]]; then
+  export PATH="/usr/local/cuda/bin:${PATH}"
+fi
 DIST_DIR="${ROOT}/dist"
 CUDA_MODE="auto"          # auto | off | required
 CUDA_ARCH_VALUE="all-major"
@@ -242,7 +245,7 @@ VERSION_OUTPUT="$(NO_COLOR=1 "$PACKAGED_LAUNCHER" --version)"
   exit 1
 }
 "$PACKAGED_LAUNCHER" --cpu --diagnose >/dev/null
-"$PACKAGED_LAUNCHER" --cpu --search-space S2 -q \
+"$PACKAGED_LAUNCHER" --cpu -q \
     -i "${EXAMPLE_DIR}/all_gt_37.tre" \
     -o "${WORK}/smoke-species-tree.tre" \
     --log-file "${WORK}/smoke-run.log"

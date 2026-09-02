@@ -3,6 +3,9 @@
 set -euo pipefail
 
 STELAR_PRO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+if ! command -v nvcc >/dev/null 2>&1 && [[ -x /usr/local/cuda/bin/nvcc ]]; then
+  export PATH="/usr/local/cuda/bin:${PATH}"
+fi
 VENV_DIR="${STELAR_PRO_ROOT}/.venv"
 CPU_ONLY=false
 CHECK_ONLY=false
@@ -155,5 +158,5 @@ fi
 echo
 echo "Developer setup complete."
 echo "  Check later : ./setup_dev.sh --check"
-echo "  Run         : ./stelar-pro -i rooted_gene_trees.tre -o species_tree.tre --search-space S1"
-echo "  Monitor     : ./run-stelar-pro-with-monitor.sh -i gene_trees.tre -o species_tree.tre --search-space S1"
+echo "  Run         : ./stelar-pro -i rooted_gene_trees.tre -o species_tree.tre"
+echo "  Monitor     : ./run-stelar-pro-with-monitor.sh -i gene_trees.tre -o species_tree.tre"

@@ -10,7 +10,7 @@ trap 'rm -rf "$WORK"' EXIT
 "${ROOT}/build.sh" >/dev/null
 
 [[ -f "${ROOT}/build/stelarx/Main.class" ]]
-[[ "$(find "${ROOT}/build" -mindepth 1 -maxdepth 1 -type d -printf '%f\n')" == "stelar-pro" ]]
+[[ "$(find "${ROOT}/build" -mindepth 1 -maxdepth 1 -type d -printf '%f\n')" == "stelarx" ]]
 
 VERSION_TEXT="$(NO_COLOR=1 "${ROOT}/stelar-pro" --version --no-build)"
 [[ "$VERSION_TEXT" == *"STELAR-Pro  v1.0.0"* ]]
@@ -19,7 +19,9 @@ VERSION_TEXT="$(NO_COLOR=1 "${ROOT}/stelar-pro" --version --no-build)"
 HELP_TEXT="$(NO_COLOR=1 "${ROOT}/stelar-pro" --help 2>&1)"
 [[ "$HELP_TEXT" == *"STELAR-Pro wrapper"* ]]
 [[ "$HELP_TEXT" == *"--search-space"* ]]
-[[ "$HELP_TEXT" == *"--intersection-method"* ]]
+[[ "$HELP_TEXT" == *"S2/S3 are reserved"* ]]
+[[ "$HELP_TEXT" != *"--intersection-method"* ]]
+[[ "$HELP_TEXT" != *"--weight-intersection-method"* ]]
 [[ "$HELP_TEXT" == *"--gpu-strict"* ]]
 [[ "$HELP_TEXT" == *"--tag-only"* ]]
 
@@ -32,9 +34,32 @@ OUTPUT_TREE="${WORK}/species-tree.tre"
 STELAR_PRO_CRASH_DIR="${WORK}/launcher-crash_logs" \
   NO_COLOR=1 "${ROOT}/stelar-pro" --no-build --cpu -q \
   -i "${ROOT}/test/input/stelar_candidate_5taxa.tre" \
-  -o "$OUTPUT_TREE" --search-space S1 --intersection-method I2 >/dev/null
+  -o "$OUTPUT_TREE" >/dev/null
 [[ -s "$OUTPUT_TREE" ]]
 [[ -d "${WORK}/launcher-crash_logs" ]]
+
+expect_launcher_failure() {
+  local label="$1" expected="$2"
+  shift 2
+  if env NO_COLOR=1 STELAR_PRO_CRASH_DIR="${WORK}/launcher-crash_logs" \
+      "${ROOT}/stelar-pro" --no-build --cpu -q \
+      -i "${ROOT}/test/input/stelar_candidate_5taxa.tre" \
+      "$@" >"${WORK}/reject-${label}.log" 2>&1; then
+    echo "Expected launcher failure was accepted: ${label}" >&2
+    exit 1
+  fi
+  grep -Fq -- "$expected" "${WORK}/reject-${label}.log"
+}
+
+for preset in S2 S3; do
+  expect_launcher_failure "reserved-${preset}" \
+    "${preset} is reserved for a future STELAR-Pro implementation" \
+    --search-space "$preset"
+done
+for option in --intersection-method --im --weight-intersection-method; do
+  expect_launcher_failure "removed-${option#--}" \
+    "${option} was removed" "$option" I1
+done
 
 TAG_INPUT="${WORK}/unrooted-multicopy.tre"
 TAG_OUTPUT="${WORK}/rooted-tagged.tre"

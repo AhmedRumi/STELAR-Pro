@@ -4,7 +4,8 @@ STELAR-Pro is a scalable rooted species-tree summary method. It maximizes agreem
 with the rooted triplets displayed by rooted gene trees and provides compact
 multi-seed hashes, range intersections, cross-tree recombination, configurable
 search spaces and intersections, similarity/UPGMA guidance, parallel CPU paths,
-and CUDA acceleration for binary and polytomous rooted inputs.
+and CUDA acceleration for binary and polytomous rooted inputs. S1 and the
+duplicate-aware intersection implementation are built-in defaults.
 
 The checkout directory name and location are arbitrary; scripts resolve the
 project root from their own location. The program and artifacts are named
@@ -42,7 +43,7 @@ Use `--gene-species-map FILE` when gene-copy labels require an explicit two-colu
 gene-to-species mapping. `--astral-pro-executable FILE` overrides the bundled
 `ASTER-Linux/bin/astral-pro3`. Tag-only mode suppresses backend messages and emits
 only brief STELAR-Pro status lines. S1 subtree/partition hashing, candidate DP,
-and I1 CPU/CUDA intersection indexing are duplicate-aware. Each tree stores a
+and CPU/CUDA intersection indexing are duplicate-aware. Each tree stores a
 sorted position vector for every species, so repeated copies count once.
 
 SimPhy datasets default to `$PHYLOGENY_DATA_DIR/simphy/data`. The simulation,
@@ -58,9 +59,10 @@ inferred result beneath it—preview or run the dedicated cleanup command:
 ./clear-bulk-simulated.sh --yes
 ```
 
-The current STELAR-Pro implementation uses the S1 search path and I1
-smaller-side traversal. S2/S3 and I2/I3/I4 remain legacy STELAR-Pro code paths and
-are rejected until their duplicate-aware STELAR-Pro versions are implemented.
+The current STELAR-Pro implementation uses S1 and its built-in smaller-side
+intersection path by default; neither needs a command-line option. S2 and S3
+are reserved names and are rejected until their STELAR-Pro implementations are
+ready. The old intersection-selector options have been removed.
 
 Score a supplied rooted species tree with:
 
@@ -82,8 +84,8 @@ location when using the repository launchers.
 
 Build native libraries with `./build_native.sh`. The native libraries are
 `libstelar_pro_weight`, `libstelar_pro_dp`, `libstelar_pro_dist`, and `libstelar_pro_sim`
-(with the platform's shared-library suffix). Every intersection method supports
-rooted-polytomy weights on both CPU and CUDA.
+(with the platform's shared-library suffix). The built-in intersection path
+supports rooted-polytomy weights on both CPU and CUDA.
 
 ## Migration details
 
@@ -121,12 +123,12 @@ hardware layer remains available with:
 test/run_stelar_pro_gpu_tests.sh
 ```
 
-For accuracy plus wall-time/peak-RSS scaling measurements across the complete
-S1–S3 × I1–I4 matrix, run:
+For accuracy plus wall-time/peak-RSS scaling measurements of the current
+default implementation, run:
 
 ```bash
 python3 test/test_stelar_pro_scalability.py --require-gpu
 ```
 
-Pass `--reference-dir PATH` to compare median S1/I2 CPU resources against a
+Pass `--reference-dir PATH` to compare median default-path CPU resources against a
 separately built reference checkout with guarded time and memory ratios.
