@@ -1,0 +1,95 @@
+=== Phase 5 DP Search Space Verification ===
+Taxa: 200  Trees: 1000  Clusters in X: 29691
+Clusters with splits: 29492
+Unique splits total:  49306
+Transitions emitted:  199794 (before dedup)
+
+Root splits: 563
+Check 2 (size consistency): PASSED
+Child splits with a side outside candidate-root X: 0 (informational)
+
+Resolved speciation nodes: 199794
+Skipped overlapping child sets: 0
+Total emitted: 199794  (expected 199794)
+Check 4 (transition count): PASSED
+
+--- Summary ---
+ALL ASSERTIONS PASSED
+
+--- Splits-per-cluster distribution ---
+  splits= 1 : 24405 clusters
+  splits= 2 : 2422 clusters
+  splits= 3 : 1136 clusters
+  splits= 4 : 443 clusters
+  splits= 5 : 260 clusters
+  splits= 6 : 207 clusters
+  splits= 7 : 161 clusters
+  splits= 8 : 72 clusters
+  splits= 9 : 53 clusters
+  splits=10 : 37 clusters
+  splits=11 : 45 clusters
+  splits=12 : 30 clusters
+  splits=13 : 24 clusters
+  splits=14 : 27 clusters
+  splits=15 : 24 clusters
+  splits=16 : 18 clusters
+  splits=17 : 7 clusters
+  splits=18 : 7 clusters
+  splits=19 : 13 clusters
+  splits=20 : 7 clusters
+  splits=21 : 3 clusters
+  splits=23 : 7 clusters
+  splits=24 : 6 clusters
+  splits=26 : 1 clusters
+  splits=27 : 6 clusters
+  splits=28 : 4 clusters
+  splits=30 : 1 clusters
+  splits=31 : 5 clusters
+  splits=32 : 1 clusters
+  splits=33 : 3 clusters
+  splits=34 : 1 clusters
+  splits=35 : 1 clusters
+  splits=36 : 2 clusters
+  splits=37 : 2 clusters
+  splits=38 : 1 clusters
+  splits=39 : 1 clusters
+  splits=40 : 1 clusters
+  splits=41 : 2 clusters
+  splits=42 : 2 clusters
+  splits=43 : 2 clusters
+  splits=44 : 2 clusters
+  splits=46 : 1 clusters
+  splits=47 : 2 clusters
+  splits=48 : 1 clusters
+  splits=49 : 1 clusters
+  splits=51 : 1 clusters
+  splits=53 : 1 clusters
+  splits=57 : 1 clusters
+  splits=64 : 1 clusters
+  splits=65 : 1 clusters
+  splits=66 : 1 clusters
+  splits=77 : 1 clusters
+  splits=79 : 1 clusters
+  splits=82 : 1 clusters
+  splits=84 : 1 clusters
+  splits=86 : 1 clusters
+  splits=97 : 1 clusters
+  splits=101 : 1 clusters
+  splits=111 : 1 clusters
+  splits=126 : 3 clusters
+  splits=130 : 1 clusters
+  splits=131 : 1 clusters
+  splits=148 : 2 clusters
+  splits=149 : 1 clusters
+  splits=159 : 1 clusters
+  splits=163 : 1 clusters
+  splits=164 : 1 clusters
+  splits=168 : 1 clusters
+  splits=169 : 2 clusters
+  splits=170 : 1 clusters
+  splits=183 : 1 clusters
+  splits=206 : 1 clusters
+  splits=212 : 1 clusters
+  splits=242 : 1 clusters
+  splits=342 : 1 clusters
+  splits=563 : 1 clusters

@@ -1,0 +1,20 @@
+{
+  "command": [
+    "/home/rumi/Documents/STELAR-Pro/stelar-pro",
+    "--no-build",
+    "--gpu-strict",
+    "--threads",
+    "28",
+    "--search-space",
+    "S1",
+    "--search-mode",
+    "local",
+    "--quiet",
+    "--input",
+    "/home/rumi/Documents/STELAR-Pro/pro_data/simphy-200taxa-1000gt-10rep-dupmean-3-lb-4.1e-10-noloss/R4/all_gt.tre",
+    "--output",
+    "/home/rumi/Documents/STELAR-Pro/pro_data/benchmark-stelar-pro-vs-astral-pro3-gpu/simphy-200taxa-1000gt-10rep-dupmean-3-lb-4.1e-10-noloss/R4/stelar-pro.tre"
+  ],
+  "exit_code": 0,
+  "wall_seconds": 28.641998856999635
+}

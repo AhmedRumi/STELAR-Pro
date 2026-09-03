@@ -1,0 +1,16 @@
+{
+  "command": [
+    "/home/rumi/Documents/STELAR-Pro/ASTER-Linux/bin/astral-pro3",
+    "--thread",
+    "28",
+    "--seed",
+    "42",
+    "--verbose",
+    "1",
+    "--output",
+    "/home/rumi/Documents/STELAR-Pro/pro_data/benchmark-stelar-pro-vs-astral-pro3-gpu/simphy-200taxa-1000gt-10rep-dupmean-3-lb-4.1e-10-noloss/R6/astral-pro3.tre",
+    "/home/rumi/Documents/STELAR-Pro/pro_data/simphy-200taxa-1000gt-10rep-dupmean-3-lb-4.1e-10-noloss/R6/all_gt.tre"
+  ],
+  "exit_code": 0,
+  "wall_seconds": 92.08520048699938
+}
