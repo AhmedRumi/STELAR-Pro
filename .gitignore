@@ -19,3 +19,6 @@ dist/
 
 # Local Python environment created by setup_dev.sh
 .venv/
+
+# Python bytecode cache directories at any depth
+__pycache__/
