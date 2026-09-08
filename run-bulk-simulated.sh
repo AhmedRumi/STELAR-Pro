@@ -26,7 +26,7 @@ T_LIST=(10)
 
 # T_LIST=(1000 2500 5000 7500 10000)
 
-G_LIST=(1000)
+G_LIST=(10)
 SB_LIST=(0.000001)
 SPMIN_LIST=(100000)
 SPMAX_LIST=(200000)
@@ -276,11 +276,11 @@ echo "All runs finished."
 
 
 
-T_LIST=(1000)
-G_LIST=(1000 2500 5000 7500 10000)
-SB_LIST=(0.000001)
-SPMIN_LIST=(100000)
-SPMAX_LIST=(200000)
+# T_LIST=(1000)
+# G_LIST=(1000 2500 5000 7500 10000)
+# SB_LIST=(0.000001)
+# SPMIN_LIST=(100000)
+# SPMAX_LIST=(200000)
 
 
 
@@ -293,41 +293,41 @@ SPMAX_LIST=(200000)
 
 
 
-echo "Starting bulk runs... phase 2"
+# echo "Starting bulk runs... phase 2"
 
-for t in "${T_LIST[@]}"; do
-  for g in "${G_LIST[@]}"; do
-    for sb in "${SB_LIST[@]}"; do
-      for spmin in "${SPMIN_LIST[@]}"; do
-        for spmax in "${SPMAX_LIST[@]}"; do
+# for t in "${T_LIST[@]}"; do
+#   for g in "${G_LIST[@]}"; do
+#     for sb in "${SB_LIST[@]}"; do
+#       for spmin in "${SPMIN_LIST[@]}"; do
+#         for spmax in "${SPMAX_LIST[@]}"; do
 
-          echo ">>> Running: t=$t g=$g sb=$sb spmin=$spmin spmax=$spmax (method=$METHOD)"
+#           echo ">>> Running: t=$t g=$g sb=$sb spmin=$spmin spmax=$spmax (method=$METHOD)"
           
-          ./sim.sh -rs "$NUM_REPLICATES" "${BASE_DIR_ARGS[@]}" "${SIM_DATA_ARGS[@]}" -t "$t" -g "$g" --sb "$sb" --spmin "$spmin" --spmax "$spmax" "${FRESH_ARGS[@]}"
+#           ./sim.sh -rs "$NUM_REPLICATES" "${BASE_DIR_ARGS[@]}" "${SIM_DATA_ARGS[@]}" -t "$t" -g "$g" --sb "$sb" --spmin "$spmin" --spmax "$spmax" "${FRESH_ARGS[@]}"
           
-          # Run replicates
-          for ((i=1; i<=NUM_REPLICATES; i++)); do
-            REPLICATE_NAME="R$i"
-            if IS_SIMULATED_CONFIG_EXCLUDED \
-                "$t" "$g" "$sb" "$spmin" "$spmax" "$REPLICATE_NAME"; then
-              echo "  SKIPPING excluded configuration: t=$t g=$g sb=$sb spmin=$spmin spmax=$spmax replicate=$REPLICATE_NAME"
-              continue
-            fi
-            echo "  Running replicate $REPLICATE_NAME with $METHOD"
+#           # Run replicates
+#           for ((i=1; i<=NUM_REPLICATES; i++)); do
+#             REPLICATE_NAME="R$i"
+#             if IS_SIMULATED_CONFIG_EXCLUDED \
+#                 "$t" "$g" "$sb" "$spmin" "$spmax" "$REPLICATE_NAME"; then
+#               echo "  SKIPPING excluded configuration: t=$t g=$g sb=$sb spmin=$spmin spmax=$spmax replicate=$REPLICATE_NAME"
+#               continue
+#             fi
+#             echo "  Running replicate $REPLICATE_NAME with $METHOD"
             
-            for STELAR_PRO_OPTS_ITEM in "${STELAR_PRO_OPTS_LIST[@]}"; do
-              TEST_CMD=("${STELAR_PRO_ROOT}/test-stelar-pro-simulated.sh" -r "$REPLICATE_NAME" "${BASE_DIR_ARGS[@]}" "${SHARED_TEST_ARGS[@]}" -t "$t" -g "$g" --sb "$sb" --spmin "$spmin" --spmax "$spmax" "${FRESH_ARGS[@]}")
-              if [[ -n "$STELAR_PRO_OPTS_ITEM" ]]; then
-                TEST_CMD+=(--opts "$STELAR_PRO_OPTS_ITEM")
-              fi
-              "${TEST_CMD[@]}"
-            done
-          done
+#             for STELAR_PRO_OPTS_ITEM in "${STELAR_PRO_OPTS_LIST[@]}"; do
+#               TEST_CMD=("${STELAR_PRO_ROOT}/test-stelar-pro-simulated.sh" -r "$REPLICATE_NAME" "${BASE_DIR_ARGS[@]}" "${SHARED_TEST_ARGS[@]}" -t "$t" -g "$g" --sb "$sb" --spmin "$spmin" --spmax "$spmax" "${FRESH_ARGS[@]}")
+#               if [[ -n "$STELAR_PRO_OPTS_ITEM" ]]; then
+#                 TEST_CMD+=(--opts "$STELAR_PRO_OPTS_ITEM")
+#               fi
+#               "${TEST_CMD[@]}"
+#             done
+#           done
 
-        done
-      done
-    done
-  done
-done
+#         done
+#       done
+#     done
+#   done
+# done
 
-echo "All runs finished."
+# echo "All runs finished."

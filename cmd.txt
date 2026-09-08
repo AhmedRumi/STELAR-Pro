@@ -4,10 +4,19 @@ echo 'export PHYLOGENY_DATA_DIR="/absolute/path/to/phylogeny-data"' >> ~/.bashrc
 source ~/.bashrc
 
 
+# anik pc 
+
+mkdir -p ~/research/STELAR-Pro/data
+echo 'export PHYLOGENY_DATA_DIR="~/research/STELAR-Pro/data"' >> ~/.bashrc
+source ~/.bashrc
+echo $PHYLOGENY_DATA_DIR
+
+
+
 # setting as normally inside
 
 mkdir -p ~/phylogeny/STELAR-Pro-2/simphy/data
-echo 'export PHYLOGENY_DATA_DIR="~/phylogeny/STELAR-Pro-2/simphy/data"' >> ~/.bashrc
+echo 'export PHYLOGENY_DATA_DIR="~/phylogeny/STELAR-Pro-2/data"' >> ~/.bashrc
 source ~/.bashrc
 echo $PHYLOGENY_DATA_DIR
 
@@ -640,6 +649,13 @@ done
   --method stelar-pro \
   --num-replicates 3 \
   --opts-list "--search-mode local --weight-intersection-method smaller-side-traversal"
+
+
+./run-bulk-simulated.sh \
+  --method stelar-pro \
+  --num-replicates 5 \
+  --opts-list "--search-space S1;"
+
 
 
 ./run-bulk-simulated.sh \
