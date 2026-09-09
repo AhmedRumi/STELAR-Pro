@@ -1,6 +1,7 @@
 package stelarx;
 
 import stelarx.gpu.GPUWeightCalculator;
+import stelarx.pro.GeneTreeRooterTagger;
 
 import java.io.PrintStream;
 
@@ -124,6 +125,21 @@ public class Banner {
                 out.println("    " + String.format("%-8s %s", "",
                     c(DIM, gpuProbe.detail())));
             }
+        }
+
+        GeneTreeRooterTagger.Preflight rooting =
+            GeneTreeRooterTagger.preflight(cfg.getAstralProExecutable());
+        if (rooting.usable()) {
+            out.println("    " + String.format("%-8s %s  %s  %s",
+                "Rooting",
+                c(WHT, "astral-pro3"),
+                c(GRN, "✓ usable"),
+                c(DIM, rooting.executable().toString())));
+        } else {
+            out.println("    " + String.format("%-8s %s",
+                "Rooting", c(YLW, "astral-pro3 unusable  (inference cannot start)")));
+            out.println("    " + String.format("%-8s %s", "",
+                c(DIM, rooting.executable() + ": " + rooting.detail())));
         }
         out.println();
 

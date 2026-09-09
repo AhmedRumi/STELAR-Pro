@@ -51,6 +51,37 @@ public final class GeneTreeRooterTaggerTest {
         check(Files.readString(output).equals("previous-valid-output\n"),
             "failed run replaced existing output");
 
+        // A binary built on another machine dies in the dynamic loader with exit
+        // status 1 and a one-line stderr message; both must survive into the error.
+        Path foreign = executable(work.resolve("foreign-astral-pro3"), """
+            #!/bin/sh
+            echo 'foreign-astral-pro3: /lib/x86_64-linux-gnu/libc.so.6: version GLIBC_9.9 not found' >&2
+            exit 1
+            """);
+        expectFailure(() -> GeneTreeRooterTagger.run(
+            input.toString(), output.toString(), foreign.toString(), null),
+            "GLIBC_9.9 not found");
+        expectFailure(() -> GeneTreeRooterTagger.run(
+            input.toString(), output.toString(), foreign.toString(), null),
+            "ensure_backends.sh");
+
+        Path helpful = executable(work.resolve("helpful astral-pro3"), """
+            #!/bin/sh
+            [ "$1" = "-h" ] && { echo 'usage: astral-pro3 [ --ARG_NAME ARG_VALUE ... ] input_file' >&2; exit 0; }
+            exit 3
+            """);
+        GeneTreeRooterTagger.Preflight usable = GeneTreeRooterTagger.preflight(helpful.toString());
+        check(usable.usable(), "preflight accepts a backend that answers -h: " + usable.detail());
+        GeneTreeRooterTagger.Preflight broken = GeneTreeRooterTagger.preflight(foreign.toString());
+        check(!broken.usable() && broken.detail().contains("GLIBC_9.9"),
+            "preflight reports the loader message: " + broken.detail());
+        check(broken.detail().contains("exit code 1"),
+            "preflight reports the exit status: " + broken.detail());
+        GeneTreeRooterTagger.Preflight absent =
+            GeneTreeRooterTagger.preflight(work.resolve("missing").toString());
+        check(!absent.usable() && absent.detail().contains("not found"),
+            "preflight reports a missing executable: " + absent.detail());
+
         expectFailure(() -> GeneTreeRooterTagger.run(
             input.toString(), input.toString(), success.toString(), mapping.toString()),
             "must differ");

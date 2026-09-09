@@ -47,7 +47,8 @@ public class GPUSimilarityMatrix {
             loadError = "";
         } catch (UnsatisfiedLinkError | SecurityException e) {
             loaded = false;
-            loadError = e.getClass().getSimpleName() + ": " + e.getMessage();
+            loadError = GPUWeightCalculator.withRebuildHint(
+                e.getClass().getSimpleName() + ": " + e.getMessage());
         }
         return loaded;
     }
