@@ -98,6 +98,18 @@ sources_newer_than() {
   [[ -n "$(find "$dir" -type f \( "${args[@]}" \) -newer "$ref" -print -quit 2>/dev/null)" ]]
 }
 
+# PATH for compiling against the system glibc. GCC locates `ld` through PATH,
+# and an active conda/mamba environment puts its own binutils first; that linker
+# cannot resolve the system libc (undefined ...@GLIBC_PRIVATE references).
+toolchain_path() {
+  local cleaned
+  cleaned="$(printf '%s' "$PATH" | tr ':' '\n' | grep -viE 'conda|mamba' | paste -sd: -)"
+  if [[ -x /usr/bin/ld && "$(PATH="$cleaned" command -v ld 2>/dev/null || true)" != /usr/bin/ld ]]; then
+    cleaned="/usr/bin:/bin:${cleaned}"
+  fi
+  printf '%s' "$cleaned"
+}
+
 # ── ASTRAL-Pro3 (rooting/tagging backend) ────────────────────────────────────
 
 ensure_aster() {
@@ -132,7 +144,8 @@ ensure_aster() {
     return 0
   fi
 
-  if ! command -v g++ >/dev/null 2>&1 || ! command -v make >/dev/null 2>&1; then
+  local build_path; build_path="$(toolchain_path)"
+  if ! PATH="$build_path" command -v g++ >/dev/null 2>&1 || ! PATH="$build_path" command -v make >/dev/null 2>&1; then
     fail "astral-pro3 must be built for this machine (${reason}), but g++/make are missing."
     echo "  On Ubuntu/Debian: sudo apt install build-essential" >&2
     echo "  Or point STELAR_PRO_EXECUTABLE / --astral-pro-executable at a working ASTRAL-Pro3." >&2
@@ -142,9 +155,12 @@ ensure_aster() {
   say "  ${YELLOW}⟳${NC} astral-pro3   building for this machine: ${reason} ${DIM}(about a minute)${NC}"
   mkdir -p "${ASTER_DIR}/bin"
   local log="${ASTER_DIR}/bin/.build.log" start=$SECONDS
-  if ! make -C "$ASTER_DIR" astral-pro >"$log" 2>&1; then
+  if ! PATH="$build_path" make -C "$ASTER_DIR" astral-pro >"$log" 2>&1; then
     fail "building astral-pro3 failed. Last lines of ${log}:"
     tail -n 20 "$log" >&2
+    if grep -q 'GLIBC_PRIVATE' "$log"; then
+      echo "  A non-system linker was used (check: command -v ld). Deactivate conda (conda deactivate) or install binutils." >&2
+    fi
     return 1
   fi
   if ! probe_out="$(with_timeout "$ASTER_BIN" -h 2>&1)"; then

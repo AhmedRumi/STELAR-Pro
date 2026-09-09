@@ -2,21 +2,21 @@ all: dir astral astral-pro wastral caster-site caster-site_branchlength caster-p
 	echo "*** Installation complete! ***"
 
 astral: dir
-	g++ -std=gnu++11 -march=native -Ofast -pthread src/astral.cpp -o bin/astral4 || g++ -std=c++17 -O2 -pthread src/astral.cpp -o bin/astral4
+	g++ -std=gnu++11 -march=native -Ofast -pthread src/astral.cpp -o bin/astral4 || g++ -std=gnu++17 -O2 -pthread src/astral.cpp -o bin/astral4
 	cp bin/astral4 bin/astral
 
 astral_int128: dir
 	g++ -std=gnu++11 -march=native -D LARGE_DATA -Ofast -pthread src/astral.cpp -o bin/astral4_int128
 
 astral-pro: dir
-	g++ -std=gnu++11 -march=native -Ofast -pthread src/astral-pro.cpp -o bin/astral-pro3 || g++ -std=c++17 -O2 -pthread src/astral-pro.cpp -o bin/astral-pro3
+	g++ -std=gnu++11 -march=native -Ofast -pthread src/astral-pro.cpp -o bin/astral-pro3 || g++ -std=gnu++17 -O2 -pthread src/astral-pro.cpp -o bin/astral-pro3
 	cp bin/astral-pro3 bin/astral-pro
 	
 astral-pro_int128: dir
 	g++ -std=gnu++11 -march=native -D LARGE_DATA -Ofast -pthread src/astral-pro.cpp -o bin/astral-pro3_int128
 
 wastral: dir
-	g++ -std=gnu++11 -march=native -Ofast -pthread src/astral-hybrid.cpp -o bin/wastral || g++ -std=c++17 -O2 -pthread src/astral-hybrid.cpp -o bin/wastral
+	g++ -std=gnu++11 -march=native -Ofast -pthread src/astral-hybrid.cpp -o bin/wastral || g++ -std=gnu++17 -O2 -pthread src/astral-hybrid.cpp -o bin/wastral
 	cp bin/wastral bin/astral-hybrid
 	
 wastral_precise: dir
