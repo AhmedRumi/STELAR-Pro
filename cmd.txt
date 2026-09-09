@@ -417,6 +417,7 @@ echo $PHYLOGENY_DATA_DIR
 
 
 
+
 # test on custom input and output 
 
 ./run-stelar-pro-with-monitor.sh -i all_gt_bs_rooted_37.tre -o out-37-stelar-pro.tre --opts "--search-mode local -vv --autocomplete-incomplete-gene-trees" --reference-species-tree true_37.tre
