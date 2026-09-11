@@ -19,3 +19,14 @@ dist/
 
 # Local Python environment created by setup_dev.sh
 .venv/
+
+# Python bytecode cache directories at any depth
+__pycache__/
+
+# Machine-specific backends, built per machine by ./ensure_backends.sh (run.sh
+# calls it). A binary built elsewhere generally does not load here (glibc
+# symbol versions, -march=native, GPU compute capability), so none are tracked.
+native/*.so
+native/.build-stamp
+native/.build.log
+ASTER-Linux/bin/

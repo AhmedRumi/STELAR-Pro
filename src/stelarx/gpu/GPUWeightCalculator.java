@@ -30,6 +30,25 @@ public class GPUWeightCalculator {
                         int driverVersion, int runtimeVersion,
                         long freeMiB, long totalMiB, String detail) {}
 
+    /** Appended to load/probe failures that mean the libraries were built for another machine. */
+    private static final String REBUILD_HINT =
+        " [the CUDA libraries in native/ are machine-specific and not tracked by git;"
+        + " rebuild them for this machine with ./ensure_backends.sh (run.sh does this automatically)]";
+
+    /**
+     * Adds {@link #REBUILD_HINT} to a failure that indicates a missing or foreign
+     * build: absent from java.library.path, a glibc symbol version this machine
+     * lacks, or a compute-capability floor above the installed GPU.
+     */
+    public static String withRebuildHint(String detail) {
+        if (detail == null || detail.contains(REBUILD_HINT)) return detail;
+        boolean foreign = detail.contains("GLIBC")
+            || detail.contains("version `")
+            || detail.contains("older than this artifact's minimum")
+            || detail.contains("in java.library.path");
+        return foreign ? detail + REBUILD_HINT : detail;
+    }
+
     /** Try to load the native library; returns true on success. */
     public static synchronized boolean tryLoad() {
         if (loadAttempted) return loaded;
@@ -47,7 +66,7 @@ public class GPUWeightCalculator {
         } catch (UnsatisfiedLinkError | SecurityException e) {
             // Not a fatal error — caller falls back to CPU path
             loaded = false;
-            loadError = e.getClass().getSimpleName() + ": " + e.getMessage();
+            loadError = withRebuildHint(e.getClass().getSimpleName() + ": " + e.getMessage());
         }
         return loaded;
     }
@@ -93,7 +112,7 @@ public class GPUWeightCalculator {
             intValue(kv, "ccMajor"), intValue(kv, "ccMinor"),
             intValue(kv, "driver"), intValue(kv, "runtime"),
             longValue(kv, "freeMiB"), longValue(kv, "totalMiB"),
-            kv.getOrDefault("detail", status));
+            withRebuildHint(kv.getOrDefault("detail", status)));
     }
 
     private static int intValue(java.util.Map<String,String> kv, String key) {

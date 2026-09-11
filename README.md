@@ -41,8 +41,10 @@ polytomies before rooting and tagging. To root/tag without resolving and exit:
 ASTRAL-Pro3 writes `D` on duplication nodes and leaves speciation nodes unlabeled.
 Use `--gene-species-map FILE` when gene-copy labels require an explicit two-column
 gene-to-species mapping. `--astral-pro-executable FILE` overrides the bundled
-`ASTER-Linux/bin/astral-pro3`. Tag-only mode suppresses backend messages and emits
-only brief STELAR-Pro status lines. S1 subtree/partition hashing, candidate DP,
+`ASTER-Linux/bin/astral-pro3`, which is compiled for the current machine on first
+use (see [Machine-specific backends](#machine-specific-backends)). Tag-only mode
+suppresses backend messages and emits only brief STELAR-Pro status lines; if the
+backend fails, its own output is included in the error. S1 subtree/partition hashing, candidate DP,
 and CPU/CUDA intersection indexing are duplicate-aware. Each tree stores a
 sorted position vector for every species, so repeated copies count once.
 
@@ -81,12 +83,41 @@ Unexpected Java failures and JVM fatal-error logs are written under
 the repository root. Set `STELAR_PRO_CRASH_DIR=/path/to/directory` to override the
 location when using the repository launchers.
 
-## CUDA
+## Machine-specific backends
 
-Build native libraries with `./build_native.sh`. The native libraries are
-`libstelar_pro_weight`, `libstelar_pro_dp`, `libstelar_pro_dist`, and `libstelar_pro_sim`
-(with the platform's shared-library suffix). The built-in intersection path
-supports rooted-polytomy weights on both CPU and CUDA.
+Two compiled components are **not tracked by git** because a build from one
+machine generally does not run on another:
+
+| Component | Built with | Why it does not travel |
+|---|---|---|
+| `ASTER-Linux/bin/astral-pro3` (rooting/tagging, required) | `g++ -march=native` | glibc symbol versions (`version 'GLIBC_2.38' not found`, exit status 1 before `main`), CPU instruction set (SIGILL) |
+| `native/libstelar_pro_{weight,dp,dist,sim}.so` (CUDA, optional) | `nvcc` | glibc symbol versions, GPU compute capability below the artifact's minimum |
+
+`./run.sh` (and therefore `./stelar-pro` and the monitor wrapper) calls
+`./ensure_backends.sh` before every run. It is a no-op when both components were
+built on this machine from the current sources; otherwise it rebuilds what is
+missing, foreign, or stale and records a build stamp (`ASTER-Linux/bin/.build-stamp`,
+`native/.build-stamp`) describing the glibc, CPU, and GPUs it was built for.
+
+```bash
+./ensure_backends.sh            # build/refresh both for this machine (what run.sh does)
+./ensure_backends.sh --force    # rebuild everything
+./ensure_backends.sh --cpu-only # skip the CUDA libraries
+./stelar-pro --diagnose         # shows whether astral-pro3 and CUDA are usable here
+```
+
+Requirements: `g++` and `make` for ASTRAL-Pro3 (`sudo apt install build-essential`);
+`nvcc` for the CUDA libraries, which are skipped with a CPU fallback when nvcc or
+an NVIDIA GPU is absent. `CUDA_ARCH` overrides the nvcc target (default `native`,
+i.e. exactly this machine's GPU; `all-major` for a build meant to run on other
+GPUs, as `build_portable.sh` uses). `--no-build` skips both the Java build and the
+backend check. To use an ASTRAL-Pro3 built elsewhere, pass
+`--astral-pro-executable FILE` or set `STELAR_PRO_EXECUTABLE`.
+
+The CUDA libraries can also be built directly with `./build_native.sh`; they are
+`libstelar_pro_weight`, `libstelar_pro_dp`, `libstelar_pro_dist`, and
+`libstelar_pro_sim` (with the platform's shared-library suffix). The built-in
+intersection path supports rooted-polytomy weights on both CPU and CUDA.
 
 ## Migration details
 

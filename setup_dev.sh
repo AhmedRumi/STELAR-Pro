@@ -11,7 +11,7 @@ CPU_ONLY=false
 CHECK_ONLY=false
 BUILD_PROJECT=true
 RUN_TESTS=true
-CUDA_ARCH_VALUE="all-major"
+CUDA_ARCH_VALUE="native"
 
 usage() {
   cat <<'EOF'
@@ -19,7 +19,7 @@ Usage: ./setup_dev.sh [options]
 
 Options:
   --cpu-only          Skip CUDA compilation
-  --cuda-arch VALUE   CUDA target passed to nvcc (default: all-major)
+  --cuda-arch VALUE   CUDA target passed to nvcc (default: native = this machine's GPU)
   --no-build          Create/check the Python environment without compiling
   --no-tests          Skip the CPU regression tests
   --check             Only verify the current environment; change nothing
@@ -120,8 +120,13 @@ if [[ "$CHECK_ONLY" == true ]]; then
     fail "DendroPy is missing; run ./setup_dev.sh"
   fi
   if [[ -f "${STELAR_PRO_ROOT}/build/stelarx/Main.class" ]]; then ok "Java build output"; else warn "Java build output is absent; run ./setup_dev.sh"; fi
+  if [[ -x "${STELAR_PRO_ROOT}/ASTER-Linux/bin/astral-pro3" ]] && "${STELAR_PRO_ROOT}/ASTER-Linux/bin/astral-pro3" -h >/dev/null 2>&1; then
+    ok "ASTRAL-Pro3 rooting backend (built for this machine)"
+  else
+    warn "ASTRAL-Pro3 rooting backend is absent or does not run here; run ./ensure_backends.sh"
+  fi
   if [[ "$CPU_ONLY" != true && -x "$(command -v nvcc 2>/dev/null || true)" ]]; then
-    if [[ -f "${STELAR_PRO_ROOT}/native/libstelar_pro_weight.so" ]]; then ok "CUDA native libraries"; else warn "CUDA libraries are absent; run ./setup_dev.sh"; fi
+    if [[ -f "${STELAR_PRO_ROOT}/native/libstelar_pro_weight.so" && -f "${STELAR_PRO_ROOT}/native/.build-stamp" ]]; then ok "CUDA native libraries (built for this machine)"; else warn "CUDA libraries are absent or unstamped; run ./ensure_backends.sh"; fi
   fi
   echo
   (( failures == 0 )) || exit 1
@@ -142,13 +147,9 @@ PYTHON_BIN="${VENV_DIR}/bin/python"
 
 if [[ "$BUILD_PROJECT" == true ]]; then
   "${STELAR_PRO_ROOT}/build.sh"
-  if [[ "$CPU_ONLY" != true ]]; then
-    if command -v nvcc >/dev/null 2>&1; then
-      CUDA_ARCH="$CUDA_ARCH_VALUE" "${STELAR_PRO_ROOT}/build_native.sh"
-    else
-      warn "Skipping CUDA build because nvcc is unavailable"
-    fi
-  fi
+  ENSURE_ARGS=()
+  [[ "$CPU_ONLY" == true ]] && ENSURE_ARGS+=(--cpu-only)
+  CUDA_ARCH="$CUDA_ARCH_VALUE" "${STELAR_PRO_ROOT}/ensure_backends.sh" ${ENSURE_ARGS[@]+"${ENSURE_ARGS[@]}"}
 fi
 
 if [[ "$RUN_TESTS" == true ]]; then

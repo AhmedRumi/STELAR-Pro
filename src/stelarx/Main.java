@@ -72,6 +72,7 @@ public class Main {
 
         Logging.setLevel(cfg.getVerbosity());
         if (cfg.isTagOnly()) {
+            requireRootingBackend(cfg);
             System.out.println("STELAR-Pro tag-only: rooting and tagging gene trees...");
             GeneTreeRooterTagger.Result result = GeneTreeRooterTagger.run(
                 cfg.getInputFile(), cfg.getOutputFile(),
@@ -97,6 +98,7 @@ public class Main {
             return;
         }
         validateCurrentProScope(cfg);
+        requireRootingBackend(cfg);
 
         long t0 = System.nanoTime();
         String finalTripletScore = null;
@@ -815,6 +817,21 @@ public class Main {
     }
 
     /** Resolve AUTO/GPU requests using the bundled CUDA backend itself. */
+    /**
+     * Every inference and tag-only run needs ASTRAL-Pro3. Probe it before any
+     * preprocessing so a binary built for another machine (glibc, CPU) fails in
+     * milliseconds with the loader's own message instead of after resolution.
+     */
+    private static void requireRootingBackend(Config cfg) {
+        GeneTreeRooterTagger.Preflight backend =
+            GeneTreeRooterTagger.preflight(cfg.getAstralProExecutable());
+        if (!backend.usable()) {
+            throw new IllegalStateException("Rooting/tagging backend is not usable on this machine: "
+                + backend.executable() + " — " + backend.detail() + ". "
+                + GeneTreeRooterTagger.REBUILD_HINT);
+        }
+    }
+
     private static void resolveComputeMode(Config cfg) {
         Config.ComputeMode requested = cfg.getRequestedComputeMode();
         if (requested == Config.ComputeMode.CPU) {

@@ -6,6 +6,8 @@
 set -euo pipefail
 
 ROOT="$(cd "$(dirname "$0")" && pwd)"
+# shellcheck source=scripts/backend_fingerprint.sh
+source "${ROOT}/scripts/backend_fingerprint.sh"
 NVCC_BIN="${NVCC:-$(command -v nvcc || true)}"
 if [[ -z "$NVCC_BIN" && -x /usr/local/cuda/bin/nvcc ]]; then
   NVCC_BIN=/usr/local/cuda/bin/nvcc
@@ -108,6 +110,18 @@ echo "  Building    : $SRC_SIM  ->  $OUT_SIM"
 "$NVCC_BIN" "${NVCC_FLAGS[@]}" -o "$OUT_SIM" "$SRC_SIM"
 echo "  OK"
 
+# Record what this build depends on. ensure_backends.sh compares the stamp with
+# the running machine and rebuilds when the libraries came from elsewhere.
+{
+  echo "built_on=$(hostname) $(date -Is)"
+  echo "glibc=$(stelar_glibc_version)"
+  echo "gpus=$(stelar_gpu_list)"
+  echo "cuda_arch=${CUDA_ARCH}"
+  echo "nvcc=$("$NVCC_BIN" --version | sed -n 's/.*release \([0-9.]*\).*/\1/p' | head -n1)"
+  echo "min_cuda_cc=${MIN_CUDA_CC}"
+} > "${NATIVE_OUT_DIR}/.build-stamp"
+
 echo "=== Native build complete ==="
+echo "Build stamp: ${NATIVE_OUT_DIR}/.build-stamp"
 echo "Run with:"
 echo "  ./run.sh -i <input.tre> -o <output.tre> --gpu-strict -vv --no-build"

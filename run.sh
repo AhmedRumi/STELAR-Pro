@@ -40,6 +40,8 @@ COMPUTE_MODE_SET=false
 NO_NOTIFY=false
 INPUT_OPTIONAL=false
 TAG_ONLY=false
+CPU_REQUESTED=false
+ASTRAL_OVERRIDE_SET=false
 
 print_help() {
   cat <<EOF
@@ -97,7 +99,9 @@ Optional:
   -v|-vv|-vvv        Verbosity
   --xms SIZE         Java min heap (default: ${XMS})
   --xmx SIZE         Java max heap (default: ${XMX})
-  --no-build         Skip build.sh before running
+  --no-build         Skip build.sh and ensure_backends.sh before running
+                     (astral-pro3 and the CUDA libraries are otherwise built
+                     for this machine whenever they are missing or foreign)
   --no-notify, -nn   Disable ntfy notification for score-only mode
   --version          Print the STELAR-Pro version and exit
   --diagnose         Print runtime/backend diagnostics and exit
@@ -150,10 +154,21 @@ while [[ $# -gt 0 ]]; do
       PROGRAM_ARGS+=("--log-file" "$2")
       shift 2
       ;;
-    --auto|--cpu|--gpu|--gpu-strict)
+    --cpu)
+      PROGRAM_ARGS+=("$1")
+      COMPUTE_MODE_SET=true
+      CPU_REQUESTED=true
+      shift
+      ;;
+    --auto|--gpu|--gpu-strict)
       PROGRAM_ARGS+=("$1")
       COMPUTE_MODE_SET=true
       shift
+      ;;
+    --astral-pro-executable)
+      PROGRAM_ARGS+=("$1" "$2")
+      ASTRAL_OVERRIDE_SET=true
+      shift 2
       ;;
     --intersection-method|--im|--weight-intersection-method)
       echo -e "${RED}Error: $1 was removed; STELAR-Pro uses one built-in duplicate-aware intersection implementation.${NC}"
@@ -164,7 +179,7 @@ while [[ $# -gt 0 ]]; do
       PROGRAM_ARGS+=("$1" "$2")
       shift 2
       ;;
-    --search-space|--search-mode|-t|--threads|--num-threads|-m|--seeds|--large-n-score-type|--large-score-type|--anchor-taxon|--gpu-batch-size|--gpu-batches|--gpu-vram-control-factor|--gpu-vram-occupancy-factor|--gpu-treewalk-vram-cap-mb|--gpu-progress-interval|--gpu-dp-state-space-construction-output-cap|--gpu-dp-state-space-progress-time-interval|--gpu-dp-state-space-progress-max-steps|--gpu-dist-tile-size|--gpu-sim-vram-cap-mb|--dump-clusters|--dump-completed-gene-trees|--completion-method|--stepb-restriction|--taxa-file|--species-list|--species-list-file|--taxa-set|--taxa-operation|--astral-pro-executable|--gene-species-map)
+    --search-space|--search-mode|-t|--threads|--num-threads|-m|--seeds|--large-n-score-type|--large-score-type|--anchor-taxon|--gpu-batch-size|--gpu-batches|--gpu-vram-control-factor|--gpu-vram-occupancy-factor|--gpu-treewalk-vram-cap-mb|--gpu-progress-interval|--gpu-dp-state-space-construction-output-cap|--gpu-dp-state-space-progress-time-interval|--gpu-dp-state-space-progress-max-steps|--gpu-dist-tile-size|--gpu-sim-vram-cap-mb|--dump-clusters|--dump-completed-gene-trees|--completion-method|--stepb-restriction|--taxa-file|--species-list|--species-list-file|--taxa-set|--taxa-operation|--gene-species-map)
       PROGRAM_ARGS+=("$1" "$2")
       shift 2
       ;;
@@ -282,6 +297,12 @@ fi
 
 if [[ "$BUILD_FIRST" == true ]]; then
   "${STELAR_PRO_ROOT}/build.sh"
+  # Binaries are machine-specific (glibc, CPU, GPU) and not tracked by git, so
+  # make sure the ones in this checkout were built here before using them.
+  ENSURE_ARGS=()
+  [[ "$ASTRAL_OVERRIDE_SET" == true ]] && ENSURE_ARGS+=(--skip-aster)
+  [[ "$CPU_REQUESTED" == true || "$TAG_ONLY" == true ]] && ENSURE_ARGS+=(--cpu-only)
+  "${STELAR_PRO_ROOT}/ensure_backends.sh" ${ENSURE_ARGS[@]+"${ENSURE_ARGS[@]}"}
 fi
 
 # Create the target before JVM startup so both Java exception reports and

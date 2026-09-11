@@ -1,0 +1,2 @@
+algorithm,input_file,output_file,running_time_s,max_cpu_mb,max_gpu_mb,optimal_triplet_score,rf_rate,exit_code
+stelar-pro,all_gt_bs_rooted_37.tre,out-37-stelar-pro.tre,2.861,221.016,108.544,1031712,0.0000,0

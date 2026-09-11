@@ -4,6 +4,7 @@ import stelarx.gpu.GPUDistanceMatrix;
 import stelarx.gpu.GPUDPBuilder;
 import stelarx.gpu.GPUSimilarityMatrix;
 import stelarx.gpu.GPUWeightCalculator;
+import stelarx.pro.GeneTreeRooterTagger;
 
 import java.nio.file.Files;
 import java.nio.file.Path;
@@ -15,6 +16,8 @@ public final class RuntimeDiagnostics {
     public static void print(Config cfg) {
         Runtime rt = Runtime.getRuntime();
         GPUWeightCalculator.Probe gpu = GPUWeightCalculator.probe();
+        GeneTreeRooterTagger.Preflight rooting =
+            GeneTreeRooterTagger.preflight(cfg.getAstralProExecutable());
 
         System.out.println("STELAR-Pro DIAGNOSTICS");
         row("Version", Main.VERSION);
@@ -30,6 +33,13 @@ public final class RuntimeDiagnostics {
         row("Selected compute", cfg.getComputeMode().name());
         row("Selection detail", cfg.getComputeModeDetail());
         row("Native library path", prop("java.library.path"));
+
+        System.out.println();
+        System.out.println("Rooting/tagging backend (ASTRAL-Pro3)");
+        row("Executable", rooting.executable().toString());
+        row("Usable", rooting.usable() ? "yes" : "NO");
+        row(rooting.usable() ? "Detail" : "Reason", rooting.detail());
+        if (!rooting.usable()) row("Fix", GeneTreeRooterTagger.REBUILD_HINT);
 
         System.out.println();
         System.out.println("Native backends");
@@ -59,8 +69,13 @@ public final class RuntimeDiagnostics {
         row("Current directory readable", Boolean.toString(Files.isReadable(cwd)));
         row("Current directory writable", Boolean.toString(Files.isWritable(cwd)));
         System.out.println();
-        System.out.println("Result: " + (cfg.getComputeMode() == Config.ComputeMode.GPU
-            ? "GPU execution is ready." : "CPU execution is ready."));
+        if (!rooting.usable()) {
+            System.out.println("Result: NOT READY — the rooting/tagging backend does not run on this machine;"
+                + " inference and tag-only mode will fail until it is rebuilt.");
+        } else {
+            System.out.println("Result: " + (cfg.getComputeMode() == Config.ComputeMode.GPU
+                ? "GPU execution is ready." : "CPU execution is ready."));
+        }
     }
 
     private static void backend(String name, boolean loaded, String detail) {
