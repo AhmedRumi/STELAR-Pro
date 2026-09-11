@@ -91,7 +91,7 @@ public final class UniqueTaxonSubtreeHashes {
     public int numSeeds() { return m; }
 
     /**
-     * Release the persistent node-to-hash indexes after all S1 consumers finish
+     * Release the persistent node-to-hash indexes after all candidate consumers finish
      * construction. Canonical hashes already copied into X, partitions, and DP
      * transitions remain valid.
      */

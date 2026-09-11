@@ -17,20 +17,18 @@ public final class CliPresetsTest {
         check(cfg.isKeepPolytomyDuringInference(),
             "keep-polytomy-during-inference config");
         cfg.setKeepPolytomyDuringInference(false);
-        // S2/S3 are recognized names, but remain inert reserved markers. Main's
-        // current-scope validation rejects them before any analysis starts.
         for (int level = 1; level <= 3; level++) {
             cfg.setCompletionMethod(Config.CompletionMethod.DISTANCE);
             cfg.setStepBFastRestriction(false);
             CliPresets.applySearchSpace("S" + level, cfg);
             check(cfg.getSearchSpace() == Config.SearchSpace.valueOf("S" + level),
                 "S" + level + " recognized");
-            assertS1Defaults("S" + level, cfg);
+            assertPresetDefaults("S" + level, cfg, level == 2);
 
             CliPresets.applySearchSpace(Integer.toString(level), cfg);
             check(cfg.getSearchSpace() == Config.SearchSpace.valueOf("S" + level),
                 level + " recognized");
-            assertS1Defaults(Integer.toString(level), cfg);
+            assertPresetDefaults(Integer.toString(level), cfg, level == 2);
         }
 
         expectInvalid(() -> CliPresets.applySearchSpace("S4", cfg));
@@ -39,7 +37,13 @@ public final class CliPresetsTest {
     }
 
     private static void assertS1Defaults(String label, Config cfg) {
-        check(cfg.getSearchMode() == Config.SearchMode.LOCAL, label + " search mode");
+        assertPresetDefaults(label, cfg, false);
+    }
+
+    private static void assertPresetDefaults(String label, Config cfg, boolean full) {
+        check(cfg.getSearchMode() == (full
+                ? Config.SearchMode.FULL : Config.SearchMode.LOCAL),
+            label + " search mode");
         check(!cfg.isAutoCompleteIncompleteTrees(), label + " autocomplete");
         check(!cfg.isConsensusExperimental(), label + " consensus");
         check(!cfg.isStepBQuadraticNnBalls(), label + " quadratic");

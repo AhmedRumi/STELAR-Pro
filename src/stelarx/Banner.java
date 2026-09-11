@@ -176,9 +176,11 @@ public class Banner {
         out.println();
 
         // ── Search ─────────────────────────────────────────────────────────
-        String searchSpace = cfg.getSearchSpace().name()
-            + (cfg.getSearchSpace() == Config.SearchSpace.S1
-                ? "  (default)" : "  (reserved; not implemented)");
+        String searchSpace = switch (cfg.getSearchSpace()) {
+            case S1 -> "S1  (default)";
+            case S2 -> "S2  (DISCO + completion + UPGMA + cross-tree)";
+            case S3 -> "S3  (reserved; not implemented)";
+        };
         out.println("    " + row("Search space",  c(WHT, searchSpace)));
         out.println("    " + row("Search mode",   c(WHT, cfg.getSearchMode().name().toLowerCase())));
         out.println("    " + row("Hash seeds",    c(WHT, String.valueOf(cfg.getNumHashSeeds()))));

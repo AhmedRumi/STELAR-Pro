@@ -17,6 +17,7 @@ import stelarx.greedy.GreedyConsensusVerifier;
 import stelarx.gpu.GPUDPBuilder;
 import stelarx.gpu.GPUWeightCalculator;
 import stelarx.partition.PartitionTable;
+import stelarx.pro.DiscoDecomposer;
 import stelarx.pro.GeneTreeRooterTagger;
 import stelarx.pro.GeneTreePolytomyResolver;
 import stelarx.pro.UniqueTaxonSubtreeHashes;
@@ -166,23 +167,70 @@ public class Main {
                 return;
             }
 
-            // ── Phase 1b: Auto-complete incomplete gene trees (optional) ──────
-            // Entered only when --autocomplete-incomplete-gene-trees or
-            // --verify-distance-matrix is explicitly requested.  The baseline
-            // (complete trees, no flag) skips this block entirely — no library
-            // load, no stream scan, zero overhead.
+            // ── Phase 1b: Optional candidate-tree enrichment ─────────────────
+            // S2 decomposes multicopy trees with DISCO, completes those
+            // single-copy trees, and adds a UPGMA guide. S1 skips this work.
             //
-            // IMPORTANT: originalTrees is saved BEFORE completion and is used for
-            // tripartition extraction (Phase 4) and weight calculation (Phase 6).
-            // X (ClusterTable) and DP transitions are built from the completed trees
-            // so that all bipartitions span the full taxon set — exactly what ASTRAL-MP
-            // does.  Weight calculation must use the ORIGINAL gene trees (as ASTRAL-MP
-            // does via inference.trees = originalInompleteGeneTrees) so triplet scores
-            // reflect actual gene-tree signal, not the artificially inserted taxa.
+            // IMPORTANT: originalTrees is saved before enrichment and is used for
+            // rooted-partition extraction (Phase 4) and weights (Phase 6). Candidate
+            // trees may contain completed or guide-tree relationships, but those
+            // artificial relationships never become scoring observations.
             List<Tree> originalTrees = trees; // always points to pre-completion trees
             SimilarityMatrix similarityMatrix = null; // visible to Phase 3.5 (Step A)
             Tree upgmaGuideTree = null; // retained for S3 gene-tree-polytomy enrichment
-            if (cfg.isAutoCompleteIncompleteTrees() || cfg.isVerifyDistanceMatrix()
+            if (cfg.getSearchSpace() == Config.SearchSpace.S2 && !cfg.isScoreOnly()) {
+                boolean gpuSim = cfg.getComputeMode() == Config.ComputeMode.GPU
+                    && GPUSimilarityMatrix.tryLoad();
+                long t1b = PhaseLogger.begin(
+                    "Phase 1b S2 DISCO + completion + UPGMA guide", gpuSim);
+
+                // DISCO trees only propose extra candidates. Keep originalTrees
+                // untouched because Phase 4/6 must score the GDL triplet model
+                // against the rooted/tagged multicopy families themselves.
+                DiscoDecomposer.Result disco = DiscoDecomposer.decomposeAll(
+                    originalTrees, registry.size(), originalTrees.size(), 4);
+                List<Tree> completedDiscoTrees = disco.trees();
+                Logging.info("S2 DISCO: %d rooted/tagged family tree(s) -> %d retained "
+                        + "single-copy tree(s); %d duplication cut(s), %d tree(s) below 4 leaves discarded",
+                    originalTrees.size(), completedDiscoTrees.size(),
+                    disco.duplicationCuts(), disco.discardedSmallTrees());
+
+                if (!completedDiscoTrees.isEmpty()) {
+                    // Retain STELAR-X's quartet similarity/completion heuristic for
+                    // this first S2 implementation, but apply it only to DISCO's
+                    // single-copy trees where its one-position taxon maps are valid.
+                    similarityMatrix = gpuSim
+                        ? SimilarityMatrixBuilder.buildGPU(completedDiscoTrees, registry.size())
+                        : SimilarityMatrixBuilder.buildCPU(completedDiscoTrees, registry.size());
+                    completedDiscoTrees = TreeCompleter.completeAll(
+                        completedDiscoTrees, similarityMatrix, registry.size());
+                    for (Tree candidateTree : completedDiscoTrees) {
+                        markSyntheticCandidateNodes(candidateTree.root);
+                    }
+
+                    upgmaGuideTree = UPGMAClusterer.build(
+                        similarityMatrix, originalTrees.size() + completedDiscoTrees.size());
+                    markSyntheticCandidateNodes(upgmaGuideTree.root);
+                    if (cfg.getDumpCompletedTreesFile() != null) {
+                        dumpCompletedTrees(completedDiscoTrees, registry,
+                            cfg.getDumpCompletedTreesFile());
+                    }
+                } else {
+                    Logging.info("S2 DISCO: no component has at least four leaves; "
+                        + "completion and UPGMA enrichment skipped");
+                }
+
+                List<Tree> candidateTrees = new ArrayList<>(originalTrees.size()
+                    + completedDiscoTrees.size() + (upgmaGuideTree == null ? 0 : 1));
+                candidateTrees.addAll(originalTrees);
+                candidateTrees.addAll(completedDiscoTrees);
+                if (upgmaGuideTree != null) candidateTrees.add(upgmaGuideTree);
+                trees = candidateTrees;
+                Logging.info("S2 candidate sources: %d original + %d completed DISCO + %d UPGMA tree",
+                    originalTrees.size(), completedDiscoTrees.size(),
+                    upgmaGuideTree == null ? 0 : 1);
+                PhaseLogger.end("Phase 1b S2 candidate enrichment", t1b, gpuSim);
+            } else if (cfg.isAutoCompleteIncompleteTrees() || cfg.isVerifyDistanceMatrix()
                     || cfg.isVerifySimilarityMatrix() || cfg.isVerifyUpgma()) {
                 boolean gpuDist = (cfg.getComputeMode() == Config.ComputeMode.GPU)
                                   && GPUDistanceMatrix.tryLoad();
@@ -269,14 +317,13 @@ public class Main {
 
                 PhaseLogger.end("Phase 1b Auto-complete gene trees", t1b, gpuActive);
             }
-            // After Phase 1b:
-            //   trees         = completed gene trees (or original if no autocomplete / no incomplete)
-            //   originalTrees = original gene trees (same reference as trees when no autocomplete)
+            // After Phase 1b, trees supplies candidate exemplars while
+            // originalTrees always remains the rooted/tagged scoring input.
 
             // ── Phase 2: Taxon hashing + prefix arrays ────────────────────────
-            // pref     — built from completed trees; used for ClusterTable and DPTable
+            // pref     — built from candidate-source trees; used for ClusterTable and DPTable
             // prefParts — built from original trees; used for PartitionTable (tripartition scoring)
-            // When no autocomplete (originalTrees == trees), prefParts == pref (same object).
+            // In S1 without auxiliary completion, prefParts == pref (same object).
             long t2 = PhaseLogger.begin("Phase 2  Taxon hashing", false);
             TaxonHasher hasher = new TaxonHasher(
                 registry.size(), cfg.getNumHashSeeds(), cfg.getBaseSeed());
@@ -432,7 +479,7 @@ public class Main {
                 return;
             }
 
-            // ── Phase 5: DP search space (from COMPLETED trees) ───────────────
+            // ── Phase 5: Local DP transitions from candidate-source trees ────
             long t5 = PhaseLogger.begin("Phase 5  DP local transitions", false);
             DPTable dpTable = new DPTable(trees, pref, clusterTable, candidateHashes);
             // X, rooted partitions, and DP transitions now own every canonical
@@ -481,8 +528,8 @@ public class Main {
             boolean gpuWeight = (cfg.getComputeMode() == Config.ComputeMode.GPU)
                                 && GPUWeightCalculator.isLoaded();
             long t6 = PhaseLogger.begin("Phase 6  Weight calculation", gpuWeight);
-            // weightClusterTrees = completed trees (+ any consensus exemplar trees from
-            //                      the emission bridge) for cluster exemplar position lookups
+            // weightClusterTrees = candidate-source trees (+ any consensus exemplars)
+            //                      for cluster position lookups
             // originalTrees      = original trees (for rooted gene-tree triplet scoring)
             WeightTable weightTable = new WeightTable(dpTable, partTable, clusterTable, weightClusterTrees, originalTrees);
             PhaseLogger.end("Phase 6  Weight calculation", t6, gpuWeight);
@@ -881,6 +928,21 @@ public class Main {
         return hasPolytomousNode(node.left) || hasPolytomousNode(node.right);
     }
 
+    /** Admit every internal node of an auxiliary S2 tree as a candidate proposal. */
+    private static void markSyntheticCandidateNodes(stelarx.tree.TreeNode node) {
+        if (node == null || node.isLeaf()) return;
+        node.isDuplicationNode = false;
+        node.isSpeciationNode = true;
+        if (node.isPolytomous()) {
+            for (stelarx.tree.TreeNode child : node.children) {
+                markSyntheticCandidateNodes(child);
+            }
+        } else {
+            markSyntheticCandidateNodes(node.left);
+            markSyntheticCandidateNodes(node.right);
+        }
+    }
+
     private static void dumpUpgmaBipartitions(Tree upgmaTree, TaxonRegistry registry) {
         int n = registry.size();
         StringBuilder taxaLine = new StringBuilder("taxa=");
@@ -995,8 +1057,9 @@ public class Main {
               -vv | -vvv                       Debug or trace logging
 
             Search and scoring:
-              --search-space S1|S2|S3          Search-space path (default: S1;
-                                                 S2/S3 are reserved for future versions)
+              --search-space S1|S2|S3          S1 native search (default); S2 adds DISCO,
+                                                 completion, UPGMA, and cross-tree transitions;
+                                                 S3 is reserved
               --search-mode local|full         Legacy/advanced DP search control
               --large-n-score-type T            int128 (exact) | double
               --no-prune-search-space           Disable reachability pruning
@@ -1275,19 +1338,21 @@ public class Main {
             java.nio.file.Path.of(second).toAbsolutePath().normalize());
     }
 
-    /** Keep incomplete STELAR-Pro paths from being selected accidentally. */
+    /** Keep unsupported search-space combinations from being selected accidentally. */
     private static void validateCurrentProScope(Config cfg) {
-        if (cfg.getSearchSpace() != Config.SearchSpace.S1) {
+        if (cfg.getSearchSpace() == Config.SearchSpace.S3) {
             throw new UnsupportedOperationException(
-                cfg.getSearchSpace() + " is reserved for a future STELAR-Pro implementation; "
-                + "the current release uses S1 by default");
+                "S3 is reserved for a future STELAR-Pro implementation");
         }
-        if (cfg.getSearchMode() != Config.SearchMode.LOCAL
+        Config.SearchMode expectedMode = cfg.getSearchSpace() == Config.SearchSpace.S2
+            ? Config.SearchMode.FULL : Config.SearchMode.LOCAL;
+        if (cfg.getSearchMode() != expectedMode
                 || cfg.isAutoCompleteIncompleteTrees()
                 || cfg.isConsensusExperimental()
                 || cfg.isResolveInputGeneTreePolytomies()) {
             throw new UnsupportedOperationException(
-                "STELAR-Pro currently supports only search-space path S1");
+                cfg.getSearchSpace() + " requires its built-in "
+                    + expectedMode.name().toLowerCase() + " search configuration");
         }
     }
 

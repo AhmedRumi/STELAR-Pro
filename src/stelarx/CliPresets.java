@@ -28,7 +28,12 @@ final class CliPresets {
 
         switch (preset) {
             case "1", "s1" -> cfg.setSearchSpace(Config.SearchSpace.S1);
-            case "2", "s2" -> cfg.setSearchSpace(Config.SearchSpace.S2);
+            case "2", "s2" -> {
+                cfg.setSearchSpace(Config.SearchSpace.S2);
+                // S2 contains every local transition plus compatible cross-tree
+                // recombinations over the enriched candidate cluster set.
+                cfg.setSearchMode(Config.SearchMode.FULL);
+            }
             case "3", "s3" -> cfg.setSearchSpace(Config.SearchSpace.S3);
             default -> throw new IllegalArgumentException(
                 "unknown search space '" + value + "' (expected S1-S3 or 1-3)");

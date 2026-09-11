@@ -42,6 +42,7 @@ javac -cp "${ROOT}/build" -d "$TEST_CLASSES" \
   "${ROOT}/test/stelarx/completion/RootedPolytomyLifecycleTest.java" \
   "${ROOT}/test/stelarx/pro/GeneTreeRooterTaggerTest.java" \
   "${ROOT}/test/stelarx/pro/GeneTreePolytomyResolverTest.java" \
+  "${ROOT}/test/stelarx/pro/DiscoDecomposerTest.java" \
   "${ROOT}/test/stelarx/pro/DuplicateAwareCandidateTest.java" \
   "${ROOT}/test/stelarx/tree/GeneTreeEventTagTest.java" \
   "${ROOT}/test/stelarx/util/Int128Test.java" \
@@ -60,6 +61,7 @@ java -cp "$CP" stelarx.cluster.ResidualLookupTest \
   "${ROOT}/test/input/test_incomplete.tre"
 java -cp "$CP" stelarx.pro.GeneTreeRooterTaggerTest "${WORK}/root-and-tag"
 java -cp "$CP" stelarx.pro.GeneTreePolytomyResolverTest "${WORK}/polytomy-resolution"
+java -cp "$CP" stelarx.pro.DiscoDecomposerTest "${WORK}/disco"
 java -cp "$CP" stelarx.pro.DuplicateAwareCandidateTest "${WORK}/duplicate-candidates"
 java -cp "$CP" stelarx.tree.GeneTreeEventTagTest "${WORK}/event-tags"
 java -Xmx1g -cp "$CP" PackedPreflightTest
@@ -131,13 +133,13 @@ done
 expect_failure unrooted-mode "${JAVA[@]}" --cpu -q --unrooted -i "${WORK}/valid-genes.tre"
 expect_failure bad-preset "${JAVA[@]}" --cpu -q -i "${WORK}/valid-genes.tre" --search-space S4
 grep -q "unknown search space" "${WORK}/reject-bad-preset.log"
-for preset in S2 S3; do
-  label="reserved-${preset}"
-  expect_failure "$label" "${JAVA[@]}" --cpu -q \
-    -i "${WORK}/valid-genes.tre" --search-space "$preset"
-  grep -Fq "${preset} is reserved for a future STELAR-Pro implementation" \
-    "${WORK}/reject-${label}.log"
-done
+"${JAVA[@]}" --cpu -q -i "${WORK}/valid-genes.tre" --search-space S2 \
+  >"${WORK}/accepted-S2.log" 2>&1
+grep -Fq "Triplet score" "${WORK}/accepted-S2.log"
+expect_failure reserved-S3 "${JAVA[@]}" --cpu -q \
+  -i "${WORK}/valid-genes.tre" --search-space S3
+grep -Fq "S3 is reserved for a future STELAR-Pro implementation" \
+  "${WORK}/reject-reserved-S3.log"
 for option in --intersection-method --im --weight-intersection-method; do
   label="removed-${option#--}"
   expect_failure "$label" "${JAVA[@]}" --cpu -q \
@@ -178,7 +180,7 @@ NO_COLOR=1 "${ROOT}/stelar-pro" --no-build --version >"${WORK}/version.log" 2>&1
 grep -q "STELAR-Pro  v" "${WORK}/version.log"
 NO_COLOR=1 "${ROOT}/stelar-pro" --no-build --help >"${WORK}/help.log" 2>&1
 grep -q -- "--search-space" "${WORK}/help.log"
-grep -q -- "S2/S3 are reserved" "${WORK}/help.log"
+grep -q -- "S2 adds DISCO" "${WORK}/help.log"
 if grep -q -- "--intersection-method\|--weight-intersection-method" "${WORK}/help.log"; then
   echo "Removed intersection options are still advertised in help" >&2
   exit 1

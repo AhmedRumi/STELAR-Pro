@@ -131,7 +131,7 @@ public class ClusterTable {
         this(trees, pref, numTaxa, false, null);
     }
 
-    /** STELAR-Pro S1 entry point with duplicate-invariant subtree hashes. */
+    /** STELAR-Pro entry point with duplicate-invariant subtree hashes. */
     public ClusterTable(List<Tree> trees, PrefixHashArrays pref, int numTaxa,
                         UniqueTaxonSubtreeHashes uniqueTaxonHashes) {
         this(trees, pref, numTaxa, false, uniqueTaxonHashes);

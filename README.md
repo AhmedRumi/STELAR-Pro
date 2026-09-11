@@ -59,10 +59,11 @@ inferred result beneath it—preview or run the dedicated cleanup command:
 ./clear-bulk-simulated.sh --yes
 ```
 
-The current STELAR-Pro implementation uses S1 and its built-in smaller-side
-intersection path by default; neither needs a command-line option. S2 and S3
-are reserved names and are rejected until their STELAR-Pro implementations are
-ready. The old intersection-selector options have been removed.
+STELAR-Pro uses S1 and its built-in smaller-side intersection path by default.
+S2 retains the original rooted/tagged multicopy trees for scoring, and enlarges
+the candidate search using completed DISCO single-copy trees, a UPGMA guide,
+and cross-tree transitions. Select it with `--search-space S2`. S3 remains
+reserved. The old intersection-selector options have been removed.
 
 Score a supplied rooted species tree with:
 

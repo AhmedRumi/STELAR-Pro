@@ -58,7 +58,7 @@ public class DPTable {
         this(trees, pref, clusterTable, null);
     }
 
-    /** STELAR-Pro S1 entry point with duplicate-invariant subtree hashes. */
+    /** STELAR-Pro entry point with duplicate-invariant subtree hashes. */
     public DPTable(List<Tree> trees, PrefixHashArrays pref, ClusterTable clusterTable,
                    UniqueTaxonSubtreeHashes uniqueTaxonHashes) {
         long t0 = System.nanoTime();

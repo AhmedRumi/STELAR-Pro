@@ -2,7 +2,7 @@ package stelarx;
 
 public class Config {
     public enum ComputeMode      { AUTO, CPU, GPU }
-    /** S2 and S3 are reserved for future STELAR-Pro search-space implementations. */
+    /** S1 is native candidates; S2 adds DISCO/completion/UPGMA/full-DP enrichment. */
     public enum SearchSpace      { S1, S2, S3 }
     public enum SearchMode       { LOCAL, FULL }
     /**

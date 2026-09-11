@@ -36,13 +36,15 @@ java -cp "${ROOT}/build" stelarx.Main --cpu -q \
 test -s "${WORK}/default.tre"
 grep -q "Triplet score" "${WORK}/default.log"
 
-for preset in S2 S3; do
-  expect_failure "reserved-${preset}" \
-    "${JAVA[@]}" --cpu -q \
-      -i "${ROOT}/test/input/test_incomplete.tre" --search-space "$preset"
-  grep -qF "$preset is reserved for a future STELAR-Pro implementation" \
-    "${WORK}/reserved-${preset}.log"
-done
+"${JAVA[@]}" --cpu -q -i "${ROOT}/test/input/test_incomplete.tre" \
+  --search-space S2 -o "${WORK}/s2.tre" >"${WORK}/s2.log" 2>&1
+test -s "${WORK}/s2.tre"
+grep -q "Triplet score" "${WORK}/s2.log"
+expect_failure reserved-S3 \
+  "${JAVA[@]}" --cpu -q \
+    -i "${ROOT}/test/input/test_incomplete.tre" --search-space S3
+grep -qF "S3 is reserved for a future STELAR-Pro implementation" \
+  "${WORK}/reserved-S3.log"
 
 for option in --intersection-method --im --weight-intersection-method; do
   label="removed-${option#--}"

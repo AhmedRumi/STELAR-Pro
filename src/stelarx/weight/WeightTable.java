@@ -74,7 +74,7 @@ public class WeightTable {
     // -------------------------------------------------------------------------
 
     /**
-     * @param clusterTrees  completed gene trees — used for cluster exemplar position lookups
+     * @param clusterTrees  candidate-source trees — used for cluster exemplar position lookups
      *                      (Cluster.treeIndex refers into this list)
      * @param partTrees     original (pre-completion) gene trees — used for rooted-triplet
      *                      scoring (Partition.treeIndex refers into this list).

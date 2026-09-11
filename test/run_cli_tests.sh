@@ -19,7 +19,7 @@ VERSION_TEXT="$(NO_COLOR=1 "${ROOT}/stelar-pro" --version --no-build)"
 HELP_TEXT="$(NO_COLOR=1 "${ROOT}/stelar-pro" --help 2>&1)"
 [[ "$HELP_TEXT" == *"STELAR-Pro wrapper"* ]]
 [[ "$HELP_TEXT" == *"--search-space"* ]]
-[[ "$HELP_TEXT" == *"S2/S3 are reserved"* ]]
+[[ "$HELP_TEXT" == *"S2 adds DISCO"* ]]
 [[ "$HELP_TEXT" != *"--intersection-method"* ]]
 [[ "$HELP_TEXT" != *"--weight-intersection-method"* ]]
 [[ "$HELP_TEXT" == *"--gpu-strict"* ]]
@@ -51,11 +51,14 @@ expect_launcher_failure() {
   grep -Fq -- "$expected" "${WORK}/reject-${label}.log"
 }
 
-for preset in S2 S3; do
-  expect_launcher_failure "reserved-${preset}" \
-    "${preset} is reserved for a future STELAR-Pro implementation" \
-    --search-space "$preset"
-done
+S2_TREE="${WORK}/s2-species-tree.tre"
+NO_COLOR=1 "${ROOT}/stelar-pro" --no-build --cpu -q \
+  -i "${ROOT}/test/input/stelar_candidate_5taxa.tre" \
+  -o "$S2_TREE" --search-space S2 >/dev/null 2>&1
+[[ -s "$S2_TREE" ]]
+expect_launcher_failure reserved-S3 \
+  "S3 is reserved for a future STELAR-Pro implementation" \
+  --search-space S3
 for option in --intersection-method --im --weight-intersection-method; do
   expect_launcher_failure "removed-${option#--}" \
     "${option} was removed" "$option" I1

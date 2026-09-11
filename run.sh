@@ -67,7 +67,7 @@ Optional:
   --gpu              Force GPU mode
   --auto             Automatically select CUDA or CPU (default)
   --gpu-strict       Require CUDA; do not fall back to CPU
-  --search-space     S1 (default); S2/S3 are reserved for future versions
+  --search-space     S1 (default) | S2 (DISCO/completion/UPGMA/full search); S3 reserved
   --search-mode      local | full
   --no-prune-search-space  Disable the DP-reachability weight prune (default: on)
   --threads, --num-threads, -t

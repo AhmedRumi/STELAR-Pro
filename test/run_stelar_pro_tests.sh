@@ -13,6 +13,7 @@ mkdir -p "${WORK}/classes"
 javac -cp "${ROOT}/build" -d "${WORK}/classes" \
   "${ROOT}/test/stelarx/pro/GeneTreeRooterTaggerTest.java" \
   "${ROOT}/test/stelarx/pro/GeneTreePolytomyResolverTest.java" \
+  "${ROOT}/test/stelarx/pro/DiscoDecomposerTest.java" \
   "${ROOT}/test/stelarx/pro/DuplicateAwareCandidateTest.java" \
   "${ROOT}/test/stelarx/pro/MulticopyWeightIndexTest.java" \
   "${ROOT}/test/stelarx/pro/SpeciationCandidateFilterTest.java" \
@@ -21,6 +22,7 @@ javac -cp "${ROOT}/build" -d "${WORK}/classes" \
 CP="${ROOT}/build:${WORK}/classes"
 java -cp "$CP" stelarx.pro.GeneTreeRooterTaggerTest "${WORK}/root-and-tag"
 java -cp "$CP" stelarx.pro.GeneTreePolytomyResolverTest "${WORK}/polytomy-resolution"
+java -cp "$CP" stelarx.pro.DiscoDecomposerTest "${WORK}/disco"
 java -cp "$CP" stelarx.pro.DuplicateAwareCandidateTest "${WORK}/duplicate-candidates"
 java -cp "$CP" stelarx.pro.MulticopyWeightIndexTest "${WORK}/multicopy-weight-index"
 java -cp "$CP" stelarx.tree.GeneTreeEventTagTest "${WORK}/event-tags"
