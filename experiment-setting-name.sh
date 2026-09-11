@@ -126,3 +126,88 @@ build_setting_name_from_opts() {
   done
   printf '%s' "$result"
 }
+
+# ASTRAL-Pro3 has several meaningful short options that are unrelated to the
+# STELAR-Pro short-option vocabulary above. Encode them explicitly so option
+# sweeps cannot overwrite one another (for example, default rounds versus -R).
+build_astral_pro3_setting_name_from_opts() {
+  local raw="$1"
+  local -a tokens=()
+  local -a parts=()
+  local i=0 token key value next
+
+  if [[ -z "${raw// }" ]]; then
+    printf 'default'
+    return
+  fi
+
+  read -r -a tokens <<< "$raw"
+  while (( i < ${#tokens[@]} )); do
+    token="${tokens[$i]}"
+    case "$token" in
+      -v|--verbose)
+        # Verbosity does not define an experimental setting, but it consumes a
+        # value in ASTRAL-Pro3 (unlike STELAR-Pro's -v flag).
+        if (( i + 1 < ${#tokens[@]} )); then ((i+=2)); else ((i+=1)); fi
+        ;;
+      -R|--moreround) parts+=("more-rounds_true"); ((i+=1)) ;;
+      -C|--scoring) parts+=("scoring_true"); ((i+=1)) ;;
+      -E|--noexit) parts+=("resolve-polytomies_true"); ((i+=1)) ;;
+      -t|--thread)
+        if (( i + 1 < ${#tokens[@]} )); then
+          parts+=("threads_$(sanitize_setting_part "${tokens[$((i + 1))]}")")
+          ((i+=2))
+        else
+          ((i+=1))
+        fi
+        ;;
+      -r|--round|-s|--subsample|-u|--support|-w|--downweightrepeat|-l|--lambda|-a|--mapping|-c|--constraint|-g|--guide|-e|--exit)
+        key="${token#--}"
+        case "$token" in
+          -r) key=round ;; -s) key=subsample ;; -u) key=support ;;
+          -w) key=downweightrepeat ;; -l) key=lambda ;; -a) key=mapping ;;
+          -c) key=constraint ;; -g) key=guide ;; -e) key=exit ;;
+        esac
+        if (( i + 1 < ${#tokens[@]} )); then
+          parts+=("$(sanitize_setting_part "$key")_$(sanitize_setting_part "${tokens[$((i + 1))]}")")
+          ((i+=2))
+        else
+          ((i+=1))
+        fi
+        ;;
+      --*=*)
+        key="${token%%=*}"
+        value="${token#*=}"
+        if [[ "$key" == --verbose ]]; then
+          ((i+=1))
+          continue
+        fi
+        parts+=("$(sanitize_setting_part "${key#--}")_$(sanitize_setting_part "$value")")
+        ((i+=1))
+        ;;
+      --*)
+        key="${token#--}"
+        next="${tokens[$((i + 1))]:-}"
+        if [[ -n "$next" && ( "$next" != -* || "$next" =~ ^-[0-9] ) ]]; then
+          parts+=("$(sanitize_setting_part "$key")_$(sanitize_setting_part "$next")")
+          ((i+=2))
+        else
+          parts+=("$(sanitize_setting_part "$key")_true")
+          ((i+=1))
+        fi
+        ;;
+      *) ((i+=1)) ;;
+    esac
+  done
+
+  if [[ ${#parts[@]} -eq 0 ]]; then
+    printf 'default'
+    return
+  fi
+
+  local result="" part
+  for part in "${parts[@]}"; do
+    if [[ -z "$result" ]]; then result="$part"; else result+="__${part}"; fi
+  done
+  printf '%s' "$result"
+}

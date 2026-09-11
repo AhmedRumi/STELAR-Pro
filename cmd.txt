@@ -669,6 +669,16 @@ done
   --num-replicates 5 \
   --opts-list "--search-space S1 --intersection-method I1;" --no-notify
 
+./run-bulk-simulated.sh \
+  --method stelar-pro \
+  --num-replicates 5 \
+  --opts-list "--search-space S1" --no-notify
+
+
+./run-bulk-simulated.sh \
+  --method astral-pro3 \
+  --num-replicates 1
+
 
 
 

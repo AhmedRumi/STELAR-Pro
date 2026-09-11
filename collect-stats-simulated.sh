@@ -15,8 +15,9 @@ set -euo pipefail
 SCRIPT_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 source "${SCRIPT_ROOT}/scripts/phylogeny-data-dir.sh"
 
-# Algorithm configuration - modify this to select which algorithms to collect
-ALGORITHMS=("stelar-pro")
+# Collect both supported inference methods. Missing methods are simply reported
+# and skipped, so this remains compatible with STELAR-Pro-only result trees.
+ALGORITHMS=("stelar-pro" "astral-pro3")
 
 BASE_DIR="$SCRIPT_ROOT"
 SIMPHY_DIR=""

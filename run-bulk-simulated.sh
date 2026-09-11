@@ -1,11 +1,12 @@
 #!/usr/bin/env bash
 # run-bulk-simulated.sh
 #
-# Runs sim.sh and test-stelar-pro-simulated.sh or test-baseline-simulated.sh
+# Runs sim.sh and the selected STELAR-Pro/ASTRAL-Pro3 simulated-data runner
 # over all combinations of parameter lists.
 #
 # Usage:
-#   ./run-bulk-simulated.sh -m stelar
+#   ./run-bulk-simulated.sh -m stelar-pro
+#   ./run-bulk-simulated.sh -m astral-pro3 --opts "--thread 16 --seed 42"
 #   ./run-bulk-simulated.sh --project-root /path/to/checkout
 
 set -euo pipefail
@@ -77,17 +78,10 @@ IS_SIMULATED_CONFIG_EXCLUDED() {
   return 1
 }
 
-# Method-specific options (passed through)
-ASTER_OPTS=""
-ASTER_BIN=""
-ASTRAL_OPTS=""
-STELAR_PRO_OPTS_LIST_RAW=""
-ASTRAL_XMS=""
-ASTRAL_XMX=""
-TREEQMC_OPTS=""
-WQFM_OPTS=""
-SUPERTRIPLETS_OPTS=""
-TMC_OPTS=""
+# Selected-method options (passed through)
+METHOD_OPTS=""
+METHOD_OPTS_LIST_RAW=""
+ASTRAL_PRO3_BIN=""
 
 # Permit the exclusion predicate and uppercase configuration array to be loaded
 # by the isolated regression test without executing a simulated-data sweep.
@@ -99,10 +93,10 @@ print_help() {
   cat <<EOF
 run-bulk-simulated.sh
 
-Runs sim.sh and test-stelar-pro-simulated.sh or test-baseline-simulated.sh for all combinations of parameter lists.
+Runs SimPhy preparation and STELAR-Pro or ASTRAL-Pro3 for all combinations of parameter lists.
 
 Options:
-  --method, -m      Method to use: stelar-pro (default: stelar-pro)
+  --method, -m      stelar-pro or astral-pro3 (default: stelar-pro)
   --project-root    STELAR-Pro checkout root (default: this script's directory)
   --base-dir, -b    Compatibility alias for --project-root
   --num-replicates, -n  Number of replicates to run (default: 1)
@@ -116,13 +110,15 @@ Options:
   --fresh           Pass --fresh to sim.sh and test scripts (recreate outputs)
   --no-gpu-monitor  Disable GPU-memory sampling
   --no-notify, -nn  Disable completion notifications
-  --opts, --alg-opts       Extra options for one STELAR-Pro simulated setting
+  --opts, --alg-opts       Extra options for the selected method
   --opts-list, --alg-opts-list
-                         Semicolon-separated list of STELAR-Pro option strings to loop over
+                         Semicolon-separated option strings to loop over
+  --astral-pro3-bin FILE  Override bundled ASTER-Linux/bin/astral-pro3
   --help, -h        Show this message
 
 Examples:
   ./run-bulk-simulated.sh --opts "--threads 8 -vv"
+  ./run-bulk-simulated.sh -m astral-pro3 --opts "--thread 16 --seed 42"
   ./run-bulk-simulated.sh --taxa-list "10,20" --genes-list "10,50" --num-replicates 3
   ./run-bulk-simulated.sh --opts-list "--threads 8 -vv;--threads 16 -vv"
 EOF
@@ -140,10 +136,11 @@ while [[ $# -gt 0 ]]; do
     --spmin-list) read -r -a SPMIN_LIST <<< "${2//,/ }"; shift 2 ;;
     --spmax-list) read -r -a SPMAX_LIST <<< "${2//,/ }"; shift 2 ;;
     --simphy-data-dir) SIMPHY_DATA_DIR="$2"; shift 2 ;;
-    --opts|--alg-opts|--stelar-pro-opts) ASTRAL_OPTS="$2"; shift 2 ;;
-    --opts=*|--alg-opts=*|--stelar-pro-opts=*) ASTRAL_OPTS="${1#*=}"; shift ;;
-    --opts-list|--alg-opts-list|--stelar-pro-opts-list) STELAR_PRO_OPTS_LIST_RAW="$2"; shift 2 ;;
-    --opts-list=*|--alg-opts-list=*|--stelar-pro-opts-list=*) STELAR_PRO_OPTS_LIST_RAW="${1#*=}"; shift ;;
+    --opts|--alg-opts|--stelar-pro-opts|--astral-pro3-opts) METHOD_OPTS="$2"; shift 2 ;;
+    --opts=*|--alg-opts=*|--stelar-pro-opts=*|--astral-pro3-opts=*) METHOD_OPTS="${1#*=}"; shift ;;
+    --opts-list|--alg-opts-list|--stelar-pro-opts-list|--astral-pro3-opts-list) METHOD_OPTS_LIST_RAW="$2"; shift 2 ;;
+    --opts-list=*|--alg-opts-list=*|--stelar-pro-opts-list=*|--astral-pro3-opts-list=*) METHOD_OPTS_LIST_RAW="${1#*=}"; shift ;;
+    --astral-pro3-bin|--astral-pro-bin) ASTRAL_PRO3_BIN="$2"; shift 2 ;;
     --fresh) FRESH=true; shift ;;
     --no-gpu-monitor) GPU_MONITOR=false; shift ;;
     --no-notify|-nn) NO_NOTIFY=true; shift ;;
@@ -155,11 +152,26 @@ done
 # Validate method
 case "$METHOD" in
   stelar-pro|astral-x|stelar) METHOD="stelar-pro" ;;
+  astral-pro3|astral-pro|apro3) METHOD="astral-pro3" ;;
   *)
-    echo "Error: --method must be stelar-pro."
+    echo "Error: --method must be stelar-pro or astral-pro3."
     exit 1
     ;;
 esac
+
+# S1/S2/S3 are STELAR-Pro candidate search spaces. ASTRAL-Pro3 constructs and
+# explores its own search space, controlled by --round/--subsample (or -R).
+# Reject this before starting SimPhy, since the native binary otherwise prints
+# its help, returns success, and leaves no output tree.
+if [[ "$METHOD" == "astral-pro3" ]]; then
+  ASTRAL_PRO3_OPTS_TO_CHECK="${METHOD_OPTS};${METHOD_OPTS_LIST_RAW}"
+  if [[ "$ASTRAL_PRO3_OPTS_TO_CHECK" =~ (^|[[:space:];])--search-space([=[:space:];]|$) ]]; then
+    echo "Error: --search-space is a STELAR-Pro-only option and cannot be used with --method astral-pro3." >&2
+    echo "ASTRAL-Pro3 uses --round N and --subsample N, or -R for more search rounds." >&2
+    echo "For its defaults, omit --opts/--opts-list entirely." >&2
+    exit 2
+  fi
+fi
 
 # Keep the defaults deliberately small. Larger experiment matrices must be
 # requested explicitly through the list options above.
@@ -212,16 +224,16 @@ echo "Method:   $METHOD"
 echo "Replicates: $NUM_REPLICATES"
 echo "SimPhy data: $SIMPHY_DATA_DIR"
 
-STELAR_PRO_OPTS_LIST=()
-if [[ -n "$STELAR_PRO_OPTS_LIST_RAW" ]]; then
-  IFS=';' read -r -a raw_opts_list <<< "$STELAR_PRO_OPTS_LIST_RAW"
+METHOD_OPTS_LIST=()
+if [[ -n "$METHOD_OPTS_LIST_RAW" ]]; then
+  IFS=';' read -r -a raw_opts_list <<< "$METHOD_OPTS_LIST_RAW"
   for opts in "${raw_opts_list[@]}"; do
     opts="$(echo "$opts" | sed 's/^ *//;s/ *$//')"
-    [[ -n "$opts" ]] && STELAR_PRO_OPTS_LIST+=("$opts")
+    [[ -n "$opts" ]] && METHOD_OPTS_LIST+=("$opts")
   done
 fi
-if [[ ${#STELAR_PRO_OPTS_LIST[@]} -eq 0 ]]; then
-  STELAR_PRO_OPTS_LIST+=("${ASTRAL_OPTS}")
+if [[ ${#METHOD_OPTS_LIST[@]} -eq 0 ]]; then
+  METHOD_OPTS_LIST+=("${METHOD_OPTS}")
 fi
 
 echo "Starting bulk runs..."
@@ -234,22 +246,30 @@ for t in "${T_LIST[@]}"; do
 
           echo ">>> Running: t=$t g=$g sb=$sb spmin=$spmin spmax=$spmax (method=$METHOD)"
           
-          ./sim.sh -rs "$NUM_REPLICATES" "${BASE_DIR_ARGS[@]}" "${SIM_DATA_ARGS[@]}" -t "$t" -g "$g" --sb "$sb" --spmin "$spmin" --spmax "$spmax" "${FRESH_ARGS[@]}"
+          "${STELAR_PRO_ROOT}/sim.sh" -rs "$NUM_REPLICATES" "${BASE_DIR_ARGS[@]}" "${SIM_DATA_ARGS[@]}" -t "$t" -g "$g" --sb "$sb" --spmin "$spmin" --spmax "$spmax" "${FRESH_ARGS[@]}"
           
           # Run replicates
           for ((i=1; i<=NUM_REPLICATES; i++)); do
             REPLICATE_NAME="R$i"
-            if IS_SIMULATED_CONFIG_EXCLUDED \
+            if [[ "$METHOD" == "stelar-pro" ]] && IS_SIMULATED_CONFIG_EXCLUDED \
                 "$t" "$g" "$sb" "$spmin" "$spmax" "$REPLICATE_NAME"; then
               echo "  SKIPPING excluded configuration: t=$t g=$g sb=$sb spmin=$spmin spmax=$spmax replicate=$REPLICATE_NAME"
               continue
             fi
             echo "  Running replicate $REPLICATE_NAME with $METHOD"
             
-            for STELAR_PRO_OPTS_ITEM in "${STELAR_PRO_OPTS_LIST[@]}"; do
-              TEST_CMD=("${STELAR_PRO_ROOT}/test-stelar-pro-simulated.sh" -r "$REPLICATE_NAME" "${BASE_DIR_ARGS[@]}" "${SHARED_TEST_ARGS[@]}" -t "$t" -g "$g" --sb "$sb" --spmin "$spmin" --spmax "$spmax" "${FRESH_ARGS[@]}")
-              if [[ -n "$STELAR_PRO_OPTS_ITEM" ]]; then
-                TEST_CMD+=(--opts "$STELAR_PRO_OPTS_ITEM")
+            for METHOD_OPTS_ITEM in "${METHOD_OPTS_LIST[@]}"; do
+              if [[ "$METHOD" == "stelar-pro" ]]; then
+                TEST_RUNNER="${STELAR_PRO_ROOT}/test-stelar-pro-simulated.sh"
+              else
+                TEST_RUNNER="${STELAR_PRO_ROOT}/test-astral-pro3-simulated.sh"
+              fi
+              TEST_CMD=("$TEST_RUNNER" -r "$REPLICATE_NAME" "${BASE_DIR_ARGS[@]}" "${SHARED_TEST_ARGS[@]}" -t "$t" -g "$g" --sb "$sb" --spmin "$spmin" --spmax "$spmax" "${FRESH_ARGS[@]}")
+              if [[ -n "$METHOD_OPTS_ITEM" ]]; then
+                TEST_CMD+=(--opts "$METHOD_OPTS_ITEM")
+              fi
+              if [[ "$METHOD" == "astral-pro3" && -n "$ASTRAL_PRO3_BIN" ]]; then
+                TEST_CMD+=(--astral-pro3-bin "$ASTRAL_PRO3_BIN")
               fi
               "${TEST_CMD[@]}"
             done

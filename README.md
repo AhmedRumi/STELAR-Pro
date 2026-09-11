@@ -53,6 +53,41 @@ testing, bulk-transfer, and statistics scripts create that directory when it is
 missing. Their explicit SimPhy data-directory options still override the
 environment-based default.
 
+## Run ASTRAL-Pro3 as a comparison method
+
+The bundled native ASTRAL-Pro3 can be run on any Newick gene-tree file through
+the monitored wrapper:
+
+```bash
+./run-astral-pro3-with-monitor.sh \
+  -i path/to/all_gt.tre -o results/out-astral-pro3.tre \
+  --threads 16 --no-notify
+```
+
+Use `--mapping gene_to_species.map` when copy labels differ from species labels,
+or pass additional native options with `--opts`. The wrapper records wall time,
+maximum CPU/GPU memory, optional RF rate, and exit status next to the output in
+`out-astral-pro3_stats.csv`.
+
+ASTRAL-Pro3 is also a first-class method in both dataset sweep scripts:
+
+```bash
+./run-bulk-simulated.sh --method astral-pro3 \
+  --taxa-list "100,200" --genes-list "100,1000" \
+  --num-replicates 10 --opts "--thread 16 --seed 42"
+
+./run-bulk-standard.sh --method "stelar-pro;astral-pro3" \
+  --folder "37-taxon" --astral-pro3-opts "--thread 16 --seed 42"
+```
+
+Simulated outputs are stored below each replicate in
+`astral-pro3-outputs/<setting>/`; `collect-stats-simulated.sh` merges them with
+STELAR-Pro results. The aliases `astral-pro` and `apro3` are accepted for method
+selection, while `astral` continues to mean the separate Java ASTRAL baseline.
+`--search-space S1` is specific to STELAR-Pro and must not be supplied to
+ASTRAL-Pro3. Use ASTRAL-Pro3's `--round`/`--subsample` options (or `-R`) when a
+larger ASTRAL-Pro3 search is desired.
+
 To remove that complete directory—including simulated datasets and every
 inferred result beneath it—preview or run the dedicated cleanup command:
 

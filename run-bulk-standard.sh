@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # Multi-Algorithm Dataset Runner Script (updated)
-# Supports STELAR-Pro and optional baseline algorithms
+# Supports STELAR-Pro, bundled ASTRAL-Pro3, and optional baseline algorithms
 # Usage: ./run-bulk-standard.sh [--base-dir /path/to/base] [--dataset-dir /path/to/datasets] [--fresh]
 #   --base-dir, -b    Optional base directory (defaults to value below)
 #   --dataset-dir, -d Optional dataset directory (defaults to BASE_DIR/datasets)
@@ -21,6 +21,7 @@ WQFMTREE_ROOT=""                      # derived from BASE_DIR if not set explici
 SUPERTRIPLETS_ROOT=""                 # SuperTriplets baseline; derived from STELAR_PRO_ROOT/baselines
 TMC_ROOT=""                           # TMC baseline; derived from STELAR_PRO_ROOT/baselines
 RUN_WITH_MONITOR_SCRIPT=""           # derived from STELAR_PRO_ROOT if not set
+RUN_ASTRAL_PRO3_WITH_MONITOR_SCRIPT="" # derived from STELAR_PRO_ROOT if not set
 RUN_BASELINE_WITH_MONITOR_SCRIPT=""  # derived from STELAR_PRO_ROOT if not set
 METHODS_ARG=""                       # optional semicolon-separated methods override
 FOLDERS_ARG=""                       # optional semicolon-separated folders override
@@ -43,6 +44,8 @@ ALGORITHMS=("stelar-pro")
 STELAR_OPTS="-vv"
 STELAR_OPTS_LIST_RAW=""
 STELAR_OPTS_LIST=()
+ASTRAL_PRO3_OPTS=""
+ASTRAL_PRO3_BIN=""
 ASTER_OPTS="-t 16"  # ASTER thread count
 ASTRAL_OPTS=""  # ASTRAL doesn't need special options for basic runs
 TREEQMC_OPTS=""  # TreeQMC doesn't need special options for basic runs
@@ -53,6 +56,7 @@ TMC_OPTS=""  # TMC options
 # Algorithm command mappings - these will be used to construct the actual commands
 declare -A ALG_COMMANDS
 ALG_COMMANDS["stelar-pro"]="stelarx_command"
+ALG_COMMANDS["astral-pro3"]="astral_pro3_command"
 ALG_COMMANDS["aster"]="aster_command"
 ALG_COMMANDS["astral"]="astral_command"
 ALG_COMMANDS["treeqmc"]="treeqmc_command"
@@ -130,6 +134,7 @@ print_header() {
     echo "TMC_ROOT: ${TMC_ROOT:-(derived from STELAR_PRO_ROOT)}"
     echo "Algorithms: ${ALGORITHMS[*]}"
     echo "STELAR_OPTS: ${STELAR_OPTS:-<empty>}"
+    echo "ASTRAL_PRO3_OPTS: ${ASTRAL_PRO3_OPTS:-<empty>}"
     echo "ASTER_OPTS: ${ASTER_OPTS:-<empty>}"
     echo "ASTRAL_OPTS: ${ASTRAL_OPTS:-<empty>}"
     echo "TREEQMC_OPTS: ${TREEQMC_OPTS:-<empty>}"
@@ -164,6 +169,7 @@ normalize_algorithm_name() {
     local name="${1,,}"
     case "$name" in
       stelar-pro|astral-x|stelar|stelar-pro) echo "stelar-pro" ;;
+      astral-pro3|astral-pro|apro3) echo "astral-pro3" ;;
       aster) echo "aster" ;;
       astral) echo "astral" ;;
       treeqmc|tree-qmc) echo "treeqmc" ;;
@@ -197,6 +203,7 @@ assign_generic_opts_to_algorithm() {
 
     case "$algorithm" in
       stelar-pro) STELAR_OPTS="$value" ;;
+      astral-pro3) ASTRAL_PRO3_OPTS="$value" ;;
       aster) ASTER_OPTS="$value" ;;
       astral) ASTRAL_OPTS="$value" ;;
       treeqmc) TREEQMC_OPTS="$value" ;;
@@ -227,9 +234,10 @@ csv_escape() {
 
 strip_trivial_opts_for_csv() {
     local raw="$1"
+    local algorithm="${2:-}"
     local -a tokens=()
     local -a kept=()
-    local token
+    local token i=0
 
     if [[ -z "${raw// }" ]]; then
       printf ''
@@ -237,13 +245,21 @@ strip_trivial_opts_for_csv() {
     fi
 
     read -r -a tokens <<< "$raw"
-    for token in "${tokens[@]}"; do
+    while (( i < ${#tokens[@]} )); do
+      token="${tokens[$i]}"
       case "$token" in
-        -v|-vv|-vvv|-q|--quiet|--verbose)
+        -v|--verbose)
+          if [[ "$algorithm" == "astral-pro3" && $((i + 1)) -lt ${#tokens[@]} ]]; then
+            ((i+=2))
+          else
+            ((i+=1))
+          fi
           continue
           ;;
+        -vv|-vvv|-q|--quiet|--verbose=*) ((i+=1)); continue ;;
       esac
       kept+=("$token")
+      ((i+=1))
     done
 
     printf '%s' "${kept[*]}"
@@ -253,6 +269,7 @@ method_opts_for_algorithm() {
     local algorithm="$1"
     case "$algorithm" in
       stelar-pro) printf '%s' "$STELAR_OPTS" ;;
+      astral-pro3) printf '%s' "$ASTRAL_PRO3_OPTS" ;;
       aster) printf '%s' "$ASTER_OPTS" ;;
       astral) printf '%s' "$ASTRAL_OPTS" ;;
       treeqmc) printf '%s' "$TREEQMC_OPTS" ;;
@@ -338,6 +355,12 @@ validate_algorithm_binaries() {
               errors_found=true
             fi
             ;;
+          astral-pro3)
+            if [[ ! -x "$RUN_ASTRAL_PRO3_WITH_MONITOR_SCRIPT" ]]; then
+              echo -e "${RED}Error: ASTRAL-Pro3 monitor wrapper not found: $RUN_ASTRAL_PRO3_WITH_MONITOR_SCRIPT${NC}"
+              errors_found=true
+            fi
+            ;;
           aster|astral|treeqmc|wqfmtree|supertriplets|tmc)
             needs_baseline_wrapper=true
             ;;
@@ -398,11 +421,15 @@ run_algorithm_and_write_stats() {
     local METHOD_OPTS_RAW
     METHOD_OPTS_RAW="$(method_opts_for_algorithm "$ALGORITHM")"
     local METHOD_OPTS_CSV_RAW
-    METHOD_OPTS_CSV_RAW="$(strip_trivial_opts_for_csv "$METHOD_OPTS_RAW")"
+    METHOD_OPTS_CSV_RAW="$(strip_trivial_opts_for_csv "$METHOD_OPTS_RAW" "$ALGORITHM")"
     local METHOD_OPTS_ESCAPED
     METHOD_OPTS_ESCAPED="$(csv_escape "$METHOD_OPTS_CSV_RAW")"
     local SETTING_NAME
-    SETTING_NAME="$(build_setting_name_from_opts "$METHOD_OPTS_RAW")"
+    if [[ "$ALGORITHM" == "astral-pro3" ]]; then
+      SETTING_NAME="$(build_astral_pro3_setting_name_from_opts "$METHOD_OPTS_RAW")"
+    else
+      SETTING_NAME="$(build_setting_name_from_opts "$METHOD_OPTS_RAW")"
+    fi
     if [[ "$ALGORITHM" == "stelar-pro" ]]; then
       OUT_DIR="${OUT_DIR%/}/${SETTING_NAME}"
     fi
@@ -435,6 +462,17 @@ run_algorithm_and_write_stats() {
             --output "$OUT_FILE" \
             --no-notify
         fi
+        ALGORITHM_EXIT_CODE=$?
+        ;;
+      "astral-pro3")
+        local astral_pro3_args=(
+          --input "$ALL_GT_FILE"
+          --output "$OUT_FILE"
+          --no-notify
+        )
+        [[ -n "$ASTRAL_PRO3_OPTS" ]] && astral_pro3_args+=(--opts "$ASTRAL_PRO3_OPTS")
+        [[ -n "$ASTRAL_PRO3_BIN" ]] && astral_pro3_args+=(--astral-pro3-bin "$ASTRAL_PRO3_BIN")
+        "$RUN_ASTRAL_PRO3_WITH_MONITOR_SCRIPT" "${astral_pro3_args[@]}"
         ALGORITHM_EXIT_CODE=$?
         ;;
       "aster"|"astral"|"treeqmc"|"wqfmtree"|"supertriplets"|"tmc")
@@ -655,6 +693,18 @@ while [[ $# -gt 0 ]]; do
       STELAR_OPTS_LIST_RAW="${1#*=}"
       shift
       ;;
+    --astral-pro3-opts)
+      ASTRAL_PRO3_OPTS="$2"
+      shift 2
+      ;;
+    --astral-pro3-opts=*)
+      ASTRAL_PRO3_OPTS="${1#*=}"
+      shift
+      ;;
+    --astral-pro3-bin|--astral-pro-bin)
+      ASTRAL_PRO3_BIN="$2"
+      shift 2
+      ;;
     --aster-opts)
       ASTER_OPTS="$2"
       shift 2
@@ -715,7 +765,7 @@ while [[ $# -gt 0 ]]; do
       cat <<EOF
 Usage: $0 [--base-dir /path/to/base] [--dataset-dir /path/to/datasets] [--method "m1;m2"] [--folder "f1;f2"] [--fresh] [--no-notify]
 
-Multi-algorithm dataset runner supporting STELAR-Pro, ASTER, ASTRAL, TreeQMC, wQFMtree, SuperTriplets, and TMC.
+Multi-algorithm dataset runner supporting STELAR-Pro, ASTRAL-Pro3, ASTER, ASTRAL, TreeQMC, wQFMtree, SuperTriplets, and TMC.
 
 --base-dir, -b      Base directory containing RF/ and external tools (overrides default)
 --dataset-dir, -d   Dataset directory (overrides default BASE_DIR/datasets)
@@ -727,6 +777,8 @@ Multi-algorithm dataset runner supporting STELAR-Pro, ASTER, ASTRAL, TreeQMC, wQ
                     Semicolon-separated list of option strings to loop over for the selected algorithm
 --stelar-opts       Compatibility alias for STELAR-Pro-specific --opts
 --stelar-opts-list  Compatibility alias for STELAR-Pro-specific --opts-list
+--astral-pro3-opts  Override ASTRAL-Pro3 options
+--astral-pro3-bin   Override bundled ASTRAL-Pro3 executable
 --aster-opts        Override default ASTER_OPTS
 --astral-opts       Override default ASTRAL_OPTS
 --treeqmc-opts      Override default TREEQMC_OPTS
@@ -737,11 +789,12 @@ Multi-algorithm dataset runner supporting STELAR-Pro, ASTER, ASTRAL, TreeQMC, wQ
 --no-notify, -nn    Disable bulk-level ntfy notifications
 --help, -h          Show this help
 
-Algorithms available: stelar-pro, aster, astral, treeqmc, wqfmtree, supertriplets, stp-nni, tmc
+Algorithms available: stelar-pro, astral-pro3, aster, astral, treeqmc, wqfmtree, supertriplets, stp-nni, tmc
 Example STELAR-Pro setting sweep:
   --method "stelar-pro" --opts-list "--threads 8 -vv;--threads 16 -vv"
 Algorithm root directories:
   STELAR-Pro:       Auto-detected from script location
+  ASTRAL-Pro3:     \${STELAR_PRO_ROOT}/ASTER-Linux/bin/astral-pro3
   ASTER:          \${STELAR_PRO_ROOT}/baselines/ASTER
   ASTRAL:         \${STELAR_PRO_ROOT}/baselines/ASTRAL
   TreeQMC:        \${STELAR_PRO_ROOT}/baselines/TREE-QMC
@@ -770,7 +823,7 @@ if [[ -n "$METHODS_ARG" ]]; then
   for local_method in "${user_methods_raw[@]}"; do
     normalized_method=$(normalize_algorithm_name "$local_method") || {
       echo -e "${RED}Error: Unsupported method '$local_method'.${NC}"
-      echo "Supported methods: stelar-pro, aster, astral, treeqmc, wqfmtree, supertriplets, stp-nni, tmc"
+      echo "Supported methods: stelar-pro, astral-pro3, aster, astral, treeqmc, wqfmtree, supertriplets, stp-nni, tmc"
       exit 1
     }
     ALGORITHMS+=("$normalized_method")
@@ -803,6 +856,14 @@ if [[ -n "$STELAR_OPTS_LIST_RAW" ]]; then
 fi
 if [[ ${#STELAR_OPTS_LIST[@]} -eq 0 ]]; then
   STELAR_OPTS_LIST=("$STELAR_OPTS")
+fi
+
+ASTRAL_PRO3_OPTS_TO_CHECK=";${ASTRAL_PRO3_OPTS};"
+if [[ " ${ALGORITHMS[*]} " == *" astral-pro3 "* ]] && \
+    [[ "$ASTRAL_PRO3_OPTS_TO_CHECK" =~ (^|[[:space:];])--search-space([=[:space:];]|$) ]]; then
+  echo -e "${RED}Error: --search-space is a STELAR-Pro-only option and cannot be used with astral-pro3.${NC}" >&2
+  echo "ASTRAL-Pro3 uses --round N and --subsample N, or -R for more search rounds." >&2
+  exit 2
 fi
 
 if [[ -n "$FOLDERS_ARG" ]]; then
@@ -866,6 +927,9 @@ fi
 # derive monitor wrappers from STELAR_PRO_ROOT
 if [[ -z "${RUN_WITH_MONITOR_SCRIPT}" ]]; then
   RUN_WITH_MONITOR_SCRIPT="${STELAR_PRO_ROOT%/}/run-stelar-pro-with-monitor.sh"
+fi
+if [[ -z "${RUN_ASTRAL_PRO3_WITH_MONITOR_SCRIPT}" ]]; then
+  RUN_ASTRAL_PRO3_WITH_MONITOR_SCRIPT="${STELAR_PRO_ROOT%/}/run-astral-pro3-with-monitor.sh"
 fi
 if [[ -z "${RUN_BASELINE_WITH_MONITOR_SCRIPT}" ]]; then
   RUN_BASELINE_WITH_MONITOR_SCRIPT="${STELAR_PRO_ROOT%/}/stelar-pro-artifacts/run-baseline-with-monitor.sh"
@@ -1004,4 +1068,4 @@ done
 
 echo -e "${GREEN}Dataset processing complete!${NC}"
 echo "Check output directories for 'output-<alg>.tre' and 'stat-<alg>.csv' files."
-echo "Output directories: stelar-pro-outputs, aster_outputs, astral_outputs, treeqmc_outputs, wqfmtree_outputs, supertriplets_outputs, stp-nni_outputs, tmc_outputs"
+echo "Output directories: stelar-pro-outputs, astral-pro3_outputs, aster_outputs, astral_outputs, treeqmc_outputs, wqfmtree_outputs, supertriplets_outputs, stp-nni_outputs, tmc_outputs"
