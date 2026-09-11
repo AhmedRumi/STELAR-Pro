@@ -679,6 +679,10 @@ done
   --method astral-pro3 \
   --num-replicates 1
 
+./run-bulk-simulated.sh \
+  --method astral-pro3 \
+  --num-replicates 1 \
+  --opts "--thread 32"
 
 
 
