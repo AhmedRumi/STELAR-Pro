@@ -36,6 +36,9 @@ printf '((a,b),(c,d));\n' > "$INPUT"
   --opts '--thread 3 --seed 7 --verbose 1' \
   --no-time-monitor --no-gpu-monitor --no-notify >/dev/null
 [[ -s "$OUTPUT" && -s "${WORK}/direct_stats.csv" ]]
+[[ -s "${WORK}/direct.command" ]]
+grep -q '^# git revision: ' "${WORK}/direct.command"
+grep -q '^# exit_code: 0$' "${WORK}/direct.command"
 grep -Fxq -- '--thread' "$FAKE_LOG"
 grep -Fxq -- '3' "$FAKE_LOG"
 grep -Fxq -- '--seed' "$FAKE_LOG"
@@ -56,8 +59,12 @@ fi
 
 # Drive the public bulk entry point. stat-sim.csv makes sim.sh reuse the fixture.
 DATA_ROOT="${WORK}/simphy-data"
-RUN_DIR="${DATA_ROOT}/t_4_g_1_sb_0.000001_spmin_100000_spmax_200000/R1"
+MIRROR_ROOT="${WORK}/outputs/gdl-simulation"
+DATASET_NAME="t_4_g_1_sb_0.000001_spmin_100000_spmax_200000"
+RUN_DIR="${DATA_ROOT}/${DATASET_NAME}/R1"
 mkdir -p "$RUN_DIR"
+printf 'simphy fixture command\n' > "${DATA_ROOT}/${DATASET_NAME}/${DATASET_NAME}.command"
+printf 'simphy fixture params\n' > "${DATA_ROOT}/${DATASET_NAME}/${DATASET_NAME}.params"
 printf '((a,b),(c,d));\n' > "${RUN_DIR}/all_gt.tre"
 printf '((a,b),(c,d));\n' > "${RUN_DIR}/s_tree.trees"
 printf 'fixture\n' > "${RUN_DIR}/stat-sim.csv"
@@ -66,6 +73,7 @@ BULK_LOG=$("${ROOT}/run-bulk-simulated.sh" \
   --method astral-pro3 --taxa-list 4 --genes-list 1 --num-replicates 1 \
   --sb-list 0.000001 --spmin-list 100000 --spmax-list 200000 \
   --simphy-data-dir "$DATA_ROOT" --opts '--thread 3 --seed 7 --verbose 1' \
+  --simulated-outputs-dir "$MIRROR_ROOT" \
   --astral-pro3-bin "$FAKE_BIN" --no-gpu-monitor --no-notify 2>&1)
 [[ "$BULK_LOG" == *'Method:   astral-pro3'* ]]
 
@@ -74,9 +82,15 @@ RESULTS_DIR="${RUN_DIR}/astral-pro3-outputs/threads_3__seed_7"
 [[ -f "${RESULTS_DIR}/.astral-pro3.success" ]]
 [[ -f "${RESULTS_DIR}/.astral-pro3.lock" ]]
 [[ "$(awk -F, 'NR==2 {print $1}' "${RESULTS_DIR}/stat-astral-pro3.csv")" == astral-pro3 ]]
+MIRRORED_RESULTS="${MIRROR_ROOT}/astral-pro3-outputs/${DATASET_NAME}/R1/threads_3__seed_7"
+[[ -s "${MIRRORED_RESULTS}/out-astral-pro3.tre" ]]
+[[ -s "${MIRRORED_RESULTS}/out-astral-pro3.command" ]]
+[[ -f "${MIRRORED_RESULTS}/.astral-pro3.success" ]]
+[[ -s "${MIRROR_ROOT}/astral-pro3-outputs/${DATASET_NAME}/${DATASET_NAME}.command" ]]
 
 SKIP_LOG=$("${ROOT}/test-astral-pro3-simulated.sh" \
   --simphy-data-dir "$DATA_ROOT" -t 4 -g 1 -r R1 \
+  --simulated-outputs-dir "$MIRROR_ROOT" \
   --sb 0.000001 --spmin 100000 --spmax 200000 \
   --opts '--thread 3 --seed 7 --verbose 1' \
   --astral-pro3-bin "$FAKE_BIN" --no-gpu-monitor --no-notify 2>&1)

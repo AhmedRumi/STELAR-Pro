@@ -28,6 +28,8 @@ set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 source "${SCRIPT_DIR}/scripts/phylogeny-data-dir.sh"
+source "${SCRIPT_DIR}/scripts/simulated-outputs-mirror.sh"
+ORIGINAL_INVOCATION=("$0" "$@")
 PYTHON_BIN="${STELAR_PRO_PYTHON:-${SCRIPT_DIR}/.venv/bin/python}"
 [[ -x "$PYTHON_BIN" ]] || PYTHON_BIN="python3"
 
@@ -122,6 +124,25 @@ DATASET_NAME="t_${TAXA_NUM}_g_${GENE_TREES}_sb_${SB}_spmin_${SPMIN}_spmax_${SPMA
 COMPLETE_DIR="${SIMPHY_DATA_DIR%/}/${DATASET_NAME}"
 
 INCOMPLETE_DIR="${COMPLETE_DIR}_incomplete"
+
+mkdir -p -- "$INCOMPLETE_DIR"
+INCOMPLETE_COMMAND="${INCOMPLETE_DIR}/${DATASET_NAME}_incomplete.command"
+{
+  echo "# Incomplete simulated-dataset reproducibility command"
+  echo "# date: $(date -Is)"
+  echo "# host: $(hostname)"
+  echo "# STELAR-Pro root: $SCRIPT_DIR"
+  echo "# git revision: $(stelar_pro_git_revision "$SCRIPT_DIR")"
+  echo "# complete dataset: $COMPLETE_DIR"
+  echo "# incomplete dataset: $INCOMPLETE_DIR"
+  echo "# fraction: $FRACTION"
+  echo "# seed: $SEED"
+  echo "# minimum taxa retained: $MIN_KEEP"
+  printf '# wrapper invocation: '
+  stelar_pro_print_shell_command "${ORIGINAL_INVOCATION[@]}"
+  printf 'cd %q && ' "$SCRIPT_DIR"
+  stelar_pro_print_shell_command ./sim_incomplete.sh "${ORIGINAL_INVOCATION[@]:1}"
+} > "$INCOMPLETE_COMMAND"
 
 # ── Step 1: Run sim.sh ────────────────────────────────────────────────────────
 echo "=== Step 1: Running sim.sh ==="

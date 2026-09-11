@@ -88,6 +88,14 @@ selection, while `astral` continues to mean the separate Java ASTRAL baseline.
 ASTRAL-Pro3. Use ASTRAL-Pro3's `--round`/`--subsample` options (or `-R`) when a
 larger ASTRAL-Pro3 search is desired.
 
+Both methods also maintain a lightweight safety copy at
+`$PHYLOGENY_DATA_DIR/outputs/gdl-simulation/<method>-outputs/<dataset>/<R>/<setting>`.
+It contains inference results and reproducibility command records, but never
+the large simulated gene trees or SimPhy databases. Use
+`sync-simulated-outputs.sh` to backfill existing runs. The complete layout and
+safety rules are documented in
+[DOCS/simulated-outputs-mirror.md](DOCS/simulated-outputs-mirror.md).
+
 To remove that complete directory—including simulated datasets and every
 inferred result beneath it—preview or run the dedicated cleanup command:
 

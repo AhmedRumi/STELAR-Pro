@@ -13,6 +13,8 @@ set -euo pipefail
 
 STELAR_PRO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 source "${STELAR_PRO_ROOT}/scripts/phylogeny-data-dir.sh"
+source "${STELAR_PRO_ROOT}/scripts/simulated-outputs-mirror.sh"
+source "${STELAR_PRO_ROOT}/experiment-setting-name.sh"
 
 BASE_DIR=""
 BASE_DIR_PROVIDED=false
@@ -21,7 +23,11 @@ FRESH=false
 NO_NOTIFY=false
 GPU_MONITOR=true
 SIMPHY_DATA_DIR=""
+SIMULATED_OUTPUTS_DIR=""
+NO_OUTPUTS_MIRROR=false
 NUM_REPLICATES=1
+DRY_RUN=false
+ASSUME_YES=false
 
 T_LIST=(10)
 
@@ -107,6 +113,16 @@ Options:
   --spmax-list LIST      Comma/space-separated maximum population sizes
   --simphy-data-dir DIR  Store/read generated datasets under DIR
                          (default: \$PHYLOGENY_DATA_DIR/simphy/data)
+  --simulated-outputs-dir DIR
+                         Mirror result leaves under DIR
+                         (default: \$PHYLOGENY_DATA_DIR/outputs/gdl-simulation)
+  --gdl-simulation-outputs-dir DIR
+                         Alias for --simulated-outputs-dir
+  --simphy-outputs-dir DIR
+                         Compatibility alias for --simulated-outputs-dir
+  --no-outputs-mirror    Disable the lightweight results mirror
+  --dry-run              Print the output plan without running anything
+  --yes, -y              Skip the interactive confirmation
   --fresh           Pass --fresh to sim.sh and test scripts (recreate outputs)
   --no-gpu-monitor  Disable GPU-memory sampling
   --no-notify, -nn  Disable completion notifications
@@ -136,6 +152,8 @@ while [[ $# -gt 0 ]]; do
     --spmin-list) read -r -a SPMIN_LIST <<< "${2//,/ }"; shift 2 ;;
     --spmax-list) read -r -a SPMAX_LIST <<< "${2//,/ }"; shift 2 ;;
     --simphy-data-dir) SIMPHY_DATA_DIR="$2"; shift 2 ;;
+    --simulated-outputs-dir|--gdl-simulation-outputs-dir|--simphy-outputs-dir) SIMULATED_OUTPUTS_DIR="$2"; shift 2 ;;
+    --no-outputs-mirror) NO_OUTPUTS_MIRROR=true; shift ;;
     --opts|--alg-opts|--stelar-pro-opts|--astral-pro3-opts) METHOD_OPTS="$2"; shift 2 ;;
     --opts=*|--alg-opts=*|--stelar-pro-opts=*|--astral-pro3-opts=*) METHOD_OPTS="${1#*=}"; shift ;;
     --opts-list|--alg-opts-list|--stelar-pro-opts-list|--astral-pro3-opts-list) METHOD_OPTS_LIST_RAW="$2"; shift 2 ;;
@@ -144,6 +162,8 @@ while [[ $# -gt 0 ]]; do
     --fresh) FRESH=true; shift ;;
     --no-gpu-monitor) GPU_MONITOR=false; shift ;;
     --no-notify|-nn) NO_NOTIFY=true; shift ;;
+    --dry-run) DRY_RUN=true; shift ;;
+    --yes|-y) ASSUME_YES=true; shift ;;
     --help|-h) print_help; exit 0 ;;
     *) echo "Unknown option: $1"; print_help; exit 1 ;;
   esac
@@ -190,6 +210,9 @@ if [[ ! "$NUM_REPLICATES" =~ ^[1-9][0-9]*$ ]]; then
 fi
 
 SIMPHY_DATA_DIR="$(stelar_pro_prepare_simphy_data_dir "$SIMPHY_DATA_DIR")"
+if [[ "$NO_OUTPUTS_MIRROR" == false ]]; then
+  SIMULATED_OUTPUTS_DIR="$(stelar_pro_simulated_outputs_dir "$SIMPHY_DATA_DIR" "$SIMULATED_OUTPUTS_DIR")"
+fi
 
 # -------------------------------
 # execution
@@ -214,6 +237,11 @@ else
 fi
 SIM_DATA_ARGS=(--simphy-data-dir "$SIMPHY_DATA_DIR")
 SHARED_TEST_ARGS=("${SIM_DATA_ARGS[@]}")
+if [[ "$NO_OUTPUTS_MIRROR" == true ]]; then
+  SHARED_TEST_ARGS+=(--no-outputs-mirror)
+else
+  SHARED_TEST_ARGS+=(--simulated-outputs-dir "$SIMULATED_OUTPUTS_DIR")
+fi
 if [[ "$GPU_MONITOR" == false ]]; then
   SHARED_TEST_ARGS+=(--no-gpu-monitor)
 fi
@@ -223,6 +251,11 @@ fi
 echo "Method:   $METHOD"
 echo "Replicates: $NUM_REPLICATES"
 echo "SimPhy data: $SIMPHY_DATA_DIR"
+if [[ "$NO_OUTPUTS_MIRROR" == true ]]; then
+  echo "Outputs mirror: disabled"
+else
+  echo "Outputs mirror: $SIMULATED_OUTPUTS_DIR"
+fi
 
 METHOD_OPTS_LIST=()
 if [[ -n "$METHOD_OPTS_LIST_RAW" ]]; then
@@ -234,6 +267,58 @@ if [[ -n "$METHOD_OPTS_LIST_RAW" ]]; then
 fi
 if [[ ${#METHOD_OPTS_LIST[@]} -eq 0 ]]; then
   METHOD_OPTS_LIST+=("${METHOD_OPTS}")
+fi
+
+echo
+echo "Output plan:"
+for t in "${T_LIST[@]}"; do
+  for g in "${G_LIST[@]}"; do
+    for sb in "${SB_LIST[@]}"; do
+      for spmin in "${SPMIN_LIST[@]}"; do
+        for spmax in "${SPMAX_LIST[@]}"; do
+          dataset="t_${t}_g_${g}_sb_${sb}_spmin_${spmin}_spmax_${spmax}"
+          replicate_plan="R1-R${NUM_REPLICATES}"
+          [[ "$NUM_REPLICATES" == 1 ]] && replicate_plan=R1
+          for opts in "${METHOD_OPTS_LIST[@]}"; do
+            if [[ "$METHOD" == stelar-pro ]]; then
+              setting="$(build_setting_name_from_opts "$opts")"
+              method_dir=stelar-pro-outputs
+            else
+              setting="$(build_astral_pro3_setting_name_from_opts "$opts")"
+              method_dir=astral-pro3-outputs
+            fi
+            excluded_replicates=""
+            if [[ "$METHOD" == stelar-pro ]]; then
+              for ((plan_i=1; plan_i<=NUM_REPLICATES; plan_i++)); do
+                if IS_SIMULATED_CONFIG_EXCLUDED "$t" "$g" "$sb" "$spmin" "$spmax" "R${plan_i}"; then
+                  excluded_replicates+="${excluded_replicates:+,}R${plan_i}"
+                fi
+              done
+            fi
+            plan_note=""
+            [[ -n "$excluded_replicates" ]] && plan_note=" (excluded: ${excluded_replicates})"
+            echo "  [${method_dir%-outputs}] ${dataset} / ${replicate_plan} / ${setting}${plan_note}"
+          done
+        done
+      done
+    done
+  done
+done
+if [[ "$NO_OUTPUTS_MIRROR" == false ]]; then
+  echo "  mirror root: $SIMULATED_OUTPUTS_DIR"
+  echo "  copied: method results, hidden status markers, .command/.params records"
+  echo "  excluded: gene/species trees, databases, archives, stat-sim.csv"
+fi
+
+if [[ "$DRY_RUN" == true ]]; then
+  echo "Dry run complete; no simulation or inference was started."
+  exit 0
+fi
+if [[ "$ASSUME_YES" == false && -t 0 && -t 1 ]]; then
+  read -r -p "Proceed with this bulk run? [y/N] " confirmation
+  [[ "$confirmation" =~ ^[Yy]([Ee][Ss])?$ ]] || { echo "Cancelled."; exit 0; }
+elif [[ "$ASSUME_YES" == false ]]; then
+  echo "Non-interactive input detected; proceeding without a prompt."
 fi
 
 echo "Starting bulk runs..."

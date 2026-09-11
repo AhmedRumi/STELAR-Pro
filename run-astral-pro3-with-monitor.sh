@@ -5,6 +5,8 @@
 set -euo pipefail
 
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+source "${ROOT}/scripts/simulated-outputs-mirror.sh"
+ORIGINAL_INVOCATION=("$0" "$@")
 NTFY_CHANNEL_NAME="${NTFY_CHANNEL_NAME:-anik-phylo-stx}"
 
 INPUT_FILE=""
@@ -171,6 +173,24 @@ printf 'Options:          %s\n' "${ASTRAL_PRO3_ARGS[*]:-(defaults)}"
 printf 'Time monitor:     %s\n' "$TIME_MONITOR"
 printf 'GPU monitor:      %s\n\n' "$GPU_MONITOR"
 
+OUTPUT_BASENAME="$(basename "$OUTPUT_FILE")"
+OUTPUT_STEM="$OUTPUT_BASENAME"
+[[ "$OUTPUT_BASENAME" == *.* ]] && OUTPUT_STEM="${OUTPUT_BASENAME%.*}"
+COMMAND_RECORD="$(dirname "$OUTPUT_FILE")/${OUTPUT_STEM}.command"
+{
+  echo "# ASTRAL-Pro3 reproducibility command"
+  echo "# date: $(date -Is)"
+  echo "# host: $(hostname)"
+  echo "# STELAR-Pro root: $ROOT"
+  echo "# git revision: $(stelar_pro_git_revision "$ROOT")"
+  echo "# input: $INPUT_FILE"
+  echo "# output: $OUTPUT_FILE"
+  [[ -n "$REFERENCE_SPECIES_TREE" ]] && echo "# reference tree: $REFERENCE_SPECIES_TREE"
+  printf '# wrapper invocation: '
+  stelar_pro_print_shell_command "${ORIGINAL_INVOCATION[@]}"
+  stelar_pro_print_shell_command "${CMD[@]}"
+} > "$COMMAND_RECORD"
+
 START_NS=$(date +%s%N)
 set +e
 if [[ "$TIME_MONITOR" == true ]]; then
@@ -204,6 +224,10 @@ if [[ $ASTRAL_PRO3_EXIT_CODE -eq 0 && ! -s "$OUTPUT_FILE" ]]; then
   echo "Error: ASTRAL-Pro3 exited successfully but produced no output tree." >&2
   ASTRAL_PRO3_EXIT_CODE=5
 fi
+{
+  echo "# exit_code: $ASTRAL_PRO3_EXIT_CODE"
+  echo "# running_time_s: $RUNNING_TIME"
+} >> "$COMMAND_RECORD"
 
 RF_RATE=NA
 PYTHON_BIN="${STELAR_PRO_PYTHON:-${ROOT}/.venv/bin/python}"
@@ -216,9 +240,6 @@ if [[ $ASTRAL_PRO3_EXIT_CODE -eq 0 && -n "$REFERENCE_SPECIES_TREE" && -f "${ROOT
   fi
 fi
 
-OUTPUT_BASENAME="$(basename "$OUTPUT_FILE")"
-OUTPUT_STEM="$OUTPUT_BASENAME"
-[[ "$OUTPUT_BASENAME" == *.* ]] && OUTPUT_STEM="${OUTPUT_BASENAME%.*}"
 STATS_FILE="$(dirname "$OUTPUT_FILE")/${OUTPUT_STEM}_stats.csv"
 printf '%s\n' 'algorithm,input_file,output_file,running_time_s,max_cpu_mb,max_gpu_mb,optimal_triplet_score,rf_rate,exit_code' > "$STATS_FILE"
 printf 'astral-pro3,%s,%s,%s,%s,%s,NA,%s,%s\n' \

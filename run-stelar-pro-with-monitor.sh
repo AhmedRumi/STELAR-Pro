@@ -5,6 +5,10 @@
 
 set -euo pipefail
 
+WRAPPER_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+source "${WRAPPER_ROOT}/scripts/simulated-outputs-mirror.sh"
+ORIGINAL_INVOCATION=("$0" "$@")
+
 # Propagate terminal color preference to Java subprocesses even when stderr is
 # piped through tee.  Evaluated here, before any pipe redirection is applied to
 # this script's file descriptors, so [[ -t ]] correctly reflects whether a real
@@ -15,7 +19,7 @@ NTFY_CHANNEL_NAME="${NTFY_CHANNEL_NAME:-anik-phylo-stx}"
 
 INPUT_FILE=""
 OUTPUT_FILE=""
-STELAR_PRO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+STELAR_PRO_ROOT="$WRAPPER_ROOT"
 TIME_MONITOR=true
 GPU_MONITOR=true
 NO_NOTIFY=false
@@ -209,6 +213,25 @@ echo "GPU monitor:    $GPU_MONITOR"
 echo "Notifications:  $(if [[ "$NO_NOTIFY" == true ]]; then echo "disabled"; else echo "enabled"; fi)"
 echo
 
+OUTPUT_BASENAME="$(basename "$OUTPUT_FILE")"
+OUTPUT_STEM="$OUTPUT_BASENAME"
+[[ "$OUTPUT_BASENAME" == *.* ]] && OUTPUT_STEM="${OUTPUT_BASENAME%.*}"
+COMMAND_RECORD="$(dirname "$OUTPUT_FILE")/${OUTPUT_STEM}.command"
+{
+  echo "# STELAR-Pro reproducibility command"
+  echo "# date: $(date -Is)"
+  echo "# host: $(hostname)"
+  echo "# STELAR-Pro root: $STELAR_PRO_ROOT"
+  echo "# git revision: $(stelar_pro_git_revision "$STELAR_PRO_ROOT")"
+  echo "# input: $INPUT_FILE"
+  echo "# output: $OUTPUT_FILE"
+  [[ -n "$REFERENCE_SPECIES_TREE" ]] && echo "# reference tree: $REFERENCE_SPECIES_TREE"
+  printf '# wrapper invocation: '
+  stelar_pro_print_shell_command "${ORIGINAL_INVOCATION[@]}"
+  printf 'cd %q && ' "$STELAR_PRO_ROOT"
+  stelar_pro_print_shell_command ./run.sh --input "$INPUT_FILE" --output "$OUTPUT_FILE" "${STELAR_PRO_ARGS[@]}"
+} > "$COMMAND_RECORD"
+
 START_NS=$(date +%s%N)
 
 STELAR_PRO_PID=""
@@ -233,6 +256,10 @@ touch "$DONE_FILE"
 END_NS=$(date +%s%N)
 ELAPSED_MS=$(( (END_NS - START_NS) / 1000000 ))
 RUNNING_TIME=$(awk "BEGIN {printf \"%.3f\", ${ELAPSED_MS}/1000}")
+{
+  echo "# exit_code: $STELAR_PRO_EXIT_CODE"
+  echo "# running_time_s: $RUNNING_TIME"
+} >> "$COMMAND_RECORD"
 
 if [[ -n "${MON_PID:-}" ]]; then
   wait "$MON_PID" 2>/dev/null || true

@@ -7,6 +7,8 @@ set -euo pipefail
 
 SCRIPT_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 source "${SCRIPT_ROOT}/scripts/phylogeny-data-dir.sh"
+source "${SCRIPT_ROOT}/scripts/simulated-outputs-mirror.sh"
+ORIGINAL_INVOCATION=("$0" "$@")
 
 # Propagate terminal color preference to Java subprocesses even when stderr is
 # piped through tee further down the call chain.
@@ -22,6 +24,8 @@ SIMPHY_DIR=""
 SIMPHY_DIR_SET=false
 SIMPHY_DATA_DIR=""
 SIMPHY_DATA_DIR_SET=false
+SIMULATED_OUTPUTS_DIR=""
+NO_OUTPUTS_MIRROR=false
 STELAR_PRO_ROOT=""
 STELAR_PRO_ROOT_SET=false
 SB="0.000001"
@@ -53,6 +57,14 @@ Optional:
   --simphy-dir         Path to simphy dir
   --simphy-data-dir    SimPhy data root
                        (default: \$PHYLOGENY_DATA_DIR/simphy/data)
+  --simulated-outputs-dir DIR
+                       Results mirror root
+                       (default: \$PHYLOGENY_DATA_DIR/outputs/gdl-simulation)
+  --gdl-simulation-outputs-dir DIR
+                       Alias for --simulated-outputs-dir
+  --simphy-outputs-dir DIR
+                       Compatibility alias for --simulated-outputs-dir
+  --no-outputs-mirror Do not copy the result leaf to the outputs mirror
   --stelar-pro-root       Path to STELAR-Pro root
   --stelar-root        Compatibility alias for --stelar-pro-root
   --opts, --alg-opts   Extra args for the selected algorithm run (default: "${STELAR_PRO_OPTS}")
@@ -88,6 +100,8 @@ while [[ $# -gt 0 ]]; do
     --replicate|-r) REPLICATE="$2"; shift 2 ;;
     --simphy-dir) SIMPHY_DIR="$2"; SIMPHY_DIR_SET=true; shift 2 ;;
     --simphy-data-dir) SIMPHY_DATA_DIR="$2"; SIMPHY_DATA_DIR_SET=true; shift 2 ;;
+    --simulated-outputs-dir|--gdl-simulation-outputs-dir|--simphy-outputs-dir) SIMULATED_OUTPUTS_DIR="$2"; shift 2 ;;
+    --no-outputs-mirror) NO_OUTPUTS_MIRROR=true; shift ;;
     --stelar-pro-root|--stelar-root) STELAR_PRO_ROOT="$2"; STELAR_PRO_ROOT_SET=true; shift 2 ;;
     --opts|--alg-opts|--stelar-pro-opts|--stelar-opts) STELAR_PRO_OPTS="$2"; shift 2 ;;
     --project-root|--base-dir|-b) BASE_DIR="$2"; shift 2 ;;
@@ -119,6 +133,9 @@ if [[ "$STELAR_PRO_ROOT_SET" == false ]]; then
 fi
 SIMPHY_DIR="$(realpath "$SIMPHY_DIR")"
 SIMPHY_DATA_DIR="$(stelar_pro_prepare_simphy_data_dir "$SIMPHY_DATA_DIR")"
+if [[ "$NO_OUTPUTS_MIRROR" == false ]]; then
+  SIMULATED_OUTPUTS_DIR="$(stelar_pro_simulated_outputs_dir "$SIMPHY_DATA_DIR" "$SIMULATED_OUTPUTS_DIR")"
+fi
 STELAR_PRO_ROOT="$(realpath "$STELAR_PRO_ROOT")"
 PYTHON_BIN="${STELAR_PRO_PYTHON:-${STELAR_PRO_ROOT}/.venv/bin/python}"
 [[ -x "$PYTHON_BIN" ]] || PYTHON_BIN="python3"
@@ -149,6 +166,15 @@ SUCCESS_FILE="${RESULTS_DIR%/}/.stelar-pro.success"
 OUT_STELAR_PRO="${RESULTS_DIR%/}/out-stelar-pro.tre"
 RUN_LOG="${RESULTS_DIR%/}/.stelarx_run.log"
 STATS_SIDE_FILE="${OUT_STELAR_PRO%.tre}_stats.csv"
+COMMAND_RECORD="${OUT_STELAR_PRO%.tre}.command"
+
+mirror_results_leaf() {
+  [[ "$NO_OUTPUTS_MIRROR" == true ]] && return 0
+  if ! stelar_pro_mirror_simulated_results "$SIMPHY_DATA_DIR" "$SIMULATED_OUTPUTS_DIR" "$RESULTS_DIR"; then
+    echo "WARNING: could not refresh outputs mirror for $RESULTS_DIR" >&2
+  fi
+  return 0
+}
 
 if [[ "${DEBUG:-0}" == "1" ]]; then
   set -x
@@ -160,6 +186,7 @@ if [[ "$FRESH" == false && -f "$STAT_FILE" ]]; then
     PREVIOUS_EXIT=$(awk -F, 'NR==2 {print $9}' "$STATS_SIDE_FILE")
   fi
   if [[ -f "$OUT_STELAR_PRO" && ( -f "$SUCCESS_FILE" || "$PREVIOUS_EXIT" == "0" ) ]]; then
+    mirror_results_leaf
     echo "SKIPPING: successful output already exists at ${OUT_STELAR_PRO}. Use --fresh to force rerun."
     exit 0
   fi
@@ -213,6 +240,7 @@ if [[ ! -f "$ALL_GT_FILE" ]]; then
       OUT_STELAR_PRO="${RESULTS_DIR%/}/out-stelar-pro.tre"
       RUN_LOG="${RESULTS_DIR%/}/.stelarx_run.log"
       STATS_SIDE_FILE="${OUT_STELAR_PRO%.tre}_stats.csv"
+      COMMAND_RECORD="${OUT_STELAR_PRO%.tre}.command"
     fi
 
     SIM_CMD=("${STELAR_PRO_ROOT}/sim.sh" -t "$TAXA_NUM" -g "$GENE_TREES" -r "$REPLICATE" -rs "$REPLICATE_COUNT" --sb "$SB" --spmin "$SPMIN" --spmax "$SPMAX")
@@ -240,6 +268,9 @@ echo "  replicate:      $REPLICATE"
 echo "  setting:        $SETTING_NAME"
 echo "  simphy run dir: $SIMPHY_RUN_DIR"
 echo "  results dir:    $RESULTS_DIR"
+if [[ "$NO_OUTPUTS_MIRROR" == false ]]; then
+  echo "  outputs mirror: $SIMULATED_OUTPUTS_DIR"
+fi
 echo "  output tree:    $OUT_STELAR_PRO"
 echo "  stat file:      $STAT_FILE"
 echo
@@ -282,6 +313,22 @@ fi
 echo "alg,setting,num-taxa,gene-trees,replicate,sb,spmin,spmax,rf-rate,optimal-triplet-score,running-time-s,max-cpu-mb,max-gpu-mb" > "$STAT_FILE"
 echo "stelar-pro,${SETTING_NAME},${TAXA_NUM},${GENE_TREES},${REPLICATE},${SB},${SPMIN},${SPMAX},${RF_RATE},${OPTIMAL_TRIPLET_SCORE},${RUNNING_TIME},${MAX_CPU_MB},${MAX_GPU_MB}" >> "$STAT_FILE"
 
+if [[ -f "$COMMAND_RECORD" ]]; then
+  {
+    echo
+    echo "# simulated run context"
+    echo "# dataset: $(basename "$(dirname "$SIMPHY_RUN_DIR")")"
+    echo "# replicate: $REPLICATE"
+    echo "# setting: $SETTING_NAME"
+    echo "# true tree: $TRUE_SPECIES_TREE"
+    echo "# RF rate: $RF_RATE"
+    printf '# simulated wrapper invocation: '
+    stelar_pro_print_shell_command "${ORIGINAL_INVOCATION[@]}"
+    printf '# monitor wrapper command: '
+    stelar_pro_print_shell_command "${CMD[@]}"
+  } >> "$COMMAND_RECORD"
+fi
+
 if [[ "$STELAR_PRO_EXIT_CODE" -ne 0 ]]; then
   rm -f "$LOCK_FILE" "$SUCCESS_FILE"
 else
@@ -290,6 +337,8 @@ else
   printf 'exit_code=0\noutput=%s\n' "$OUT_STELAR_PRO" > "$SUCCESS_TMP"
   mv -f "$SUCCESS_TMP" "$SUCCESS_FILE"
 fi
+
+mirror_results_leaf
 
 echo
 echo "STELAR-Pro finished in ${RUNNING_TIME}s (exit code ${STELAR_PRO_EXIT_CODE})"

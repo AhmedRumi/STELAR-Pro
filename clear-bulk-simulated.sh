@@ -19,6 +19,9 @@ This includes simulated datasets, inferred trees, logs, statistics, checkpoints,
 and every other file stored beneath that directory. Future simulation commands
 will recreate the directory when needed.
 
+The lightweight safety copy at $PHYLOGENY_DATA_DIR/outputs/gdl-simulation is
+outside this target and is preserved.
+
 Options:
   --dry-run       Show the exact target without deleting it
   --yes, -y       Delete without interactive confirmation
@@ -118,4 +121,3 @@ if [[ -e "$TARGET_DIR" ]]; then
 fi
 
 echo "Removed all bulk simulated data: $TARGET_DIR"
-

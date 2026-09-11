@@ -6,7 +6,9 @@ set -euo pipefail
 
 SCRIPT_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 source "${SCRIPT_ROOT}/scripts/phylogeny-data-dir.sh"
+source "${SCRIPT_ROOT}/scripts/simulated-outputs-mirror.sh"
 source "${SCRIPT_ROOT}/experiment-setting-name.sh"
+ORIGINAL_INVOCATION=("$0" "$@")
 
 NTFY_CHANNEL_NAME="${NTFY_CHANNEL_NAME:-anik-phylo-stx}"
 TAXA_NUM=""
@@ -16,6 +18,8 @@ BASE_DIR="$SCRIPT_ROOT"
 SIMPHY_DIR=""
 SIMPHY_DIR_SET=false
 SIMPHY_DATA_DIR=""
+SIMULATED_OUTPUTS_DIR=""
+NO_OUTPUTS_MIRROR=false
 SB=0.000001
 SPMIN=500000
 SPMAX=1500000
@@ -43,6 +47,14 @@ Optional:
   --base-dir, -b DIR     Compatibility alias for --project-root
   --simphy-dir DIR       SimPhy installation directory
   --simphy-data-dir DIR  Simulated-data root
+  --simulated-outputs-dir DIR
+                         Results mirror root
+                         (default: \$PHYLOGENY_DATA_DIR/outputs/gdl-simulation)
+  --gdl-simulation-outputs-dir DIR
+                         Alias for --simulated-outputs-dir
+  --simphy-outputs-dir DIR
+                         Compatibility alias for --simulated-outputs-dir
+  --no-outputs-mirror   Do not copy this result into the outputs mirror
   --sb VALUE             Speciation/birthrate parameter
   --spmin VALUE          Minimum population size
   --spmax VALUE          Maximum population size
@@ -67,6 +79,8 @@ while [[ $# -gt 0 ]]; do
     --project-root|--base-dir|-b) BASE_DIR="$2"; shift 2 ;;
     --simphy-dir) SIMPHY_DIR="$2"; SIMPHY_DIR_SET=true; shift 2 ;;
     --simphy-data-dir) SIMPHY_DATA_DIR="$2"; shift 2 ;;
+    --simulated-outputs-dir|--gdl-simulation-outputs-dir|--simphy-outputs-dir) SIMULATED_OUTPUTS_DIR="$2"; shift 2 ;;
+    --no-outputs-mirror) NO_OUTPUTS_MIRROR=true; shift ;;
     --sb) SB="$2"; shift 2 ;;
     --spmin) SPMIN="$2"; shift 2 ;;
     --spmax) SPMAX="$2"; shift 2 ;;
@@ -98,7 +112,14 @@ BASE_DIR="$(realpath "$BASE_DIR")"
 [[ -n "$SIMPHY_DIR" ]] || SIMPHY_DIR="${BASE_DIR}/simphy"
 SIMPHY_DIR="$(realpath -m "$SIMPHY_DIR")"
 SIMPHY_DATA_DIR="$(stelar_pro_prepare_simphy_data_dir "$SIMPHY_DATA_DIR")"
+if [[ "$NO_OUTPUTS_MIRROR" == false ]]; then
+  SIMULATED_OUTPUTS_DIR="$(stelar_pro_simulated_outputs_dir "$SIMPHY_DATA_DIR" "$SIMULATED_OUTPUTS_DIR")"
+fi
 SETTING_NAME="$(build_astral_pro3_setting_name_from_opts "$ASTRAL_PRO3_OPTS")"
+
+if [[ "$NO_OUTPUTS_MIRROR" == false ]]; then
+  echo "Outputs mirror: $SIMULATED_OUTPUTS_DIR"
+fi
 
 if [[ "$USE_LEGACY_LAYOUT" == true ]]; then
   RUN_DIR="${SIMPHY_DATA_DIR}/${TAXA_NUM}_${GENE_TREES}/${REPLICATE}"
@@ -116,8 +137,18 @@ STAT_FILE="${RESULTS_DIR}/stat-astral-pro3.csv"
 SUCCESS_FILE="${RESULTS_DIR}/.astral-pro3.success"
 LOCK_FILE="${RESULTS_DIR}/.astral-pro3.lock"
 WRAPPER_STATS="${OUTPUT_TREE%.tre}_stats.csv"
+COMMAND_RECORD="${OUTPUT_TREE%.tre}.command"
+
+mirror_results_leaf() {
+  [[ "$NO_OUTPUTS_MIRROR" == true ]] && return 0
+  if ! stelar_pro_mirror_simulated_results "$SIMPHY_DATA_DIR" "$SIMULATED_OUTPUTS_DIR" "$RESULTS_DIR"; then
+    echo "WARNING: could not refresh outputs mirror for $RESULTS_DIR" >&2
+  fi
+  return 0
+}
 
 if [[ "$FRESH" == false && -s "$OUTPUT_TREE" && -f "$SUCCESS_FILE" && -f "$STAT_FILE" ]]; then
+  mirror_results_leaf
   echo "SKIPPING: successful output already exists at $OUTPUT_TREE. Use --fresh to rerun."
   exit 0
 fi
@@ -186,12 +217,30 @@ printf 'astral-pro3,%s,%s,%s,%s,%s,%s,%s,%s,NA,%s,%s,%s\n' \
   "$SETTING_NAME" "$TAXA_NUM" "$GENE_TREES" "$REPLICATE" "$SB" "$SPMIN" "$SPMAX" \
   "$RF_RATE" "$RUNNING_TIME" "$MAX_CPU_MB" "$MAX_GPU_MB" >> "$STAT_FILE"
 
+if [[ -f "$COMMAND_RECORD" ]]; then
+  {
+    echo
+    echo "# simulated run context"
+    echo "# dataset: $(basename "$(dirname "$RUN_DIR")")"
+    echo "# replicate: $REPLICATE"
+    echo "# setting: $SETTING_NAME"
+    echo "# true tree: $TRUE_TREE"
+    echo "# RF rate: $RF_RATE"
+    printf '# simulated wrapper invocation: '
+    stelar_pro_print_shell_command "${ORIGINAL_INVOCATION[@]}"
+    printf '# monitor wrapper command: '
+    stelar_pro_print_shell_command "${CMD[@]}"
+  } >> "$COMMAND_RECORD"
+fi
+
 if [[ $EXIT_CODE -eq 0 && -s "$OUTPUT_TREE" ]]; then
   touch "$LOCK_FILE"
   printf 'exit_code=0\noutput=%s\n' "$OUTPUT_TREE" > "$SUCCESS_FILE"
 else
   rm -f "$LOCK_FILE" "$SUCCESS_FILE"
 fi
+
+mirror_results_leaf
 
 echo "ASTRAL-Pro3 finished in ${RUNNING_TIME}s (exit code ${EXIT_CODE}); RF rate: ${RF_RATE}"
 echo "Wrote stats to $STAT_FILE"
