@@ -1,5 +1,19 @@
 #!/usr/bin/env bash
 
+# Unlike the SimPhy generator, GDL inference only consumes existing data.
+stelar_pro_resolve_gdl_data_dir() {
+  local requested="${1:-}"
+  if [[ -z "$requested" ]]; then
+    [[ -n "${PHYLOGENY_DATA_DIR:-}" ]] || {
+      echo 'Error: set PHYLOGENY_DATA_DIR or pass --gdl-data-dir.' >&2; return 2;
+    }
+    requested="${PHYLOGENY_DATA_DIR%/}/gdl-simulation/data"
+  fi
+  [[ "$requested" == "~/"* ]] && requested="${HOME}/${requested:2}"
+  [[ -d "$requested" ]] || { echo "Error: GDL data directory not found: $requested" >&2; return 2; }
+  realpath -- "$requested"
+}
+
 # Resolve the shared SimPhy data root. An explicit path takes precedence;
 # otherwise PHYLOGENY_DATA_DIR is required and the standard subdirectory is
 # created beneath it.

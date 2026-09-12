@@ -1,7 +1,9 @@
 # Reproducibility mirror for simulated runs
 
 Simulated inputs and the original results remain under
-`$PHYLOGENY_DATA_DIR/simphy/data`. Every STELAR-Pro and ASTRAL-Pro3 simulated
+`$PHYLOGENY_DATA_DIR/simphy/data` (original SimPhy workflow), or
+`$PHYLOGENY_DATA_DIR/gdl-simulation/data` (actual GDL workflow).
+Every STELAR-Pro and ASTRAL-Pro3 simulated
 run also refreshes a small, method-first safety copy under:
 
 ```
@@ -17,12 +19,19 @@ the exact shell command, absolute input/output paths, git revision, host, exit
 code, and runtime. Incomplete datasets additionally record their pruning
 fraction, seed, and minimum retained taxa.
 
-The mirror deliberately excludes `all_gt.tre`, `s_tree.trees`,
+The mirror deliberately excludes `all_gt.tre`, `all_gt.trees`, `s_tree.trees`,
 `l_trees.trees`, `g_trees*.trees`, SimPhy databases, ZIPs, and `stat-sim.csv`.
 A result leaf containing any forbidden file, symlink, or special file is
 refused. Refreshes are copied into a temporary directory and renamed into
 place, so a mirror leaf never retains stale files from an older run. Mirror
-errors are warnings and do not change the inference exit code.
+errors are warnings in the original SimPhy runners. The new GDL runner reports
+them as failures while preserving source results.
+
+For GDL datasets, optional `params.txt` and the raw generator's
+`simphy_raw.command`/`simphy_raw.params` records are copied at the mirrored
+dataset root. Only these records are copied, not the raw simulation directory.
+See [actual GDL runs](gdl-simulated-runs.md) for normalization, fingerprints,
+failure-safe reruns, and the `--gdl-data-dir` collection/backfill/upload options.
 
 For the standard data root, the output location is always
 `$PHYLOGENY_DATA_DIR/outputs/gdl-simulation`. It can be overridden with
@@ -59,7 +68,7 @@ The mirror can be published folder-by-folder with the same remote layout:
 ```
 
 The uploader repeats the forbidden-file and reproducibility checks immediately
-before upload. By default it writes below `ph/d/simulated/outputs/` in the
+before upload. By default it writes below `ph/d/gdl-simulation/outputs/` in the
 configured Hugging Face dataset repository.
 
 The cleanup command `clear-bulk-simulated.sh` removes only `simphy/data`, so

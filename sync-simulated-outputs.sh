@@ -12,6 +12,7 @@ SIMULATED_OUTPUTS_DIR=""
 METHODS_RAW="stelar-pro,astral-pro3"
 DRY_RUN=false
 QUIET=false
+GDL_MODE=false
 
 usage() {
   cat <<'EOF'
@@ -22,6 +23,7 @@ Simulation inputs, databases, archives, and stat-sim.csv are never copied.
 
 Options:
   --simphy-data-dir DIR         SimPhy data tree
+  --gdl-data-dir DIR            Existing GDL data tree (instead of SimPhy)
   --simulated-outputs-dir DIR   Mirror root
                                 (default: $PHYLOGENY_DATA_DIR/outputs/gdl-simulation)
   --gdl-simulation-outputs-dir DIR
@@ -37,6 +39,7 @@ EOF
 while [[ $# -gt 0 ]]; do
   case "$1" in
     --simphy-data-dir|--data-dir) SIMPHY_DATA_DIR="$2"; shift 2 ;;
+    --gdl-data-dir) SIMPHY_DATA_DIR="$2"; GDL_MODE=true; shift 2 ;;
     --simulated-outputs-dir|--gdl-simulation-outputs-dir|--simphy-outputs-dir) SIMULATED_OUTPUTS_DIR="$2"; shift 2 ;;
     --methods) METHODS_RAW="$2"; shift 2 ;;
     --dry-run) DRY_RUN=true; shift ;;
@@ -46,7 +49,11 @@ while [[ $# -gt 0 ]]; do
   esac
 done
 
-SIMPHY_DATA_DIR="$(stelar_pro_prepare_simphy_data_dir "$SIMPHY_DATA_DIR")"
+if [[ "$GDL_MODE" == true ]]; then
+  SIMPHY_DATA_DIR="$(stelar_pro_resolve_gdl_data_dir "$SIMPHY_DATA_DIR")"
+else
+  SIMPHY_DATA_DIR="$(stelar_pro_prepare_simphy_data_dir "$SIMPHY_DATA_DIR")"
+fi
 SIMULATED_OUTPUTS_DIR="$(stelar_pro_simulated_outputs_dir "$SIMPHY_DATA_DIR" "$SIMULATED_OUTPUTS_DIR")"
 
 declare -A WANTED_METHODS=()
@@ -67,7 +74,7 @@ while IFS= read -r -d '' results_dir; do
   IFS=/ read -r dataset replicate method_dir setting extra <<< "$relative"
   [[ -z "${extra:-}" && -n "${setting:-}" ]] || continue
   [[ -n "${WANTED_METHODS[$method_dir]:-}" ]] || continue
-  stelar_pro_dataset_name_is_valid "$dataset" || continue
+  stelar_pro_any_simulated_dataset_name_is_valid "$dataset" || continue
   [[ "$replicate" =~ ^R[1-9][0-9]*$ ]] || continue
 
   if stelar_pro_mirror_has_forbidden_files "$results_dir"; then

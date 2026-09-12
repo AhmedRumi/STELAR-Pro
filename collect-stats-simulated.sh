@@ -23,6 +23,7 @@ BASE_DIR="$SCRIPT_ROOT"
 SIMPHY_DIR=""
 SIMPHY_DATA_DIR=""
 OUT_FILE="./perf-combined.csv"
+GDL_MODE=false
 
 print_help() {
   cat <<EOF
@@ -39,6 +40,7 @@ Options:
   --base-dir, -b    Compatibility alias for --project-root
   --simphy-dir      Path to simphy dir (overrides --project-root)
   --simphy-data-dir SimPhy data root (default: \$PHYLOGENY_DATA_DIR/simphy/data)
+  --gdl-data-dir    Existing GDL data root; retain dup/loss/pop and RF status
   --out, -o         Output CSV path (default: ${OUT_FILE})
   --help, -h        Show this message
 EOF
@@ -50,6 +52,7 @@ while [[ $# -gt 0 ]]; do
     --project-root|--base-dir|-b) BASE_DIR="$2"; shift 2 ;;
     --simphy-dir) SIMPHY_DIR="$2"; shift 2 ;;
     --simphy-data-dir) SIMPHY_DATA_DIR="$2"; shift 2 ;;
+    --gdl-data-dir) SIMPHY_DATA_DIR="$2"; GDL_MODE=true; shift 2 ;;
     --out|-o) OUT_FILE="$2"; shift 2 ;;
     --help|-h) print_help; exit 0 ;;
     *) echo "Unknown option: $1"; print_help; exit 1 ;;
@@ -60,7 +63,11 @@ if [[ -z "$SIMPHY_DIR" ]]; then
   SIMPHY_DIR="${BASE_DIR%/}/simphy"
 fi
 
-SIMPHY_DATA_DIR="$(stelar_pro_prepare_simphy_data_dir "$SIMPHY_DATA_DIR")"
+if [[ "$GDL_MODE" == true ]]; then
+  SIMPHY_DATA_DIR="$(stelar_pro_resolve_gdl_data_dir "$SIMPHY_DATA_DIR")"
+else
+  SIMPHY_DATA_DIR="$(stelar_pro_prepare_simphy_data_dir "$SIMPHY_DATA_DIR")"
+fi
 
 # find stat files for all configured algorithms (only if lock file exists)
 declare -a all_stat_files=()
@@ -72,6 +79,8 @@ for alg in "${ALGORITHMS[@]}"; do
   alg_valid_count=0
   for stat_file in "${alg_files[@]}"; do
     dir=$(dirname "$stat_file")
+    # Explicit rerun archives are safe copies, not additional experiments.
+    [[ "${dir##*/}" != *__previous_* && "${dir##*/}" != *__failed_* && "${dir##*/}" != .* ]] || continue
     lock_file="${dir%/}/.${alg}.lock"
     if [[ -f "$lock_file" ]]; then
       all_stat_files+=("$stat_file")
@@ -111,6 +120,9 @@ norm_line() {
 
 # Define the prescribed header order
 PRESCRIBED_HEADER="alg,setting,num-taxa,gene-trees,replicate,sb,spmin,spmax,rf-rate,optimal-triplet-score,running-time-s,max-cpu-mb,max-gpu-mb,gt-gt,gt-st"
+if [[ "$GDL_MODE" == true ]]; then
+  PRESCRIBED_HEADER='alg,setting,num-taxa,gene-trees,replicate,dup,loss,pop,rf-rate,optimal-triplet-score,running-time-s,max-cpu-mb,max-gpu-mb,dataset,exit-code,rf-status'
+fi
 
 # Write prescribed header to output
 printf "%s\n" "$PRESCRIBED_HEADER" > "$OUT_FILE"
@@ -186,8 +198,10 @@ for stat_file in "${all_stat_files[@]}"; do
       }
     }
     # Set gt-gt and gt-st
-    out[length(u)-1]=gt_gt;
-    out[length(u)]=gt_st;
+    for (j=1; j<=length(u); j++) {
+      if (u[j] == "gt-gt") out[j]=gt_gt;
+      if (u[j] == "gt-st") out[j]=gt_st;
+    }
     if (out[2] == "") out[2]=setting_name;
     # Build output line
     line="";

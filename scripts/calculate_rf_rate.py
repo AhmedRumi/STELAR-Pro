@@ -170,6 +170,8 @@ class RFResult:
 
 
 def parse_newick(newick: str) -> Node:
+    # GDL species trees can have 10,000+ leaves, including deep caterpillars.
+    sys.setrecursionlimit(max(sys.getrecursionlimit(), newick.count("(") * 2 + 100))
     return NewickParser(newick.strip()).parse()
 
 

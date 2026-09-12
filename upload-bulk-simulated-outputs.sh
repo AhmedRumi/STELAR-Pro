@@ -11,6 +11,7 @@ source "${ROOT}/scripts/hf-python.sh"
 OUTPUTS_DIR=""
 DATA_DIR=""
 SYNC_FIRST=false
+GDL_MODE=false
 METHODS_RAW=""
 MIN_TAXA=1
 MIN_GENES=1
@@ -35,14 +36,15 @@ Upload <method>-outputs/<dataset> folders from the results safety copy.
   --simphy-outputs-dir DIR     Compatibility alias for --outputs-dir
   --sync                       Refresh the mirror before planning
   --data-dir DIR               SimPhy data tree used by --sync
+  --gdl-data-dir DIR           Existing GDL data tree used by --sync
   --methods LIST               Comma/space list (stelar-pro, astral-pro3)
   --min-taxa N                 Minimum taxon count (default: 1)
   --min-gene-trees N           Minimum gene-tree count (default: 1)
   --exclude-incomplete         Skip incomplete datasets
-  --allow-missing-command      Permit a dataset without a SimPhy .command
+  --allow-missing-command      Permit a dataset without a simulation .command
   --repo-id OWNER/REPO         Hugging Face repository
   --repo-type TYPE             dataset, model, or space
-  --remote-dir PATH            Remote root (default: ph/d/simulated/outputs)
+  --remote-dir PATH            Remote root (default: ph/d/gdl-simulation/outputs)
   --uploader FILE              Folder-aware hf_upload.py
   --python COMMAND             Python with huggingface_hub
   --dry-run                    Validate and print commands only
@@ -57,6 +59,7 @@ while [[ $# -gt 0 ]]; do
     --outputs-dir|--simulated-outputs-dir|--gdl-simulation-outputs-dir|--simphy-outputs-dir) need_value "$@"; OUTPUTS_DIR="$2"; shift 2 ;;
     --sync) SYNC_FIRST=true; shift ;;
     --data-dir|--simphy-data-dir) need_value "$@"; DATA_DIR="$2"; shift 2 ;;
+    --gdl-data-dir) need_value "$@"; DATA_DIR="$2"; GDL_MODE=true; shift 2 ;;
     --methods) need_value "$@"; METHODS_RAW="$2"; shift 2 ;;
     --min-taxa) need_value "$@"; MIN_TAXA="$2"; shift 2 ;;
     --min-gene-trees) need_value "$@"; MIN_GENES="$2"; shift 2 ;;
@@ -82,9 +85,14 @@ REMOTE_DIR="${REMOTE_DIR%/}"
 [[ -n "$REMOTE_DIR" && "$REMOTE_DIR" != /* && ! "$REMOTE_DIR" =~ (^|/)[.][.](/|$) ]] || { echo "Error: unsafe --remote-dir: $REMOTE_DIR" >&2; exit 2; }
 
 if [[ "$SYNC_FIRST" == true ]]; then
-  DATA_DIR="$(stelar_pro_prepare_simphy_data_dir "$DATA_DIR")" || exit 2
+  if [[ "$GDL_MODE" == true ]]; then
+    DATA_DIR="$(stelar_pro_resolve_gdl_data_dir "$DATA_DIR")" || exit 2
+  else
+    DATA_DIR="$(stelar_pro_prepare_simphy_data_dir "$DATA_DIR")" || exit 2
+  fi
   OUTPUTS_DIR="$(stelar_pro_simulated_outputs_dir "$DATA_DIR" "$OUTPUTS_DIR")" || exit 2
   sync_command=("${ROOT}/sync-simulated-outputs.sh" --simphy-data-dir "$DATA_DIR" --simulated-outputs-dir "$OUTPUTS_DIR" --quiet)
+  [[ "$GDL_MODE" == false ]] || sync_command=("${ROOT}/sync-simulated-outputs.sh" --gdl-data-dir "$DATA_DIR" --simulated-outputs-dir "$OUTPUTS_DIR" --quiet)
   [[ -n "$METHODS_RAW" ]] && sync_command+=(--methods "$METHODS_RAW")
   [[ "$DRY_RUN" == true ]] && sync_command+=(--dry-run)
   "${sync_command[@]}" || { echo "Error: mirror refresh failed; nothing was uploaded." >&2; exit 1; }
@@ -129,26 +137,30 @@ while IFS= read -r -d '' method_path; do
   [[ ${#METHOD_FILTER[@]} -eq 0 || -n "${METHOD_FILTER[$method_dir]:-}" ]] || continue
   while IFS= read -r -d '' dataset_path; do
     dataset="${dataset_path##*/}"
-    stelar_pro_dataset_name_is_valid "$dataset" || continue
-    taxa="${BASH_REMATCH[1]}"; genes="${BASH_REMATCH[2]}"; incomplete="${BASH_REMATCH[8]:-}"
+    if stelar_pro_dataset_name_is_valid "$dataset"; then
+      taxa="${BASH_REMATCH[1]}"; genes="${BASH_REMATCH[2]}"; incomplete="${BASH_REMATCH[8]:-}"
+    elif stelar_pro_gdl_dataset_name_is_valid "$dataset"; then
+      taxa="${dataset#taxa}"; taxa="${taxa%%_*}"
+      genes="${dataset#*_gt}"; genes="${genes%%_*}"; incomplete=""
+    else
+      continue
+    fi
     (( taxa >= MIN_TAXA && genes >= MIN_GENES )) || continue
     [[ "$INCLUDE_INCOMPLETE" == true || -z "$incomplete" ]] || continue
     forbidden="$(stelar_pro_find_forbidden_files "$dataset_path" | head -n1)"
-    command_file="${dataset_path}/${dataset}.command"
-    base_command="${dataset_path}/${dataset%_incomplete}.command"
     result_file="$(find "$dataset_path" -mindepth 3 -type f -print -quit 2>/dev/null)"
     reason=""
     [[ -z "$forbidden" ]] || reason="contains ${forbidden##*/}"
     stelar_pro_mirror_has_unsafe_entries "$dataset_path" && reason="contains symlink/special file"
     [[ -n "$result_file" ]] || reason="contains no result files"
-    if [[ "$ALLOW_MISSING_COMMAND" == false && ! -f "$command_file" && ! -f "$base_command" ]]; then reason="missing .command"; fi
+    if [[ "$ALLOW_MISSING_COMMAND" == false ]] && ! stelar_pro_dataset_has_command_record "$dataset_path" "$dataset"; then reason="missing .command"; fi
     if [[ -n "$reason" ]]; then
       echo "  BLOCKED [$method_dir] $dataset: $reason" >&2
       ((blocked+=1))
     else
       SELECTED+=("${method_dir}/${dataset}")
     fi
-  done < <(find "$method_path" -mindepth 1 -maxdepth 1 -type d -name 't_*' -print0 | sort -zV)
+  done < <(find "$method_path" -mindepth 1 -maxdepth 1 -type d -name 't*' -print0 | sort -zV)
 done < <(find "$OUTPUTS_DIR" -mindepth 1 -maxdepth 1 -type d -name '*-outputs' -print0 | sort -z)
 
 (( blocked == 0 )) || { echo "Error: blocked unsafe/non-reproducible dataset(s); nothing was uploaded." >&2; exit 1; }
@@ -187,7 +199,7 @@ for entry in "${SELECTED[@]}"; do
   [[ -z "$(stelar_pro_find_forbidden_files "$dataset_path" | head -n1)" ]] || { echo "Error: forbidden file appeared in $entry" >&2; exit 1; }
   stelar_pro_mirror_has_unsafe_entries "$dataset_path" && { echo "Error: unsafe entry appeared in $entry" >&2; exit 1; }
   dataset="${entry#*/}"
-  [[ -f "${dataset_path}/${dataset}.command" || -f "${dataset_path}/${dataset%_incomplete}.command" || "$ALLOW_MISSING_COMMAND" == true ]] || {
+  [[ "$ALLOW_MISSING_COMMAND" == true ]] || stelar_pro_dataset_has_command_record "$dataset_path" "$dataset" || {
     echo "Error: command record disappeared from $entry" >&2
     exit 1
   }

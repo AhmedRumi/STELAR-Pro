@@ -96,8 +96,33 @@ the large simulated gene trees or SimPhy databases. Use
 safety rules are documented in
 [DOCS/simulated-outputs-mirror.md](DOCS/simulated-outputs-mirror.md).
 
-To remove that complete directory—including simulated datasets and every
-inferred result beneath it—preview or run the dedicated cleanup command:
+## Run actual GDL simulated datasets
+
+Use the separate, inference-only sweep for existing data under
+`$PHYLOGENY_DATA_DIR/gdl-simulation/data/taxa<T>_gt<G>_dup<D>_loss<L>_pop<P>/R*/`:
+
+```bash
+./run-bulk-gdl-simulated.sh --method stelar-pro \
+  --taxa-list "10,100" --gt-list "10,1000" \
+  --dup-list "1,2" --loss-list "0,0.5" --pop-list "50000000" \
+  --num-replicates 5 --opts-list "--search-space S1" --no-notify
+
+./run-bulk-gdl-simulated.sh --method astral-pro3 \
+  --num-replicates 1 --opts "--thread 16" --no-notify
+```
+
+Only `true-genetrees/all_gt.trees` and `species-tree/s_tree.trees` are read;
+`separate/` is never needed. Gene-copy labels such as `10_0_0` are normalized to
+species `10` in temporary input for both methods, without changing source data.
+Editable parameter lists are at the top of the new bulk script. Missing inputs
+are skipped by default; `--strict-missing` aborts before inference, and
+`--dry-run` previews without writes. Notifications are enabled unless disabled.
+See [GDL sweep details](DOCS/gdl-simulated-runs.md) for running both methods,
+output safety, stats collection, and the local sample command.
+
+For the original SimPhy workflow, the dedicated cleanup removes `simphy/data`,
+including its simulated inputs and inference results. It leaves actual GDL
+datasets and the outputs safety mirror untouched:
 
 ```bash
 ./clear-bulk-simulated.sh --dry-run

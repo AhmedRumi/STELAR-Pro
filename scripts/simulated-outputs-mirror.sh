@@ -20,6 +20,9 @@ stelar_pro_simulated_outputs_dir() {
       requested="${HOME}/${requested:2}"
     fi
     resolved="$(realpath -m -- "$requested")"
+  elif [[ "$data_dir" == */gdl-simulation/data ]]; then
+    base="${data_dir%/gdl-simulation/data}"
+    resolved="${base}/outputs/gdl-simulation"
   elif [[ "$data_dir" == */simphy/data ]]; then
     base="${data_dir%/simphy/data}"
     resolved="${base}/outputs/gdl-simulation"
@@ -55,6 +58,20 @@ stelar_pro_dataset_name_is_valid() {
   [[ "$1" =~ ^t_([1-9][0-9]*)_g_([1-9][0-9]*)_sb_([0-9]+([.][0-9]+)?([eE][+-]?[0-9]+)?)_spmin_([1-9][0-9]*)_spmax_([1-9][0-9]*)(_incomplete)?$ ]]
 }
 
+stelar_pro_gdl_dataset_name_is_valid() {
+  [[ "$1" =~ ^taxa([1-9][0-9]*)_gt([1-9][0-9]*)_dup([0-9]+([.][0-9]+)?([eE][+-]?[0-9]+)?)_loss([0-9]+([.][0-9]+)?([eE][+-]?[0-9]+)?)_pop([1-9][0-9]*)$ ]]
+}
+
+stelar_pro_any_simulated_dataset_name_is_valid() {
+  stelar_pro_dataset_name_is_valid "$1" || stelar_pro_gdl_dataset_name_is_valid "$1"
+}
+
+stelar_pro_dataset_has_command_record() {
+  local directory="$1" dataset="$2"
+  [[ -f "${directory}/${dataset}.command" || -f "${directory}/${dataset%_incomplete}.command" ]] && return 0
+  stelar_pro_gdl_dataset_name_is_valid "$dataset" && [[ -f "${directory}/simphy_raw.command" ]]
+}
+
 stelar_pro_mirror_has_forbidden_files() {
   local directory="$1"
   [[ -n "$(stelar_pro_find_forbidden_files "$directory" | head -n1)" ]]
@@ -63,7 +80,7 @@ stelar_pro_mirror_has_forbidden_files() {
 stelar_pro_find_forbidden_files() {
   local directory="$1"
   find "$directory" -type f \
-    \( -name all_gt.tre -o -name s_tree.trees -o -name l_trees.trees \
+    \( -name all_gt.tre -o -name all_gt.trees -o -name s_tree.trees -o -name l_trees.trees \
        -o -name 'g_trees*.trees' -o -name '*.db' -o -name '*.db-journal' \
        -o -name '*.zip' -o -name stat-sim.csv \) -print 2>/dev/null
 }
@@ -96,12 +113,20 @@ stelar_pro_copy_dataset_records() {
         rm -f -- "$temporary" 2>/dev/null || true
         return 1
       fi
-    done < <(find "$source_dataset" -maxdepth 1 -type f \
-      \( -name '*.command' -o -name '*.params' \) -print0 | sort -z)
+    done < <(
+      find "$source_dataset" -maxdepth 1 -type f \( -name '*.command' -o -name '*.params' \) -print0
+      if stelar_pro_gdl_dataset_name_is_valid "$dataset"; then
+        # Generator provenance only; never copy raw simulation trees/databases.
+        for record in "${source_dataset}/params.txt" "${source_dataset}/simphy_raw/simphy_raw.command" "${source_dataset}/simphy_raw/simphy_raw.params"; do
+          [[ "$record" != */simphy_raw/* || ! -L "${source_dataset}/simphy_raw" ]] || continue
+          [[ ! -f "$record" || -L "$record" ]] || printf '%s\0' "$record"
+        done
+      fi
+    )
   done
 
   if [[ "$copied_command" == false ]]; then
-    echo "Warning: no SimPhy .command record found for dataset '$dataset'." >&2
+    echo "Warning: no simulation .command record found for dataset '$dataset'." >&2
   fi
 }
 
@@ -128,7 +153,7 @@ stelar_pro_mirror_simulated_results() {
   relative="${results_dir#${data_dir}/}"
   IFS=/ read -r dataset replicate method_dir setting extra <<< "$relative"
   if [[ -n "${extra:-}" || -z "$setting" ]] || \
-      ! stelar_pro_dataset_name_is_valid "$dataset" || \
+      ! stelar_pro_any_simulated_dataset_name_is_valid "$dataset" || \
       [[ ! "$replicate" =~ ^R[1-9][0-9]*$ ]] || \
       [[ ! "$method_dir" =~ ^[a-z0-9][a-z0-9-]*-outputs$ ]] || \
       [[ "$setting" == . || "$setting" == .. ]]; then

@@ -66,5 +66,7 @@ grep -q "weight / CUDA probe:.*loaded" "${WORK}/diagnose.log"
 "${ROOT}/test/test_bulk_simulated_exclusions.sh"
 "${ROOT}/test/test_simulated_outputs_mirror.sh"
 "${ROOT}/test/test_astral_pro3_runners.sh"
+python3 "${ROOT}/test/test_gdl_input.py"
+"${ROOT}/test/test_gdl_simulated_runners.sh"
 
 echo "STELAR-Pro focused suite: PASS"
