@@ -8,6 +8,7 @@ WORK="$(mktemp -d "${TMPDIR:-/tmp}/stelar-pro-cli-tests.XXXXXX")"
 trap 'rm -rf "$WORK"' EXIT
 
 "${ROOT}/build.sh" >/dev/null
+"${ROOT}/ensure_backends.sh" --cpu-only --quiet
 
 [[ -f "${ROOT}/build/stelarx/Main.class" ]]
 [[ "$(find "${ROOT}/build" -mindepth 1 -maxdepth 1 -type d -printf '%f\n')" == "stelarx" ]]
@@ -19,7 +20,10 @@ VERSION_TEXT="$(NO_COLOR=1 "${ROOT}/stelar-pro" --version --no-build)"
 HELP_TEXT="$(NO_COLOR=1 "${ROOT}/stelar-pro" --help 2>&1)"
 [[ "$HELP_TEXT" == *"STELAR-Pro wrapper"* ]]
 [[ "$HELP_TEXT" == *"--search-space"* ]]
-[[ "$HELP_TEXT" == *"S2 adds DISCO"* ]]
+[[ "$HELP_TEXT" == *"S2 (DISCO/completion/UPGMA/full search)"* ]]
+[[ "$HELP_TEXT" == *"S3 (S2 + DISCO-tree greedy consensus)"* ]]
+[[ "$HELP_TEXT" == *"S4 (S3 + rooted-triplet completion)"* ]]
+[[ "$HELP_TEXT" == *"S5 (A-Pro greedy trees + S1; rooted-triplet full DP)"* ]]
 [[ "$HELP_TEXT" != *"--intersection-method"* ]]
 [[ "$HELP_TEXT" != *"--weight-intersection-method"* ]]
 [[ "$HELP_TEXT" == *"--gpu-strict"* ]]
@@ -56,9 +60,30 @@ NO_COLOR=1 "${ROOT}/stelar-pro" --no-build --cpu -q \
   -i "${ROOT}/test/input/stelar_candidate_5taxa.tre" \
   -o "$S2_TREE" --search-space S2 >/dev/null 2>&1
 [[ -s "$S2_TREE" ]]
-expect_launcher_failure reserved-S3 \
-  "S3 is reserved for a future STELAR-Pro implementation" \
-  --search-space S3
+S3_TREE="${WORK}/s3-species-tree.tre"
+NO_COLOR=1 "${ROOT}/stelar-pro" --no-build --cpu -q \
+  -i "${ROOT}/test/input/stelar_candidate_5taxa.tre" \
+  -o "$S3_TREE" --search-space S3 >/dev/null 2>&1
+[[ -s "$S3_TREE" ]]
+S4_TREE="${WORK}/s4-species-tree.tre"
+NO_COLOR=1 "${ROOT}/stelar-pro" --no-build --cpu -q \
+  -i "${ROOT}/test/input/stelar_candidate_5taxa.tre" \
+  -o "$S4_TREE" --search-space S4 >/dev/null 2>&1
+[[ -s "$S4_TREE" ]]
+S5_TREE="${WORK}/s5-species-tree.tre"
+NO_COLOR=1 "${ROOT}/stelar-pro" --no-build --cpu -q \
+  -i "${ROOT}/test/input/stelar_candidate_5taxa.tre" \
+  -o "$S5_TREE" --search-space S5 --s5-rounds 2 --s5-seed 233 \
+  >/dev/null 2>&1
+[[ -s "$S5_TREE" ]]
+javac -cp "${ROOT}/build" -d "$WORK" \
+  "${ROOT}/test/stelarx/pro/S5RootInvariantCandidateTest.java"
+java -cp "${ROOT}/build:${WORK}" stelarx.pro.S5RootInvariantCandidateTest \
+  >/dev/null 2>&1
+javac -cp "${ROOT}/build" -d "$WORK" \
+  "${ROOT}/test/AProGreedySearchTest.java"
+java -Djava.library.path="${ROOT}/native" -cp "${ROOT}/build:${WORK}" \
+  AProGreedySearchTest >/dev/null 2>&1
 for option in --intersection-method --im --weight-intersection-method; do
   expect_launcher_failure "removed-${option#--}" \
     "${option} was removed" "$option" I1
@@ -72,6 +97,7 @@ printf '%s\n' \
   '#!/bin/sh' \
   'set -eu' \
   'echo "ASTRAL-PRO BACKEND NOISE"' \
+  '[ "$1" != "-h" ] || exit 0' \
   '[ "$1" = "-T" ]' \
   '[ "$2" = "-o" ]' \
   'printf "(B,(C,(A,A)D));\\n" > "$3"' \

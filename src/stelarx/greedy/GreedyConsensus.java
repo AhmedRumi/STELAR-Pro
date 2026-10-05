@@ -1,6 +1,7 @@
 package stelarx.greedy;
 
 import stelarx.Logging;
+import stelarx.cluster.ClusterHash;
 import stelarx.cluster.ClusterTable;
 import stelarx.completion.SimilarityMatrix;
 import stelarx.hash.PrefixHashArrays;
@@ -33,7 +34,7 @@ public final class GreedyConsensus {
         public final int numSkippedTrivial;
         public final int numSkippedRedundant;
         public final int numRejectedCrossCut;
-        /** Part II emissions (Step A + Step B) — may be empty when {@code sim} is null. */
+        /** Consensus clades plus Part II Step A/Step B refinements. */
         public final EmissionBuffer emissions;
         public final PolytomyPool   pool;
 
@@ -58,42 +59,41 @@ public final class GreedyConsensus {
      *
      * @param clusterTable  source of the all-taxa cluster signature (used for
      *                      computing complement hashes during canonicalization)
-     * @param geneTrees     gene trees ONLY (no UPGMA guide tree).  Used both to
-     *                      count bipartition frequencies (excluding any guide
-     *                      tree contribution) AND for the laminar builder's
-     *                      taxa-enumeration step (since exemplar Cluster
-     *                      objects index into this list via {@link Tree#treeIndex}).
-     * @param pref          prefix hash arrays covering {@code geneTrees}
+     * @param sourceTrees   trees used to count frequencies and resolve consensus
+     *                      polytomies (completed DISCO trees in STELAR-Pro S3)
+     * @param exemplarTrees full tree-indexed candidate list used to enumerate
+     *                      bipartition exemplars; source trees retain their
+     *                      global {@link Tree#treeIndex} values in this list
+     * @param pref          prefix hash arrays covering {@code exemplarTrees}
      * @param hasher        per-taxon hashes — must be the same instance used to
      *                      build {@code pref}, so the consensus-tree prefix
      *                      arrays produce signatures comparable across sources
-     * @param numTaxa       n
-     */
-    /**
      * @param sim  species similarity matrix (Phase 1b output); pass {@code null}
      *             when {@code --autocomplete} is off — Step A and Step B's
      *             resolveByDistance phase are then skipped, Step B's
      *             resolveLinearly still runs.  Pass non-null and the polytomy
      *             pool is resolved in parallel via {@link PolytomyResolver#runAllParallel}.
+     * @param numTaxa number of species in the complete candidate universe
      */
-    public static Result build(ClusterTable clusterTable, List<Tree> geneTrees,
+    public static Result build(ClusterTable clusterTable, List<Tree> sourceTrees,
+                                List<Tree> exemplarTrees,
                                 PrefixHashArrays pref, TaxonHasher hasher,
                                 SimilarityMatrix sim, int numTaxa) {
         long t0 = System.nanoTime();
-        int k = geneTrees.size();
+        int k = sourceTrees.size();
         if (k <= 0) {
-            throw new IllegalStateException("greedyConsensus: gene-tree list is empty");
+            throw new IllegalStateException("greedyConsensus: source-tree list is empty");
         }
 
-        // ── Phase A: walk gene trees → per-bipartition counts, sort desc ──
+        // ── Phase A: walk source trees → per-bipartition counts, sort desc ──
         List<Bipartition> bps = BipartitionCounter.collectFromGeneTrees(
-            geneTrees, pref, clusterTable.getAllTaxaHash(), numTaxa);
-        Logging.debug("GreedyConsensus: %d unique bipartitions (from %d gene trees)",
+            sourceTrees, pref, clusterTable.getAllTaxaHash(), numTaxa);
+        Logging.debug("GreedyConsensus: %d unique bipartitions (from %d source trees)",
             bps.size(), k);
 
         // ── Phase B: single-pass laminar build + snapshot at each threshold ──
         LaminarForest forest = new LaminarForest(numTaxa);
-        LaminarBuilder builder = new LaminarBuilder(forest, geneTrees, numTaxa);
+        LaminarBuilder builder = new LaminarBuilder(forest, exemplarTrees, numTaxa);
 
         ConsensusTree[] snapshots = new ConsensusTree[THRESHOLDS.length];
         int ti = THRESHOLDS.length - 1;        // start at highest (1/3)
@@ -140,12 +140,13 @@ public final class GreedyConsensus {
             }
         }
 
-        // ── Part II: polytomy resolution (Step A + Step B) in parallel ────
+        // ── Emit snapshot clades, then resolve their polytomies ───────────
         long t2 = System.nanoTime();
         PolytomyPool   pool      = PolytomyPool.build(snapshots, numTaxa, /*explicitLimit=*/0);
         EmissionBuffer emissions = new EmissionBuffer();
+        int directConsensus = emitConsensusClades(snapshots, emissions, numTaxa);
         PolytomyResolver.runAllParallel(
-            pool.tasks, geneTrees, sim, emissions, numTaxa, /*baseSeed=*/692L);
+            pool.tasks, sourceTrees, sim, emissions, numTaxa, /*baseSeed=*/692L);
         long resolveMs = (System.nanoTime() - t2) / 1_000_000;
 
         int countA = 0, countB = 0;
@@ -154,9 +155,10 @@ public final class GreedyConsensus {
             else if (b.source == 'B') countB++;
         }
         Logging.info("Greedy consensus polytomy phase: %d tasks (%d skipped), "
-                + "size-limit=%d, emissions: %d A + %d B = %d unique (%d ms)",
+                + "size-limit=%d, emissions: %d consensus + %d A + %d B "
+                + "= %d unique (%d ms)",
             pool.numAccepted, pool.numSkipped, pool.sizeLimit,
-            countA, countB, emissions.size(), resolveMs);
+            directConsensus, countA, countB, emissions.size(), resolveMs);
         if (sim == null) {
             Logging.info("  Step A (UPGMA on group sim) was SKIPPED — no SimilarityMatrix available");
         }
@@ -164,6 +166,46 @@ public final class GreedyConsensus {
         return new Result(snapshots, bps.size(),
             accepted, skippedTriv, skippedRed, rejected,
             emissions, pool);
+    }
+
+    /** Backward-compatible entry point where source indices are list-local. */
+    public static Result build(ClusterTable clusterTable, List<Tree> sourceTrees,
+                                PrefixHashArrays pref, TaxonHasher hasher,
+                                SimilarityMatrix sim, int numTaxa) {
+        return build(clusterTable, sourceTrees, sourceTrees, pref, hasher, sim, numTaxa);
+    }
+
+    /** Add every non-trivial rooted clade from all seven consensus snapshots. */
+    private static int emitConsensusClades(ConsensusTree[] snapshots,
+                                            EmissionBuffer emissions,
+                                            int numTaxa) {
+        int[] added = {0};
+        for (int ti = 0; ti < snapshots.length; ti++) {
+            ConsensusTree tree = snapshots[ti];
+            int thresholdIndex = ti;
+            tree.forEachInternalNode(node -> {
+                if (node == tree.root()) return;
+                int lo = node.rangeLo(), hi = node.rangeHi();
+                int size = hi - lo;
+                if (size < 2 || size >= numTaxa) return;
+
+                long[] sums = new long[tree.numSeeds()];
+                long[] xors = new long[tree.numSeeds()];
+                for (int s = 0; s < tree.numSeeds(); s++) {
+                    sums[s] = tree.sigma1(s, lo, hi);
+                    xors[s] = tree.sigma2(s, lo, hi);
+                }
+                ClusterHash signature = new ClusterHash(
+                    sums, xors, size, tree.numSeeds());
+                MultiRange range = new MultiRange(
+                    tree, new int[]{lo}, new int[]{hi});
+                if (emissions.add(new EmittedBipartition(
+                        signature, range, size, 'C', thresholdIndex))) {
+                    added[0]++;
+                }
+            });
+        }
+        return added[0];
     }
 
     private GreedyConsensus() {}

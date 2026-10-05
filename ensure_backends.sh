@@ -27,7 +27,9 @@ ASTER_BIN="${ASTER_DIR}/bin/astral-pro3"
 ASTER_STAMP="${ASTER_DIR}/bin/.build-stamp"
 NATIVE_DIR="${ROOT}/native"
 NATIVE_STAMP="${NATIVE_DIR}/.build-stamp"
-NATIVE_LIBS=(libstelar_pro_weight.so libstelar_pro_dp.so libstelar_pro_dist.so libstelar_pro_sim.so)
+NATIVE_LIBS=(libstelar_pro_weight.so libstelar_pro_dp.so libstelar_pro_dist.so libstelar_pro_sim.so libstelar_pro_s5_score.so libstelar_pro_s5_greedy_gpu.so)
+S5_CPU_LIB="${NATIVE_DIR}/libstelar_pro_s5_greedy.so"
+S5_CPU_STAMP="${NATIVE_DIR}/.s5-cpu-build-stamp"
 PROBE_TIMEOUT_SEC=60
 
 FORCE=false
@@ -178,6 +180,46 @@ ensure_aster() {
 
 # ── CUDA libraries ───────────────────────────────────────────────────────────
 
+# S5's CPU greedy engine is useful even when nvcc is unavailable. Build it
+# independently of the CUDA libraries and only when sources or host changed.
+ensure_s5_cpu() {
+  local reason=""
+  if [[ "$FORCE" == true ]]; then
+    reason="--force"
+  elif [[ ! -f "$S5_CPU_LIB" ]]; then
+    reason="not built yet"
+  elif [[ ! -f "$S5_CPU_STAMP" ]]; then
+    reason="no build record"
+  elif [[ "$(stelar_stamp_get "$S5_CPU_STAMP" glibc)" != "$HOST_GLIBC" ]] \
+      || [[ "$(stelar_stamp_get "$S5_CPU_STAMP" cpu)" != "$HOST_CPU" ]]; then
+    reason="different host"
+  elif sources_newer_than "${ASTER_DIR}/src" "$S5_CPU_LIB" cpp hpp h c \
+      || [[ "${ROOT}/src/native/stelar_pro_s5_greedy.cpp" -nt "$S5_CPU_LIB" ]]; then
+    reason="S5 sources changed"
+  fi
+  if [[ -z "$reason" ]]; then
+    say "  ${GREEN}✓${NC} S5 CPU       current"
+    return 0
+  fi
+  local javac_bin jdk_root build_path
+  javac_bin="$(readlink -f "$(command -v javac)")"
+  jdk_root="$(cd "$(dirname "$javac_bin")/.." && pwd)"
+  build_path="$(toolchain_path)"
+  say "  ${YELLOW}⟳${NC} S5 CPU       building: ${reason}"
+  mkdir -p "$NATIVE_DIR"
+  if ! PATH="$build_path" g++ -std=gnu++17 -O3 -march=native -fPIC \
+      -shared -pthread -I"${jdk_root}/include" -I"${jdk_root}/include/linux" \
+      "${ROOT}/src/native/stelar_pro_s5_greedy.cpp" -o "$S5_CPU_LIB"; then
+    fail "building S5 CPU greedy library failed"
+    return 1
+  fi
+  {
+    echo "glibc=${HOST_GLIBC}"
+    echo "cpu=${HOST_CPU}"
+  } > "$S5_CPU_STAMP"
+  say "  ${GREEN}✓${NC} S5 CPU       built"
+}
+
 find_nvcc() {
   if [[ -n "${NVCC:-}" && -x "${NVCC}" ]]; then echo "$NVCC"; return; fi
   if command -v nvcc >/dev/null 2>&1; then command -v nvcc; return; fi
@@ -232,8 +274,11 @@ ensure_native() {
     reason="built for GPU '$(stelar_stamp_get "$NATIVE_STAMP" gpus)', this machine has '${HOST_GPUS}'"
   elif [[ -n "$arch" && "$(stelar_stamp_get "$NATIVE_STAMP" cuda_arch)" != "$arch" ]]; then
     reason="CUDA_ARCH=${arch} requested, previously built with $(stelar_stamp_get "$NATIVE_STAMP" cuda_arch)"
-  elif sources_newer_than "${ROOT}/src/native" "${NATIVE_DIR}/${NATIVE_LIBS[0]}" cu cuh h hpp; then
+  elif sources_newer_than "${ROOT}/src/native" "${NATIVE_DIR}/${NATIVE_LIBS[0]}" cu cuh h hpp cpp; then
     reason="CUDA sources are newer than the libraries"
+  elif sources_newer_than "${ASTER_DIR}/src" \
+      "${NATIVE_DIR}/libstelar_pro_s5_greedy_gpu.so" cpp hpp h c; then
+    reason="S5 greedy search sources are newer than the CUDA bridge"
   else
     unresolved="$(native_libs_unresolved)"
     [[ -z "$unresolved" ]] || reason="do not load here: ${unresolved}"
@@ -263,5 +308,6 @@ ensure_native() {
 say "=== Machine-specific backends ==="
 status=0
 ensure_aster || status=1
+ensure_s5_cpu || status=1
 ensure_native
 exit "$status"

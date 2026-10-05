@@ -22,8 +22,8 @@ import java.util.*;
  *   Type 1  -- for every resolved binary speciation node u (incl. root):
  *              sub(u) → sub(left(u)) | sub(right(u))
  *
- *   Type 2  -- for every resolved non-root node u (leaf or internal) with a
- *              binary parent and a nonempty parent super-complement:
+ *   S5 only -- for every non-root node u of an unrooted A-Pro greedy tree
+ *              with a binary parent and a nonempty parent super-complement:
  *              [S \ sub(u)] → sub(sibling(u)) | [S \ sub(parent(u))]
  *
  * For complete trees (Lg == S), Types 3a/3b add nothing new and are skipped.
@@ -44,7 +44,10 @@ public class DPTable {
     private int totalEmitted = 0;   // total emitted (with duplicates across trees)
     private int uniqueSplits = 0;   // sum of set sizes after dedup
     private int overlappingSpeciationNodes = 0;
+    private int s5RotationTransitions = 0;
     private final UniqueTaxonSubtreeHashes uniqueTaxonHashes;
+    /** Greedy A-Pro trees are unrooted proposals; rotate only these, never genes. */
+    private final int firstS5GreedyTreeIndex;
 
     // -------------------------------------------------------------------------
 
@@ -61,8 +64,16 @@ public class DPTable {
     /** STELAR-Pro entry point with duplicate-invariant subtree hashes. */
     public DPTable(List<Tree> trees, PrefixHashArrays pref, ClusterTable clusterTable,
                    UniqueTaxonSubtreeHashes uniqueTaxonHashes) {
+        this(trees, pref, clusterTable, uniqueTaxonHashes, Integer.MAX_VALUE);
+    }
+
+    /** Add both orientations of S5 greedy-tree edges in linear space. */
+    public DPTable(List<Tree> trees, PrefixHashArrays pref, ClusterTable clusterTable,
+                   UniqueTaxonSubtreeHashes uniqueTaxonHashes,
+                   int firstS5GreedyTreeIndex) {
         long t0 = System.nanoTime();
         this.uniqueTaxonHashes = uniqueTaxonHashes;
+        this.firstS5GreedyTreeIndex = firstS5GreedyTreeIndex;
         this.m        = uniqueTaxonHashes == null
             ? pref.numSeeds() : uniqueTaxonHashes.numSeeds();
         this.rootHash = clusterTable.getAllTaxaHash();
@@ -85,6 +96,10 @@ public class DPTable {
         long ms = (System.nanoTime() - t0) / 1_000_000;
         Logging.info("DP table: %d clusters with splits, %d unique splits (%d emitted) in %d ms",
             transitions.size(), uniqueSplits, totalEmitted, ms);
+        if (s5RotationTransitions > 0) {
+            Logging.info("S5 greedy rooting: %d opposite-edge transitions emitted",
+                s5RotationTransitions);
+        }
         if (overlappingSpeciationNodes > 0) {
             Logging.info("DP table: skipped %d tagged-speciation node(s) whose child "
                 + "species sets overlap", overlappingSpeciationNodes);
@@ -101,8 +116,8 @@ public class DPTable {
 
     /** Post-order recursion: visit descendants, then emit speciation transitions. */
     private void emit(TreeNode u, int ti, int anchorPos, PrefixHashArrays pref) {
-        // A leaf has no Type-1 subtree split, but it can still induce a Type-2
-        // split of its complement.  If u={x}, sibling(u)=B, and the taxa outside
+        // A leaf has no Type-1 subtree split. In S5's greedy proposal only,
+        // it can induce a split of its complement. If u={x}, sibling(u)=B, and the taxa outside
         // parent(u) are O, the valid unrooted rotation is
         //
         //     S\{x} = B ∪ O  →  B | O.
@@ -110,7 +125,10 @@ public class DPTable {
         // Keep this separate from the internal-node traversal so leaves remain
         // ordinary DP base cases while their incident edge can contribute a
         // resolution for the opposite side of the bipartition.
-        if (u.isLeaf()) return;
+        if (u.isLeaf()) {
+            if (ti >= firstS5GreedyTreeIndex) emitType2(u, ti, false, pref);
+            return;
+        }
 
         // Polytomous node: recurse into all children, but add NO direct transitions of
         // its own.  A polytomy is an unresolved node — it must not force any binary
@@ -123,6 +141,11 @@ public class DPTable {
 
         emit(u.left,  ti, anchorPos, pref);
         emit(u.right, ti, anchorPos, pref);
+
+        // For an unrooted greedy tree, moving the root across edge (u,parent)
+        // turns the complement of u into a rooted subtree. This rotation adds
+        // its binary transition without materializing O(n) rerooted tree copies.
+        if (ti >= firstS5GreedyTreeIndex) emitType2(u, ti, false, pref);
 
         // Admission depends only on the event tag. Resolver-created nodes tagged
         // as speciation are therefore handled exactly like original nodes.
@@ -185,6 +208,7 @@ public class DPTable {
         ClusterHash hCompParent = hashRange(ti, parent.rangeStart, parent.rangeEnd, true,  pref);
         if (hCompParent.size > 0) {
             addTransition(hCompU, hSib, hCompParent);
+            s5RotationTransitions++;
         }
     }
 

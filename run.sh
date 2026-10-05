@@ -69,8 +69,13 @@ Optional:
   --gpu              Force GPU mode
   --auto             Automatically select CUDA or CPU (default)
   --gpu-strict       Require CUDA; do not fall back to CPU
-  --search-space     S1 (default) | S2 (DISCO/completion/UPGMA/full search); S3 reserved
+  --search-space     S1 (default) | S2 (DISCO/completion/UPGMA/full search) |
+                     S3 (S2 + DISCO-tree greedy consensus) |
+                     S4 (S3 + rooted-triplet completion) |
+                     S5 (A-Pro greedy trees + S1; rooted-triplet full DP)
   --search-mode      local | full
+  --s5-rounds N      Number of independent S5 greedy searches (default: 4)
+  --s5-seed N        S5 greedy-search random seed
   --no-prune-search-space  Disable the DP-reachability weight prune (default: on)
   --threads, --num-threads, -t
                      Thread count
@@ -179,7 +184,7 @@ while [[ $# -gt 0 ]]; do
       PROGRAM_ARGS+=("$1" "$2")
       shift 2
       ;;
-    --search-space|--search-mode|-t|--threads|--num-threads|-m|--seeds|--large-n-score-type|--large-score-type|--anchor-taxon|--gpu-batch-size|--gpu-batches|--gpu-vram-control-factor|--gpu-vram-occupancy-factor|--gpu-treewalk-vram-cap-mb|--gpu-progress-interval|--gpu-dp-state-space-construction-output-cap|--gpu-dp-state-space-progress-time-interval|--gpu-dp-state-space-progress-max-steps|--gpu-dist-tile-size|--gpu-sim-vram-cap-mb|--dump-clusters|--dump-completed-gene-trees|--completion-method|--stepb-restriction|--taxa-file|--species-list|--species-list-file|--taxa-set|--taxa-operation|--gene-species-map)
+    --search-space|--search-mode|--s5-rounds|--s5-seed|-t|--threads|--num-threads|-m|--seeds|--large-n-score-type|--large-score-type|--anchor-taxon|--gpu-batch-size|--gpu-batches|--gpu-vram-control-factor|--gpu-vram-occupancy-factor|--gpu-treewalk-vram-cap-mb|--gpu-progress-interval|--gpu-dp-state-space-construction-output-cap|--gpu-dp-state-space-progress-time-interval|--gpu-dp-state-space-progress-max-steps|--gpu-dist-tile-size|--gpu-sim-vram-cap-mb|--dump-clusters|--dump-completed-gene-trees|--completion-method|--stepb-restriction|--taxa-file|--species-list|--species-list-file|--taxa-set|--taxa-operation|--gene-species-map)
       PROGRAM_ARGS+=("$1" "$2")
       shift 2
       ;;

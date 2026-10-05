@@ -18,6 +18,7 @@ import stelarx.gpu.GPUDPBuilder;
 import stelarx.gpu.GPUWeightCalculator;
 import stelarx.partition.PartitionTable;
 import stelarx.pro.DiscoDecomposer;
+import stelarx.pro.AProGreedySearch;
 import stelarx.pro.GeneTreeRooterTagger;
 import stelarx.pro.GeneTreePolytomyResolver;
 import stelarx.pro.UniqueTaxonSubtreeHashes;
@@ -170,21 +171,47 @@ public class Main {
             }
 
             // ── Phase 1b: Optional candidate-tree enrichment ─────────────────
-            // S2 decomposes multicopy trees with DISCO, completes those
-            // single-copy trees, and adds a UPGMA guide. S1 skips this work.
+            // S2-S4 decompose multicopy trees with DISCO, complete those
+            // single-copy trees, and add a UPGMA guide. S3/S4 later add greedy
+            // consensus candidates. S4 changes only the completion matrix.
+            // S5 independently adds A-Pro quartet-greedy proposal trees to S1.
             //
             // IMPORTANT: originalTrees is saved before enrichment and is used for
             // rooted-partition extraction (Phase 4) and weights (Phase 6). Candidate
             // trees may contain completed or guide-tree relationships, but those
             // artificial relationships never become scoring observations.
             List<Tree> originalTrees = trees; // always points to pre-completion trees
+            List<Tree> consensusSourceTrees = List.of(); // completed DISCO trees for S3
             SimilarityMatrix similarityMatrix = null; // visible to Phase 3.5 (Step A)
-            Tree upgmaGuideTree = null; // retained for S3 gene-tree-polytomy enrichment
-            if (cfg.getSearchSpace() == Config.SearchSpace.S2 && !cfg.isScoreOnly()) {
+            Tree upgmaGuideTree = null; // S2/S3 candidate and optional legacy guide
+            boolean discoSearch = cfg.getSearchSpace() == Config.SearchSpace.S2
+                || cfg.getSearchSpace() == Config.SearchSpace.S3
+                || cfg.getSearchSpace() == Config.SearchSpace.S4;
+            if (cfg.getSearchSpace() == Config.SearchSpace.S5 && !cfg.isScoreOnly()) {
+                boolean gpuGreedy = cfg.getComputeMode() == Config.ComputeMode.GPU;
+                long t1b = PhaseLogger.begin("Phase 1b S5 A-Pro greedy proposals", gpuGreedy);
+                // The resolved input is re-tagged by the in-process A-Pro scorer.
+                // Greedy trees propose rooted clusters only: Phase 4/6 below
+                // still scores the original rooted/tagged multicopy gene trees.
+                List<Tree> greedyTrees = AProGreedySearch.generate(
+                    preprocessingInput, registry, originalTrees.size(),
+                    cfg.getThreadCount(), cfg.getS5Seed(), cfg.getS5Rounds(), gpuGreedy);
+                List<Tree> candidateTrees = new ArrayList<>(
+                    originalTrees.size() + greedyTrees.size());
+                candidateTrees.addAll(originalTrees);
+                candidateTrees.addAll(greedyTrees);
+                trees = candidateTrees;
+                Logging.info("S5 candidates: %d original gene trees + %d A-Pro "
+                        + "quartet-greedy proposal(s) (%s); triplet scoring remains original-only",
+                    originalTrees.size(), greedyTrees.size(),
+                    gpuGreedy ? "GPU" : "CPU");
+                PhaseLogger.end("Phase 1b S5 A-Pro greedy proposals", t1b, gpuGreedy);
+            } else if (discoSearch && !cfg.isScoreOnly()) {
                 boolean gpuSim = cfg.getComputeMode() == Config.ComputeMode.GPU
                     && GPUSimilarityMatrix.tryLoad();
                 long t1b = PhaseLogger.begin(
-                    "Phase 1b S2 DISCO + completion + UPGMA guide", gpuSim);
+                    "Phase 1b " + cfg.getSearchSpace()
+                        + " DISCO + completion + UPGMA guide", gpuSim);
 
                 // DISCO trees only propose extra candidates. Keep originalTrees
                 // untouched because Phase 4/6 must score the GDL triplet model
@@ -192,20 +219,40 @@ public class Main {
                 DiscoDecomposer.Result disco = DiscoDecomposer.decomposeAll(
                     originalTrees, registry.size(), originalTrees.size(), 4);
                 List<Tree> completedDiscoTrees = disco.trees();
-                Logging.info("S2 DISCO: %d rooted/tagged family tree(s) -> %d retained "
+                Logging.info("%s DISCO: %d rooted/tagged family tree(s) -> %d retained "
                         + "single-copy tree(s); %d duplication cut(s), %d tree(s) below 4 leaves discarded",
-                    originalTrees.size(), completedDiscoTrees.size(),
+                    cfg.getSearchSpace(), originalTrees.size(), completedDiscoTrees.size(),
                     disco.duplicationCuts(), disco.discardedSmallTrees());
 
                 if (!completedDiscoTrees.isEmpty()) {
-                    // Retain STELAR-X's quartet similarity/completion heuristic for
-                    // this first S2 implementation, but apply it only to DISCO's
-                    // single-copy trees where its one-position taxon maps are valid.
-                    similarityMatrix = gpuSim
-                        ? SimilarityMatrixBuilder.buildGPU(completedDiscoTrees, registry.size())
-                        : SimilarityMatrixBuilder.buildCPU(completedDiscoTrees, registry.size());
-                    completedDiscoTrees = TreeCompleter.completeAll(
-                        completedDiscoTrees, similarityMatrix, registry.size());
+                    // Keep S3's quartet matrix for UPGMA and consensus. S4 uses
+                    // a rooted-triplet matrix solely for incomplete-tree insertion,
+                    // then releases it before constructing the unchanged S3 guide.
+                    // Neither matrix contributes weight/scoring evidence.
+                    if (cfg.getSearchSpace() == Config.SearchSpace.S4) {
+                        SimilarityMatrix completionMatrix = gpuSim
+                            ? SimilarityMatrixBuilder.buildTripletGPU(
+                                completedDiscoTrees, registry.size())
+                            : SimilarityMatrixBuilder.buildTripletCPU(
+                                completedDiscoTrees, registry.size());
+                        List<Tree> uncompletedDiscoTrees = completedDiscoTrees;
+                        completedDiscoTrees = TreeCompleter.completeAll(
+                            completedDiscoTrees, completionMatrix, registry.size());
+                        completionMatrix = null; // avoid retaining two O(n²) matrices
+                        similarityMatrix = gpuSim
+                            ? SimilarityMatrixBuilder.buildGPU(
+                                uncompletedDiscoTrees, registry.size())
+                            : SimilarityMatrixBuilder.buildCPU(
+                                uncompletedDiscoTrees, registry.size());
+                    } else {
+                        similarityMatrix = gpuSim
+                            ? SimilarityMatrixBuilder.buildGPU(
+                                completedDiscoTrees, registry.size())
+                            : SimilarityMatrixBuilder.buildCPU(
+                                completedDiscoTrees, registry.size());
+                        completedDiscoTrees = TreeCompleter.completeAll(
+                            completedDiscoTrees, similarityMatrix, registry.size());
+                    }
                     for (Tree candidateTree : completedDiscoTrees) {
                         markSyntheticCandidateNodes(candidateTree.root);
                     }
@@ -218,9 +265,13 @@ public class Main {
                             cfg.getDumpCompletedTreesFile());
                     }
                 } else {
-                    Logging.info("S2 DISCO: no component has at least four leaves; "
-                        + "completion and UPGMA enrichment skipped");
+                    Logging.info("%s DISCO: no component has at least four leaves; "
+                        + "completion and UPGMA enrichment skipped", cfg.getSearchSpace());
                 }
+
+                // Keep a stable view of the completed single-copy sources. Their
+                // global treeIndex values refer to the full candidate list below.
+                consensusSourceTrees = List.copyOf(completedDiscoTrees);
 
                 List<Tree> candidateTrees = new ArrayList<>(originalTrees.size()
                     + completedDiscoTrees.size() + (upgmaGuideTree == null ? 0 : 1));
@@ -228,10 +279,11 @@ public class Main {
                 candidateTrees.addAll(completedDiscoTrees);
                 if (upgmaGuideTree != null) candidateTrees.add(upgmaGuideTree);
                 trees = candidateTrees;
-                Logging.info("S2 candidate sources: %d original + %d completed DISCO + %d UPGMA tree",
-                    originalTrees.size(), completedDiscoTrees.size(),
+                Logging.info("%s candidate sources: %d original + %d completed DISCO + %d UPGMA tree",
+                    cfg.getSearchSpace(), originalTrees.size(), completedDiscoTrees.size(),
                     upgmaGuideTree == null ? 0 : 1);
-                PhaseLogger.end("Phase 1b S2 candidate enrichment", t1b, gpuSim);
+                PhaseLogger.end("Phase 1b " + cfg.getSearchSpace()
+                    + " candidate enrichment", t1b, gpuSim);
             } else if (cfg.isAutoCompleteIncompleteTrees() || cfg.isVerifyDistanceMatrix()
                     || cfg.isVerifySimilarityMatrix() || cfg.isVerifyUpgma()) {
                 boolean gpuDist = (cfg.getComputeMode() == Config.ComputeMode.GPU)
@@ -358,8 +410,10 @@ public class Main {
             // small-to-large set merging replaces arbitrary-range structures.
             UniqueTaxonSubtreeHashes candidateHashes =
                 new UniqueTaxonSubtreeHashes(trees, hasher);
+            int firstS5GreedyTreeIndex = cfg.getSearchSpace() == Config.SearchSpace.S5
+                ? originalTrees.size() : Integer.MAX_VALUE;
             ClusterTable clusterTable = new ClusterTable(
-                trees, pref, registry.size(), candidateHashes);
+                trees, pref, registry.size(), candidateHashes, firstS5GreedyTreeIndex);
             PhaseLogger.end("Phase 3  Cluster extraction", t3, false);
 
             if (cfg.isVerifyClusters()) {
@@ -391,57 +445,54 @@ public class Main {
                 PhaseLogger.end("Phase 3.6 Gene-tree polytomy enrichment", t36, false);
             }
 
-            // ── Phase 3.5: Greedy consensus + polytomy resolution (EXPERIMENTAL) ──
-            // INCOMPLETE feature — emission of resolved polytomies into X is not
-            // yet wired up.  Skipped entirely by default: no compute, no memory.
-            // Enabled only via --consensus-experimental (build path) or the
-            // explicit --verify-greedy-consensus entry point.
-            //
-            // Use ONLY the gene trees (no UPGMA guide tree) so the bipartition
-            // frequencies match ASTRAL-MP's `addExtraBipartitionByHeuristics`
-            // (which runs greedy consensus over the gene trees alone).
-            //
-            // `originalTrees.size()` is the gene-tree count regardless of
-            // completion mode:
-            //   - autocomplete OFF:  trees == originalTrees (no UPGMA appended)
-            //   - autocomplete ON :  trees = completed gene trees + UPGMA
-            //                        originalTrees still references the
-            //                        pre-completion / pre-UPGMA list size.
+            // ── Phase 3.5: S3/S4 greedy consensus + polytomy resolution ──────
+            // Both build consensus only from completed single-copy DISCO trees.
+            // Original multicopy trees remain the sole Phase 4/6 scoring data.
             // Exemplar list the WEIGHT phase uses for cluster position lookups.
             // Defaults to the completed/gene trees; the consensus bridge may append
-            // consensus snapshot trees (membership-only exemplars) for synthesized
-            // multi-range clusters. The DP (Phase 5) keeps using `trees` directly,
+            // consensus snapshot trees as membership-only exemplars. The DP
+            // (Phase 5) keeps using `trees` directly,
             // so consensus trees are never mined for local transitions.
             List<Tree> weightClusterTrees = trees;
-            if (cfg.isVerifyGreedyConsensus() || cfg.isConsensusExperimental()) {
-                List<Tree> geneTreesForGreedy = trees.subList(0, originalTrees.size());
+            boolean discoConsensus = cfg.getSearchSpace() == Config.SearchSpace.S3
+                || cfg.getSearchSpace() == Config.SearchSpace.S4;
+            if (discoConsensus || cfg.isVerifyGreedyConsensus()
+                    || cfg.isConsensusExperimental()) {
+                List<Tree> geneTreesForGreedy = discoConsensus
+                    ? consensusSourceTrees
+                    : trees.subList(0, originalTrees.size());
 
                 if (cfg.isVerifyGreedyConsensus()) {
-                    GreedyConsensusVerifier.dump(geneTreesForGreedy, registry, clusterTable,
-                                                 pref, hasher, similarityMatrix, cfg.getOutputFile());
+                    GreedyConsensusVerifier.dump(geneTreesForGreedy, trees, registry,
+                        clusterTable, pref, hasher, similarityMatrix, cfg.getOutputFile());
                     return;
                 }
-                long t35 = PhaseLogger.begin("Phase 3.5 Greedy consensus build + polytomy resolution", false);
-                GreedyConsensus.Result gcResult =
-                    GreedyConsensus.build(clusterTable, geneTreesForGreedy, pref, hasher,
-                                           similarityMatrix, registry.size());
-                PhaseLogger.end("Phase 3.5 Greedy consensus build + polytomy resolution", t35, false);
+                if (geneTreesForGreedy.isEmpty()) {
+                    Logging.info("%s consensus: no retained DISCO trees; consensus enrichment skipped",
+                        cfg.getSearchSpace());
+                } else {
+                    long t35 = PhaseLogger.begin(
+                        "Phase 3.5 Greedy consensus build + polytomy resolution", false);
+                    GreedyConsensus.Result gcResult = GreedyConsensus.build(
+                        clusterTable, geneTreesForGreedy, trees, pref, hasher,
+                        similarityMatrix, registry.size());
+                    PhaseLogger.end(
+                        "Phase 3.5 Greedy consensus build + polytomy resolution", t35, false);
 
-                // ── Bridge emissions into X (Tier-1 lookup / Tier-2 synthesize) ──
-                List<Tree> ext = new ArrayList<>(trees);
-                int[] bridged = EmissionBridge.bridge(gcResult.emissions, clusterTable,
-                                                      ext, registry.size(),
-                                                      anchorFreeX, cfg.getAnchorTaxon());
-                // Only switch to the extended list if exemplar trees were actually
-                // appended — preserves the `trees == originalTrees` identity that the
-                // weight path's autocomplete detection relies on when nothing changed.
-                if (ext.size() > trees.size()) weightClusterTrees = ext;
-                Logging.info("Consensus emission → X: %d already in X (tier-1), "
-                    + "%d synthesized multi-range (tier-2); +%d exemplar trees",
-                    bridged[0], bridged[1], ext.size() - trees.size());
-                if (cfg.getSearchMode() != Config.SearchMode.FULL && bridged[1] > 0) {
-                    Logging.info("Note: synthesized multi-range clusters gain DP transitions only "
-                        + "via Mode 2 (--search-mode full); in local mode they remain inert.");
+                    // Bridge consensus clades and their refinements into X. New
+                    // exemplars affect membership queries only, never evidence.
+                    List<Tree> ext = new ArrayList<>(trees);
+                    int[] bridged = EmissionBridge.bridge(gcResult.emissions, clusterTable,
+                                                          ext, registry.size(),
+                                                          anchorFreeX, cfg.getAnchorTaxon());
+                    if (ext.size() > trees.size()) weightClusterTrees = ext;
+                    Logging.info("Consensus emission → X: %d already in X (tier-1), "
+                        + "%d synthesized (tier-2); +%d exemplar trees",
+                        bridged[0], bridged[1], ext.size() - trees.size());
+                    if (cfg.getSearchMode() != Config.SearchMode.FULL && bridged[1] > 0) {
+                        Logging.info("Note: synthesized consensus clusters gain DP transitions only "
+                            + "via Mode 2 (--search-mode full); in local mode they remain inert.");
+                    }
                 }
             }
 
@@ -483,7 +534,8 @@ public class Main {
 
             // ── Phase 5: Local DP transitions from candidate-source trees ────
             long t5 = PhaseLogger.begin("Phase 5  DP local transitions", false);
-            DPTable dpTable = new DPTable(trees, pref, clusterTable, candidateHashes);
+            DPTable dpTable = new DPTable(
+                trees, pref, clusterTable, candidateHashes, firstS5GreedyTreeIndex);
             // X, rooted partitions, and DP transitions now own every canonical
             // hash they need; discard the much larger per-node lookup indexes.
             candidateHashes.release();
@@ -676,6 +728,14 @@ public class Main {
                         System.err.println(e.getMessage());
                         return false;
                     }
+                }
+                case "--s5-rounds" -> {
+                    if (++i >= args.length) return false;
+                    cfg.setS5Rounds(Integer.parseInt(args[i]));
+                }
+                case "--s5-seed" -> {
+                    if (++i >= args.length) return false;
+                    cfg.setS5Seed(Long.parseLong(args[i]));
                 }
                 case "--search-mode"   -> {
                     if (++i >= args.length) return false;
@@ -1074,9 +1134,13 @@ public class Main {
               -vv | -vvv                       Debug or trace logging
 
             Search and scoring:
-              --search-space S1|S2|S3          S1 native search (default); S2 adds DISCO,
+              --search-space S1|S2|S3|S4|S5    S1 native search (default); S2 adds DISCO,
                                                  completion, UPGMA, and cross-tree transitions;
-                                                 S3 is reserved
+                                                 S3 adds DISCO-tree greedy consensus;
+                                                 S4 uses rooted triplets for tree completion only;
+                                                 S5 adds A-Pro quartet-greedy candidates
+              --s5-rounds N                  Independent S5 greedy searches (default: 4)
+              --s5-seed N                    S5 greedy-search random seed
               --search-mode local|full         Legacy/advanced DP search control
               --large-n-score-type T            int128 (exact) | double
               --no-prune-search-space           Disable reachability pruning
@@ -1355,14 +1419,10 @@ public class Main {
             java.nio.file.Path.of(second).toAbsolutePath().normalize());
     }
 
-    /** Keep unsupported search-space combinations from being selected accidentally. */
+    /** Keep preset-owned search-space combinations from being changed accidentally. */
     private static void validateCurrentProScope(Config cfg) {
-        if (cfg.getSearchSpace() == Config.SearchSpace.S3) {
-            throw new UnsupportedOperationException(
-                "S3 is reserved for a future STELAR-Pro implementation");
-        }
-        Config.SearchMode expectedMode = cfg.getSearchSpace() == Config.SearchSpace.S2
-            ? Config.SearchMode.FULL : Config.SearchMode.LOCAL;
+        Config.SearchMode expectedMode = cfg.getSearchSpace() == Config.SearchSpace.S1
+            ? Config.SearchMode.LOCAL : Config.SearchMode.FULL;
         if (cfg.getSearchMode() != expectedMode
                 || cfg.isAutoCompleteIncompleteTrees()
                 || cfg.isConsensusExperimental()

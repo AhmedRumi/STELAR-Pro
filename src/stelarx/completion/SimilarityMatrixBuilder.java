@@ -80,6 +80,298 @@ public class SimilarityMatrixBuilder {
         return sm;
     }
 
+    /**
+     * Build S4's rooted-triplet sister-frequency matrix on the CPU.
+     *
+     * <p>For a pair present in a single-copy rooted tree with {@code k} leaves,
+     * {@code k - size(LCA(a,b))} third taxa display {@code ab|c}, out of the
+     * {@code k - 2} possible third taxa. Rows are pair-owned, so CPU workers
+     * write disjoint matrix cells and need no locks or thread-local matrices.
+     */
+    public static SimilarityMatrix buildTripletCPU(List<Tree> trees, int n) {
+        preflightPackedHeap(n);
+        SimilarityMatrix sm = new SimilarityMatrix(n);
+        int eMax = maximumTourLength(trees);
+        boolean wide = eMax > COMPACT_MAX_TOUR;
+
+        Logging.info("Building rooted-triplet tour data for %d trees (parallel CPU, %s RMQ)",
+            trees.size(), wide ? "wide blocked" : "compact");
+        ProgressBar tourBar = new ProgressBar("Triplet tour + RMQ build", trees.size());
+        AtomicInteger toursDone = new AtomicInteger();
+
+        if (!wide) {
+            TripletTourBuilder.CompactData[] tours =
+                new TripletTourBuilder.CompactData[trees.size()];
+            Threading.processRangeParallel(trees.size(), i -> {
+                try {
+                    tours[i] = TripletTourBuilder.buildCompact(trees.get(i), n);
+                    tourBar.update(toursDone.incrementAndGet());
+                } catch (RuntimeException e) {
+                    throw treeBuildFailure(i, trees.get(i), e);
+                }
+            });
+            tourBar.done();
+            accumulateTripletPairsCompact(tours, sm);
+        } else {
+            TripletTourBuilder.WideData[] tours =
+                new TripletTourBuilder.WideData[trees.size()];
+            Threading.processRangeParallel(trees.size(), i -> {
+                try {
+                    tours[i] = TripletTourBuilder.buildWide(trees.get(i), n);
+                    tourBar.update(toursDone.incrementAndGet());
+                } catch (RuntimeException e) {
+                    throw treeBuildFailure(i, trees.get(i), e);
+                }
+            });
+            tourBar.done();
+            accumulateTripletPairsWide(tours, sm);
+        }
+        sm.normalize();
+        return sm;
+    }
+
+    /** GPU equivalent of {@link #buildTripletCPU}; uses the existing tiling and batching policy. */
+    public static SimilarityMatrix buildTripletGPU(List<Tree> trees, int n) {
+        preflightPackedHeap(n);
+        int eMax = maximumTourLength(trees);
+        int logMax = sparseLog(eMax);
+        boolean compactOverflow = eMax > COMPACT_MAX_TOUR;
+        boolean compactLayoutOverflow = !fitsJavaArray((long)trees.size() * nextPowerOfTwo(eMax))
+            || !fitsJavaArray((long)trees.size() * logMax * nextPowerOfTwo(eMax))
+            || !fitsJavaArray((long)trees.size() * n);
+        boolean forceWide = Boolean.getBoolean("stelarpro.similarity.forceWide");
+        if (forceWide || compactOverflow || compactLayoutOverflow) {
+            Logging.info("GPU rooted-triplet similarity RMQ: wide blocked mode");
+            return buildTripletGPUWide(trees, n, eMax);
+        }
+        Logging.debug("GPU rooted-triplet similarity RMQ: compact unsigned-16 mode");
+        return buildTripletGPUCompact(trees, n);
+    }
+
+    private static void accumulateTripletPairsCompact(
+            TripletTourBuilder.CompactData[] tours, SimilarityMatrix sm) {
+        ProgressBar bar = new ProgressBar("Building triplet similarity matrix (CPU)", sm.n);
+        AtomicInteger done = new AtomicInteger();
+        Threading.processRangeParallel(sm.n, a -> {
+            for (int b = a + 1; b < sm.n; b++) {
+                double numerator = 0.0;
+                double denominator = 0.0;
+                for (TripletTourBuilder.CompactData tour : tours) {
+                    int fa = tour.firstOcc[a], fb = tour.firstOcc[b];
+                    if (fa < 0 || fb < 0 || tour.leafCount < 3) continue;
+                    int lo = Math.min(fa, fb), hi = Math.max(fa, fb);
+                    int lca = TripletTourBuilder.queryCompact(tour, lo, hi);
+                    numerator += tour.leafCount - Short.toUnsignedInt(tour.nodeSizes[lca]);
+                    denominator += tour.leafCount - 2;
+                }
+                storePair(sm, a, b, numerator, denominator);
+            }
+            bar.update(done.incrementAndGet());
+        });
+        bar.done();
+    }
+
+    private static void accumulateTripletPairsWide(
+            TripletTourBuilder.WideData[] tours, SimilarityMatrix sm) {
+        ProgressBar bar = new ProgressBar("Building triplet similarity matrix (CPU)", sm.n);
+        AtomicInteger done = new AtomicInteger();
+        Threading.processRangeParallel(sm.n, a -> {
+            for (int b = a + 1; b < sm.n; b++) {
+                double numerator = 0.0;
+                double denominator = 0.0;
+                for (TripletTourBuilder.WideData tour : tours) {
+                    int fa = tour.firstOcc[a], fb = tour.firstOcc[b];
+                    if (fa < 0 || fb < 0 || tour.leafCount < 3) continue;
+                    int lo = Math.min(fa, fb), hi = Math.max(fa, fb);
+                    int lca = TripletTourBuilder.queryWide(tour, lo, hi);
+                    numerator += tour.leafCount - tour.nodeSizes[lca];
+                    denominator += tour.leafCount - 2;
+                }
+                storePair(sm, a, b, numerator, denominator);
+            }
+            bar.update(done.incrementAndGet());
+        });
+        bar.done();
+    }
+
+    private static void storePair(SimilarityMatrix sm, int a, int b,
+                                  double numerator, double denominator) {
+        if (denominator == 0.0) return;
+        if (sm.isPacked()) {
+            sm.addPackedNumerator(a, b, numerator);
+            sm.addPackedDenominator(a, b, denominator);
+        } else {
+            int ab = a * sm.n + b;
+            int ba = b * sm.n + a;
+            sm.numSum[ab] = sm.numSum[ba] = numerator;
+            sm.denSum[ab] = sm.denSum[ba] = denominator;
+        }
+    }
+
+    private static SimilarityMatrix buildTripletGPUCompact(List<Tree> trees, int n) {
+        int k = trees.size();
+        TripletTourBuilder.CompactData[] tours = new TripletTourBuilder.CompactData[k];
+        ProgressBar buildBar = new ProgressBar("Triplet tour + RMQ build", k);
+        AtomicInteger built = new AtomicInteger();
+        Threading.processRangeParallel(k, i -> {
+            try {
+                tours[i] = TripletTourBuilder.buildCompact(trees.get(i), n);
+                buildBar.update(built.incrementAndGet());
+            } catch (RuntimeException e) {
+                throw treeBuildFailure(i, trees.get(i), e);
+            }
+        });
+        buildBar.done();
+
+        int eMaxRaw = 1, logMax = 1;
+        for (TripletTourBuilder.CompactData tour : tours) {
+            eMaxRaw = Math.max(eMaxRaw, tour.tourLen);
+            logMax = Math.max(logMax, tour.log);
+        }
+        int eMax = nextPowerOfTwo(eMaxRaw);
+        int eulerSize = checkedLength((long)k * eMax, "triplet Euler arrays");
+        int sparseSize = checkedLength((long)k * logMax * eMax, "triplet sparse RMQ");
+        int leafSize = checkedLength((long)k * n, "triplet first-occurrence array");
+        Logging.info("Building compact rooted-triplet GPU data: E_max=%d LOG=%d (%.1f MB)",
+            eMax, logMax,
+            (eulerSize * 2.0 * Short.BYTES + sparseSize * Character.BYTES
+                + leafSize * Integer.BYTES) / 1e6);
+
+        short[] depths = new short[eulerSize];
+        short[] nodeSizes = new short[eulerSize];
+        char[] argmin = new char[sparseSize];
+        int[] firstOcc = new int[leafSize];
+        int[] eulerLen = new int[k];
+        int[] leafCount = new int[k];
+        Arrays.fill(firstOcc, -1);
+        ProgressBar flatBar = new ProgressBar("Flattening triplet tour data", k);
+        AtomicInteger flattened = new AtomicInteger();
+        final int flatLogMax = logMax;
+        Threading.processRangeParallel(k, i -> {
+            TripletTourBuilder.CompactData tour = tours[i];
+            int eulerOff = i * eMax;
+            System.arraycopy(tour.depths, 0, depths, eulerOff, tour.tourLen);
+            System.arraycopy(tour.nodeSizes, 0, nodeSizes, eulerOff, tour.tourLen);
+            int sparseOff = i * flatLogMax * eMax;
+            for (int level = 0; level < tour.log; level++) {
+                int rowLen = Math.max(0, tour.tourLen - (1 << level) + 1);
+                System.arraycopy(tour.sparseArgmin[level], 0, argmin,
+                    sparseOff + level * eMax, rowLen);
+            }
+            System.arraycopy(tour.firstOcc, 0, firstOcc, i * n, n);
+            eulerLen[i] = tour.tourLen;
+            leafCount[i] = tour.leafCount;
+            flatBar.update(flattened.incrementAndGet());
+        });
+        flatBar.done();
+
+        Config cfg = Config.getInstance();
+        SimilarityMatrix sm = new SimilarityMatrix(n);
+        GPUSimilarityMatrix.computeSimilarityGPU(
+            depths, nodeSizes, true,
+            null, null, null, null, null,
+            argmin, firstOcc, eulerLen, leafCount,
+            k, n, eMax, logMax,
+            cfg.getGpuDistTileSizeB(), effectiveTreeCapMiB(sm, cfg),
+            cfg.getGpuDpProgressInterval(), cfg.getGpuDpProgressMaxSteps(),
+            sm.numSum, sm.denSum,
+            sm.isPacked() ? sm.packedNumeratorSegments() : null,
+            sm.isPacked() ? sm.packedDenominatorSegments() : null,
+            sm.packedSegmentShift());
+        sm.normalize();
+        return sm;
+    }
+
+    private static SimilarityMatrix buildTripletGPUWide(List<Tree> trees, int n, int eMaxRaw) {
+        if (!wideLayoutFits(trees.size(), n, eMaxRaw, MAX_JAVA_ARRAY_LENGTH)) {
+            int batchTrees = wideBatchTreeCount(trees.size(), n, eMaxRaw,
+                MAX_JAVA_ARRAY_LENGTH, STREAMED_WIDE_HOST_BATCH_BYTES);
+            SimilarityMatrix sm = new SimilarityMatrix(n);
+            sm.markStreamedHostBatches();
+            int batches = (trees.size() + batchTrees - 1) / batchTrees;
+            for (int from = 0, batch = 1; from < trees.size(); batch++) {
+                int to = Math.min(trees.size(), from + batchTrees);
+                Logging.info("Wide triplet-similarity host batch %d/%d: trees %d..%d",
+                    batch, batches, from, to - 1);
+                accumulateTripletGPUWide(trees.subList(from, to), n, eMaxRaw, sm, from);
+                from = to;
+            }
+            sm.normalize();
+            return sm;
+        }
+        SimilarityMatrix sm = accumulateTripletGPUWide(trees, n, eMaxRaw, null, 0);
+        sm.normalize();
+        return sm;
+    }
+
+    private static SimilarityMatrix accumulateTripletGPUWide(
+            List<Tree> trees, int n, int eMaxRaw, SimilarityMatrix sm, int treeIndexBase) {
+        int k = trees.size();
+        int eMax = Math.max(1, eMaxRaw);
+        int blockSize = EulerTourBuilder.WIDE_BLOCK_SIZE;
+        int microLog = EulerTourBuilder.WIDE_MICRO_LOG;
+        int blockMax = (eMax + blockSize - 1) / blockSize;
+        int macroLog = sparseLog(blockMax);
+        int eulerSize = checkedLength((long)k * eMax, "wide triplet Euler arrays");
+        int microSize = checkedLength((long)k * microLog * eMax, "wide triplet micro RMQ");
+        int macroSize = checkedLength((long)k * macroLog * blockMax, "wide triplet macro RMQ");
+        int leafSize = checkedLength((long)k * n, "wide triplet first-occurrence array");
+
+        int[] depths = new int[eulerSize];
+        int[] nodeSizes = new int[eulerSize];
+        byte[] micro = new byte[microSize];
+        int[] macro = new int[macroSize];
+        int[] firstOcc = new int[leafSize];
+        int[] eulerLen = new int[k];
+        int[] leafCount = new int[k];
+        Arrays.fill(firstOcc, -1);
+        Logging.info("Building wide rooted-triplet GPU data for %d trees (parallel CPU)", k);
+        ProgressBar bar = new ProgressBar("Wide triplet tour + blocked RMQ build", k);
+        AtomicInteger done = new AtomicInteger();
+        Threading.processRangeParallel(k, i -> {
+            try {
+                TripletTourBuilder.WideData tour =
+                    TripletTourBuilder.buildWide(trees.get(i), n);
+                int eulerOff = i * eMax;
+                System.arraycopy(tour.depths, 0, depths, eulerOff, tour.tourLen);
+                System.arraycopy(tour.nodeSizes, 0, nodeSizes, eulerOff, tour.tourLen);
+                int microOff = i * microLog * eMax;
+                for (int level = 0; level < microLog; level++) {
+                    System.arraycopy(tour.microArgmin[level], 0, micro,
+                        microOff + level * eMax, tour.tourLen);
+                }
+                int macroOff = i * macroLog * blockMax;
+                for (int level = 0; level < tour.macroLog; level++) {
+                    int rowLen = Math.max(0, tour.blockCount - (1 << level) + 1);
+                    System.arraycopy(tour.macroArgmin[level], 0, macro,
+                        macroOff + level * blockMax, rowLen);
+                }
+                System.arraycopy(tour.firstOcc, 0, firstOcc, i * n, n);
+                eulerLen[i] = tour.tourLen;
+                leafCount[i] = tour.leafCount;
+                bar.update(done.incrementAndGet());
+            } catch (RuntimeException e) {
+                throw treeBuildFailure(treeIndexBase + i, trees.get(i), e);
+            }
+        });
+        bar.done();
+
+        Config cfg = Config.getInstance();
+        if (sm == null) sm = new SimilarityMatrix(n);
+        GPUSimilarityMatrix.computeSimilarityGPUWide(
+            depths, nodeSizes, true,
+            null, null, null, null, null,
+            micro, macro, firstOcc, eulerLen, leafCount,
+            k, n, eMax, microLog, blockSize, blockMax, macroLog,
+            cfg.getGpuDistTileSizeB(), effectiveTreeCapMiB(sm, cfg),
+            cfg.getGpuDpProgressInterval(), cfg.getGpuDpProgressMaxSteps(),
+            sm.numSum, sm.denSum,
+            sm.isPacked() ? sm.packedNumeratorSegments() : null,
+            sm.isPacked() ? sm.packedDenominatorSegments() : null,
+            sm.packedSegmentShift());
+        return sm;
+    }
+
     public static SimilarityMatrix buildGPU(List<Tree> trees, int n) {
         int k = trees.size();
         preflightPackedHeap(n);
@@ -239,6 +531,7 @@ public class SimilarityMatrixBuilder {
         int treeCapMiB = effectiveTreeCapMiB(sm, cfg);
         GPUSimilarityMatrix.computeSimilarityGPU(
             eulerDepths,
+            null, false,
             eulerF,
             eulerLeftChildS,  eulerLeftChildF,
             eulerRightChildS, eulerRightChildF,
@@ -368,7 +661,7 @@ public class SimilarityMatrixBuilder {
         if (sm == null) sm = new SimilarityMatrix(n);
         int treeCapMiB = effectiveTreeCapMiB(sm, cfg);
         GPUSimilarityMatrix.computeSimilarityGPUWide(
-            eulerDepths, eulerF,
+            eulerDepths, null, false, eulerF,
             eulerLeftChildS, eulerLeftChildF,
             eulerRightChildS, eulerRightChildF,
             microArgmin, macroArgmin,
@@ -424,6 +717,18 @@ public class SimilarityMatrixBuilder {
     private static int sparseLog(int length) {
         if (length <= 1) return 1;
         return 32 - Integer.numberOfLeadingZeros(length);
+    }
+
+    private static int maximumTourLength(List<Tree> trees) {
+        int maximum = 1;
+        for (int i = 0; i < trees.size(); i++) {
+            try {
+                maximum = Math.max(maximum, EulerTourBuilder.tourLength(trees.get(i)));
+            } catch (RuntimeException e) {
+                throw treeBuildFailure(i, trees.get(i), e);
+            }
+        }
+        return maximum;
     }
 
     private static int nextPowerOfTwo(int value) {

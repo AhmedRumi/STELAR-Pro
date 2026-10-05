@@ -86,6 +86,8 @@ public class GPUSimilarityMatrix {
      */
     public static native void computeSimilarityGPU(
         short[]  eulerDepths,
+        short[]  eulerNodeSizes,
+        boolean  tripletMode,
         double[] eulerF,
         short[]  eulerLeftChildS,
         double[] eulerLeftChildF,
@@ -117,6 +119,8 @@ public class GPUSimilarityMatrix {
      */
     public static native void computeSimilarityGPUWide(
         int[]    eulerDepths,
+        int[]    eulerNodeSizes,
+        boolean  tripletMode,
         double[] eulerF,
         int[]    eulerLeftChildS,
         double[] eulerLeftChildF,

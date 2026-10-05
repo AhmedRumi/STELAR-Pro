@@ -195,10 +195,17 @@ public class Banner {
         String searchSpace = switch (cfg.getSearchSpace()) {
             case S1 -> "S1  (default)";
             case S2 -> "S2  (DISCO + completion + UPGMA + cross-tree)";
-            case S3 -> "S3  (reserved; not implemented)";
+            case S3 -> "S3  (S2 + DISCO greedy consensus)";
+            case S4 -> "S4  (S3 + rooted-triplet completion)";
+            case S5 -> "S5  (A-Pro greedy + native candidates + triplet DP)";
         };
         out.println("    " + row("Search space",  c(WHT, searchSpace)));
         out.println("    " + row("Search mode",   c(WHT, cfg.getSearchMode().name().toLowerCase())));
+        if (cfg.getSearchSpace() == Config.SearchSpace.S5) {
+            out.println("    " + row("S5 greedy searches", c(WHT,
+                cfg.getS5Rounds() + (cfg.getS5Rounds() == 1 ? " round" : " rounds")
+                    + " (seed " + cfg.getS5Seed() + ")")));
+        }
         out.println("    " + row("Hash seeds",    c(WHT, String.valueOf(cfg.getNumHashSeeds()))));
 
         String verbStr = switch (cfg.getVerbosity()) {

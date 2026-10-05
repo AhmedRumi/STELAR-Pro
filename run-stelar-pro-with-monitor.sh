@@ -47,7 +47,7 @@ Optional:
   --reference-species-tree  Reference species tree for RF rate calculation
   --threads, --num-threads, -t, -T
                          CPU worker threads
-  --search-space S1..S3  Search-space preset (default: S1; S2/S3 reserved)
+  --search-space S1..S3  Search preset (S1 default; S2 enrichment; S3 consensus)
   --keep-polytomy-during-inference
                          Preserve input polytomies during inference; final scoring
                          always preserves the input topology

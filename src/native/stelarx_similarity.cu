@@ -325,6 +325,53 @@ __global__ void sim_tile_kernel(
     tile_den[tidx] += local_den;
 }
 
+/** S4 rooted-triplet sister frequency; one thread owns one taxon pair. */
+__global__ void triplet_sim_tile_kernel(
+    const short* __restrict__ euler_depths,
+    const short* __restrict__ euler_node_sizes,
+    const unsigned short* __restrict__ sparse_argmin,
+    const int* __restrict__ first_occ,
+    const int* __restrict__ leaf_count,
+    int delta, int n, int E_max, int LOG,
+    int a0, int b0, int bA, int bB,
+    double* __restrict__ tile_num,
+    double* __restrict__ tile_den
+) {
+    int da = blockIdx.x * blockDim.x + threadIdx.x;
+    int db = blockIdx.y * blockDim.y + threadIdx.y;
+    if (da >= bA || db >= bB) return;
+    int a = a0 + da, b = b0 + db;
+    if (a >= n || b >= n || a >= b) return;
+
+    double numerator = 0.0, denominator = 0.0;
+    for (int t = 0; t < delta; t++) {
+        long long focc_off = (long long)t * n;
+        int fa = first_occ[focc_off + a];
+        int fb = first_occ[focc_off + b];
+        int kt = leaf_count[t];
+        if (fa < 0 || fb < 0 || kt < 3) continue;
+
+        int lo = fa < fb ? fa : fb;
+        int hi = fa < fb ? fb : fa;
+        int width = hi - lo + 1;
+        int level = 31 - __clz(width);
+        int second = hi - (1 << level) + 1;
+        long long sparse_off = (long long)t * LOG * E_max
+                             + (long long)level * E_max;
+        int left = (int)sparse_argmin[sparse_off + lo];
+        int right = (int)sparse_argmin[sparse_off + second];
+        long long euler_off = (long long)t * E_max;
+        int lca = euler_depths[euler_off + left]
+                <= euler_depths[euler_off + right] ? left : right;
+        int subtree_size = (int)(unsigned short)euler_node_sizes[euler_off + lca];
+        numerator += (double)(kt - subtree_size);
+        denominator += (double)(kt - 2);
+    }
+    long long index = (long long)da * bB + db;
+    tile_num[index] += numerator;
+    tile_den[index] += denominator;
+}
+
 // ── Wide blocked-RMQ GPU kernel ──────────────────────────────────────────────
 
 __device__ __forceinline__ int sim_wide_micro_argmin(
@@ -459,6 +506,46 @@ __global__ void sim_tile_kernel_wide(
     tile_den[tidx] += local_den;
 }
 
+/** Wide blocked-RMQ variant of the S4 rooted-triplet kernel. */
+__global__ void triplet_sim_tile_kernel_wide(
+    const int* __restrict__ euler_depths,
+    const int* __restrict__ euler_node_sizes,
+    const unsigned char* __restrict__ micro_argmin,
+    const int* __restrict__ macro_argmin,
+    const int* __restrict__ first_occ,
+    const int* __restrict__ leaf_count,
+    int delta, int n, int E_max, int micro_log,
+    int block_size, int block_max, int macro_log,
+    int a0, int b0, int bA, int bB,
+    double* __restrict__ tile_num,
+    double* __restrict__ tile_den
+) {
+    int da = blockIdx.x * blockDim.x + threadIdx.x;
+    int db = blockIdx.y * blockDim.y + threadIdx.y;
+    if (da >= bA || db >= bB) return;
+    int a = a0 + da, b = b0 + db;
+    if (a >= n || b >= n || a >= b) return;
+
+    double numerator = 0.0, denominator = 0.0;
+    for (int t = 0; t < delta; t++) {
+        long long focc_off = (long long)t * n;
+        int fa = first_occ[focc_off + a];
+        int fb = first_occ[focc_off + b];
+        int kt = leaf_count[t];
+        if (fa < 0 || fb < 0 || kt < 3) continue;
+        int lo = fa < fb ? fa : fb;
+        int hi = fa < fb ? fb : fa;
+        int lca = sim_wide_argmin(euler_depths, micro_argmin, macro_argmin,
+            t, E_max, micro_log, block_size, block_max, macro_log, lo, hi);
+        long long euler_off = (long long)t * E_max;
+        numerator += (double)(kt - euler_node_sizes[euler_off + lca]);
+        denominator += (double)(kt - 2);
+    }
+    long long index = (long long)da * bB + db;
+    tile_num[index] += numerator;
+    tile_den[index] += denominator;
+}
+
 // ── JNI entry point ───────────────────────────────────────────────────────────
 
 extern "C" JNIEXPORT void JNICALL
@@ -466,6 +553,8 @@ Java_stelarx_gpu_GPUSimilarityMatrix_computeSimilarityGPU(
     JNIEnv*  env,
     jclass   cls,
     jshortArray  j_euler_depths,
+    jshortArray  j_euler_node_sizes,
+    jboolean     triplet_mode,
     jdoubleArray j_euler_F,
     jshortArray  j_euler_left_child_s,
     jdoubleArray j_euler_left_child_f,
@@ -489,13 +578,22 @@ Java_stelarx_gpu_GPUSimilarityMatrix_computeSimilarityGPU(
     jobjectArray j_packed_den_out,
     jint packed_segment_shift
 ) {
+    (void)cls;
+    bool triplet = triplet_mode == JNI_TRUE;
     jboolean isCopy;
     jshort*  h_euler   = env->GetShortArrayElements (j_euler_depths,         &isCopy);
-    jdouble* h_eulerF  = env->GetDoubleArrayElements(j_euler_F,              &isCopy);
-    jshort*  h_eLcS    = env->GetShortArrayElements (j_euler_left_child_s,   &isCopy);
-    jdouble* h_eLcF    = env->GetDoubleArrayElements(j_euler_left_child_f,   &isCopy);
-    jshort*  h_eRcS    = env->GetShortArrayElements (j_euler_right_child_s,  &isCopy);
-    jdouble* h_eRcF    = env->GetDoubleArrayElements(j_euler_right_child_f,  &isCopy);
+    jshort*  h_nodeS   = triplet
+        ? env->GetShortArrayElements(j_euler_node_sizes, &isCopy) : nullptr;
+    jdouble* h_eulerF  = triplet ? nullptr
+        : env->GetDoubleArrayElements(j_euler_F, &isCopy);
+    jshort*  h_eLcS    = triplet ? nullptr
+        : env->GetShortArrayElements(j_euler_left_child_s, &isCopy);
+    jdouble* h_eLcF    = triplet ? nullptr
+        : env->GetDoubleArrayElements(j_euler_left_child_f, &isCopy);
+    jshort*  h_eRcS    = triplet ? nullptr
+        : env->GetShortArrayElements(j_euler_right_child_s, &isCopy);
+    jdouble* h_eRcF    = triplet ? nullptr
+        : env->GetDoubleArrayElements(j_euler_right_child_f, &isCopy);
     jchar*   h_argmin  = env->GetCharArrayElements  (j_sparse_argmin,        &isCopy);
     jint*    h_focc    = env->GetIntArrayElements   (j_first_occ,            &isCopy);
     jint*    h_elen    = env->GetIntArrayElements   (j_euler_len,            &isCopy);
@@ -528,7 +626,7 @@ Java_stelarx_gpu_GPUSimilarityMatrix_computeSimilarityGPU(
     //   sparse argmin: LOG × E_max × 2 (unsigned-16 Euler position)
     //   firstOcc:      n × 4
     //   leafCount:     4
-    size_t per_tree = (size_t)E_max * 30
+    size_t per_tree = (size_t)E_max * (triplet ? 4 : 30)
                     + (size_t)LOG * E_max * sizeof(unsigned short)
                     + (size_t)n * 4
                     + sizeof(int);
@@ -541,9 +639,10 @@ Java_stelarx_gpu_GPUSimilarityMatrix_computeSimilarityGPU(
     int num_tiles      = num_tiles_side * (num_tiles_side + 1) / 2;
 
     fprintf(stderr,
-        "\n[STELAR-Pro sim] GPU similarity matrix: n=%d  k=%d  "
+        "\n[STELAR-Pro sim] GPU %s similarity matrix: n=%d  k=%d  "
         "tile B=%d  tree-batch Δ=%d  (%d batches × %d tiles)\n",
-        n, numTrees, B, delta, num_batches, num_tiles);
+        triplet ? "rooted-triplet" : "quartet", n, numTrees,
+        B, delta, num_batches, num_tiles);
     fprintf(stderr,
         "[STELAR-Pro sim] GPU VRAM: tile %.1f MB  tree-data %.1f MB  "
         "(cap %d MiB; free %.0f MB / total %.0f MB)\n",
@@ -561,6 +660,7 @@ Java_stelarx_gpu_GPUSimilarityMatrix_computeSimilarityGPU(
 
     // ── Allocate GPU tree-data buffers ────────────────────────────────────────
     short*  d_euler   = nullptr;
+    short*  d_nodeS   = nullptr;
     double* d_eulerF  = nullptr;
     short*  d_eLcS    = nullptr;
     double* d_eLcF    = nullptr;
@@ -575,11 +675,15 @@ Java_stelarx_gpu_GPUSimilarityMatrix_computeSimilarityGPU(
     long long sz_argmin = (long long)delta * LOG * E_max * sizeof(unsigned short);
 
     SIM_CUDA_CHECK(cudaMalloc(&d_euler,  sz_short_e));
-    SIM_CUDA_CHECK(cudaMalloc(&d_eulerF, sz_double_e));
-    SIM_CUDA_CHECK(cudaMalloc(&d_eLcS,   sz_short_e));
-    SIM_CUDA_CHECK(cudaMalloc(&d_eLcF,   sz_double_e));
-    SIM_CUDA_CHECK(cudaMalloc(&d_eRcS,   sz_short_e));
-    SIM_CUDA_CHECK(cudaMalloc(&d_eRcF,   sz_double_e));
+    if (triplet) {
+        SIM_CUDA_CHECK(cudaMalloc(&d_nodeS, sz_short_e));
+    } else {
+        SIM_CUDA_CHECK(cudaMalloc(&d_eulerF, sz_double_e));
+        SIM_CUDA_CHECK(cudaMalloc(&d_eLcS,   sz_short_e));
+        SIM_CUDA_CHECK(cudaMalloc(&d_eLcF,   sz_double_e));
+        SIM_CUDA_CHECK(cudaMalloc(&d_eRcS,   sz_short_e));
+        SIM_CUDA_CHECK(cudaMalloc(&d_eRcF,   sz_double_e));
+    }
     SIM_CUDA_CHECK(cudaMalloc(&d_argmin, sz_argmin));
     SIM_CUDA_CHECK(cudaMalloc(&d_focc,   (long long)delta * n * sizeof(int)));
     SIM_CUDA_CHECK(cudaMalloc(&d_lcount, delta * sizeof(int)));
@@ -612,11 +716,16 @@ Java_stelarx_gpu_GPUSimilarityMatrix_computeSimilarityGPU(
         long long bytes_argmin = (long long)dt * LOG * E_max * sizeof(unsigned short);
 
         SIM_CUDA_CHECK(cudaMemcpy(d_euler,  h_euler  + off_e, bytes_short_e,  cudaMemcpyHostToDevice));
-        SIM_CUDA_CHECK(cudaMemcpy(d_eulerF, h_eulerF + off_e, bytes_double_e, cudaMemcpyHostToDevice));
-        SIM_CUDA_CHECK(cudaMemcpy(d_eLcS,   h_eLcS   + off_e, bytes_short_e,  cudaMemcpyHostToDevice));
-        SIM_CUDA_CHECK(cudaMemcpy(d_eLcF,   h_eLcF   + off_e, bytes_double_e, cudaMemcpyHostToDevice));
-        SIM_CUDA_CHECK(cudaMemcpy(d_eRcS,   h_eRcS   + off_e, bytes_short_e,  cudaMemcpyHostToDevice));
-        SIM_CUDA_CHECK(cudaMemcpy(d_eRcF,   h_eRcF   + off_e, bytes_double_e, cudaMemcpyHostToDevice));
+        if (triplet) {
+            SIM_CUDA_CHECK(cudaMemcpy(d_nodeS, h_nodeS + off_e,
+                bytes_short_e, cudaMemcpyHostToDevice));
+        } else {
+            SIM_CUDA_CHECK(cudaMemcpy(d_eulerF, h_eulerF + off_e, bytes_double_e, cudaMemcpyHostToDevice));
+            SIM_CUDA_CHECK(cudaMemcpy(d_eLcS,   h_eLcS   + off_e, bytes_short_e,  cudaMemcpyHostToDevice));
+            SIM_CUDA_CHECK(cudaMemcpy(d_eLcF,   h_eLcF   + off_e, bytes_double_e, cudaMemcpyHostToDevice));
+            SIM_CUDA_CHECK(cudaMemcpy(d_eRcS,   h_eRcS   + off_e, bytes_short_e,  cudaMemcpyHostToDevice));
+            SIM_CUDA_CHECK(cudaMemcpy(d_eRcF,   h_eRcF   + off_e, bytes_double_e, cudaMemcpyHostToDevice));
+        }
 
         SIM_CUDA_CHECK(cudaMemcpy(d_argmin, h_argmin + off_s, bytes_argmin, cudaMemcpyHostToDevice));
 
@@ -639,15 +748,22 @@ Java_stelarx_gpu_GPUSimilarityMatrix_computeSimilarityGPU(
 
                 dim3 block(32, 32);
                 dim3 grid((bA + 31) / 32, (bB_tile + 31) / 32);
-                sim_tile_kernel<<<grid, block>>>(
-                    d_euler, d_eulerF,
-                    d_eLcS, d_eLcF, d_eRcS, d_eRcF,
-                    d_argmin,
-                    d_focc, d_lcount,
-                    dt, n, E_max, LOG,
-                    a0, b0, bA, bB_tile,
-                    d_tile_num, d_tile_den
-                );
+                if (triplet) {
+                    triplet_sim_tile_kernel<<<grid, block>>>(
+                        d_euler, d_nodeS, d_argmin, d_focc, d_lcount,
+                        dt, n, E_max, LOG, a0, b0, bA, bB_tile,
+                        d_tile_num, d_tile_den);
+                } else {
+                    sim_tile_kernel<<<grid, block>>>(
+                        d_euler, d_eulerF,
+                        d_eLcS, d_eLcF, d_eRcS, d_eRcF,
+                        d_argmin,
+                        d_focc, d_lcount,
+                        dt, n, E_max, LOG,
+                        a0, b0, bA, bB_tile,
+                        d_tile_num, d_tile_den
+                    );
+                }
                 SIM_CUDA_CHECK(cudaDeviceSynchronize());
 
                 SIM_CUDA_CHECK(cudaMemcpy(h_tile_num, d_tile_num,
@@ -702,7 +818,7 @@ Java_stelarx_gpu_GPUSimilarityMatrix_computeSimilarityGPU(
         }
     }
 
-    cudaFree(d_euler);  cudaFree(d_eulerF);
+    cudaFree(d_euler);  cudaFree(d_nodeS); cudaFree(d_eulerF);
     cudaFree(d_eLcS);   cudaFree(d_eLcF);
     cudaFree(d_eRcS);   cudaFree(d_eRcF);
     cudaFree(d_argmin);
@@ -711,11 +827,15 @@ Java_stelarx_gpu_GPUSimilarityMatrix_computeSimilarityGPU(
     cudaFreeHost(h_tile_num); cudaFreeHost(h_tile_den);
 
     env->ReleaseShortArrayElements (j_euler_depths,        h_euler,  JNI_ABORT);
-    env->ReleaseDoubleArrayElements(j_euler_F,             h_eulerF, JNI_ABORT);
-    env->ReleaseShortArrayElements (j_euler_left_child_s,  h_eLcS,   JNI_ABORT);
-    env->ReleaseDoubleArrayElements(j_euler_left_child_f,  h_eLcF,   JNI_ABORT);
-    env->ReleaseShortArrayElements (j_euler_right_child_s, h_eRcS,   JNI_ABORT);
-    env->ReleaseDoubleArrayElements(j_euler_right_child_f, h_eRcF,   JNI_ABORT);
+    if (triplet) {
+        env->ReleaseShortArrayElements(j_euler_node_sizes, h_nodeS, JNI_ABORT);
+    } else {
+        env->ReleaseDoubleArrayElements(j_euler_F,             h_eulerF, JNI_ABORT);
+        env->ReleaseShortArrayElements (j_euler_left_child_s,  h_eLcS,   JNI_ABORT);
+        env->ReleaseDoubleArrayElements(j_euler_left_child_f,  h_eLcF,   JNI_ABORT);
+        env->ReleaseShortArrayElements (j_euler_right_child_s, h_eRcS,   JNI_ABORT);
+        env->ReleaseDoubleArrayElements(j_euler_right_child_f, h_eRcF,   JNI_ABORT);
+    }
     env->ReleaseCharArrayElements  (j_sparse_argmin,       h_argmin, JNI_ABORT);
     env->ReleaseIntArrayElements   (j_first_occ,           h_focc,   JNI_ABORT);
     env->ReleaseIntArrayElements   (j_euler_len,           h_elen,   JNI_ABORT);
@@ -728,6 +848,8 @@ Java_stelarx_gpu_GPUSimilarityMatrix_computeSimilarityGPUWide(
     JNIEnv* env,
     jclass cls,
     jintArray    j_euler_depths,
+    jintArray    j_euler_node_sizes,
+    jboolean     triplet_mode,
     jdoubleArray j_euler_F,
     jintArray    j_euler_left_child_s,
     jdoubleArray j_euler_left_child_f,
@@ -756,13 +878,21 @@ Java_stelarx_gpu_GPUSimilarityMatrix_computeSimilarityGPUWide(
     jint packed_segment_shift
 ) {
     (void)cls;
+    bool triplet = triplet_mode == JNI_TRUE;
     jboolean isCopy;
     jint*    h_euler  = env->GetIntArrayElements   (j_euler_depths,         &isCopy);
-    jdouble* h_eulerF = env->GetDoubleArrayElements(j_euler_F,              &isCopy);
-    jint*    h_eLcS   = env->GetIntArrayElements   (j_euler_left_child_s,   &isCopy);
-    jdouble* h_eLcF   = env->GetDoubleArrayElements(j_euler_left_child_f,   &isCopy);
-    jint*    h_eRcS   = env->GetIntArrayElements   (j_euler_right_child_s,  &isCopy);
-    jdouble* h_eRcF   = env->GetDoubleArrayElements(j_euler_right_child_f,  &isCopy);
+    jint*    h_nodeS  = triplet
+        ? env->GetIntArrayElements(j_euler_node_sizes, &isCopy) : nullptr;
+    jdouble* h_eulerF = triplet ? nullptr
+        : env->GetDoubleArrayElements(j_euler_F, &isCopy);
+    jint*    h_eLcS   = triplet ? nullptr
+        : env->GetIntArrayElements(j_euler_left_child_s, &isCopy);
+    jdouble* h_eLcF   = triplet ? nullptr
+        : env->GetDoubleArrayElements(j_euler_left_child_f, &isCopy);
+    jint*    h_eRcS   = triplet ? nullptr
+        : env->GetIntArrayElements(j_euler_right_child_s, &isCopy);
+    jdouble* h_eRcF   = triplet ? nullptr
+        : env->GetDoubleArrayElements(j_euler_right_child_f, &isCopy);
     jbyte*   h_micro  = env->GetByteArrayElements  (j_micro_argmin,         &isCopy);
     jint*    h_macro  = env->GetIntArrayElements   (j_macro_argmin,         &isCopy);
     jint*    h_focc   = env->GetIntArrayElements   (j_first_occ,            &isCopy);
@@ -792,7 +922,7 @@ Java_stelarx_gpu_GPUSimilarityMatrix_computeSimilarityGPUWide(
     size_t requested = (size_t)treeVramCapMiB * 1024 * 1024;
     size_t remaining = (requested < available) ? requested : available;
 
-    size_t per_tree = (size_t)E_max * 36
+    size_t per_tree = (size_t)E_max * (triplet ? 8 : 36)
                     + (size_t)microLog * E_max * sizeof(unsigned char)
                     + (size_t)macroLog * blockMax * sizeof(int)
                     + (size_t)n * sizeof(int)
@@ -805,9 +935,10 @@ Java_stelarx_gpu_GPUSimilarityMatrix_computeSimilarityGPUWide(
     int num_tiles_side = (n + B - 1) / B;
     int num_tiles = num_tiles_side * (num_tiles_side + 1) / 2;
     fprintf(stderr,
-        "\n[STELAR-Pro sim] GPU similarity matrix (wide blocked RMQ): n=%d  k=%d  "
+        "\n[STELAR-Pro sim] GPU %s similarity matrix (wide blocked RMQ): n=%d  k=%d  "
         "tile B=%d  tree-batch Δ=%d  (%d batches × %d tiles)\n",
-        n, numTrees, B, delta, num_batches, num_tiles);
+        triplet ? "rooted-triplet" : "quartet", n, numTrees,
+        B, delta, num_batches, num_tiles);
     fprintf(stderr,
         "[STELAR-Pro sim] GPU VRAM: tile %.1f MB  tree-data %.1f MB  "
         "(cap %d MiB; free %.0f MB / total %.0f MB)\n",
@@ -815,6 +946,7 @@ Java_stelarx_gpu_GPUSimilarityMatrix_computeSimilarityGPUWide(
         treeVramCapMiB, free_vram / 1e6, total_vram / 1e6);
 
     int* d_euler = nullptr;
+    int* d_nodeS = nullptr;
     double* d_eulerF = nullptr;
     int* d_eLcS = nullptr;
     double* d_eLcF = nullptr;
@@ -830,11 +962,15 @@ Java_stelarx_gpu_GPUSimilarityMatrix_computeSimilarityGPUWide(
     long long sz_micro = (long long)delta * microLog * E_max;
     long long sz_macro = (long long)delta * macroLog * blockMax * sizeof(int);
     SIM_CUDA_CHECK(cudaMalloc(&d_euler, sz_int_e));
-    SIM_CUDA_CHECK(cudaMalloc(&d_eulerF, sz_double_e));
-    SIM_CUDA_CHECK(cudaMalloc(&d_eLcS, sz_int_e));
-    SIM_CUDA_CHECK(cudaMalloc(&d_eLcF, sz_double_e));
-    SIM_CUDA_CHECK(cudaMalloc(&d_eRcS, sz_int_e));
-    SIM_CUDA_CHECK(cudaMalloc(&d_eRcF, sz_double_e));
+    if (triplet) {
+        SIM_CUDA_CHECK(cudaMalloc(&d_nodeS, sz_int_e));
+    } else {
+        SIM_CUDA_CHECK(cudaMalloc(&d_eulerF, sz_double_e));
+        SIM_CUDA_CHECK(cudaMalloc(&d_eLcS, sz_int_e));
+        SIM_CUDA_CHECK(cudaMalloc(&d_eLcF, sz_double_e));
+        SIM_CUDA_CHECK(cudaMalloc(&d_eRcS, sz_int_e));
+        SIM_CUDA_CHECK(cudaMalloc(&d_eRcF, sz_double_e));
+    }
     SIM_CUDA_CHECK(cudaMalloc(&d_micro, sz_micro));
     SIM_CUDA_CHECK(cudaMalloc(&d_macro, sz_macro));
     SIM_CUDA_CHECK(cudaMalloc(&d_focc, (long long)delta * n * sizeof(int)));
@@ -869,16 +1005,21 @@ Java_stelarx_gpu_GPUSimilarityMatrix_computeSimilarityGPUWide(
 
         SIM_CUDA_CHECK(cudaMemcpy(d_euler, h_euler + off_e,
             bytes_int_e, cudaMemcpyHostToDevice));
-        SIM_CUDA_CHECK(cudaMemcpy(d_eulerF, h_eulerF + off_e,
-            bytes_double_e, cudaMemcpyHostToDevice));
-        SIM_CUDA_CHECK(cudaMemcpy(d_eLcS, h_eLcS + off_e,
-            bytes_int_e, cudaMemcpyHostToDevice));
-        SIM_CUDA_CHECK(cudaMemcpy(d_eLcF, h_eLcF + off_e,
-            bytes_double_e, cudaMemcpyHostToDevice));
-        SIM_CUDA_CHECK(cudaMemcpy(d_eRcS, h_eRcS + off_e,
-            bytes_int_e, cudaMemcpyHostToDevice));
-        SIM_CUDA_CHECK(cudaMemcpy(d_eRcF, h_eRcF + off_e,
-            bytes_double_e, cudaMemcpyHostToDevice));
+        if (triplet) {
+            SIM_CUDA_CHECK(cudaMemcpy(d_nodeS, h_nodeS + off_e,
+                bytes_int_e, cudaMemcpyHostToDevice));
+        } else {
+            SIM_CUDA_CHECK(cudaMemcpy(d_eulerF, h_eulerF + off_e,
+                bytes_double_e, cudaMemcpyHostToDevice));
+            SIM_CUDA_CHECK(cudaMemcpy(d_eLcS, h_eLcS + off_e,
+                bytes_int_e, cudaMemcpyHostToDevice));
+            SIM_CUDA_CHECK(cudaMemcpy(d_eLcF, h_eLcF + off_e,
+                bytes_double_e, cudaMemcpyHostToDevice));
+            SIM_CUDA_CHECK(cudaMemcpy(d_eRcS, h_eRcS + off_e,
+                bytes_int_e, cudaMemcpyHostToDevice));
+            SIM_CUDA_CHECK(cudaMemcpy(d_eRcF, h_eRcF + off_e,
+                bytes_double_e, cudaMemcpyHostToDevice));
+        }
         SIM_CUDA_CHECK(cudaMemcpy(d_micro,
             reinterpret_cast<unsigned char*>(h_micro) + off_micro,
             bytes_micro, cudaMemcpyHostToDevice));
@@ -900,12 +1041,19 @@ Java_stelarx_gpu_GPUSimilarityMatrix_computeSimilarityGPUWide(
 
                 dim3 block(32, 32);
                 dim3 grid((bA + 31) / 32, (bB_tile + 31) / 32);
-                sim_tile_kernel_wide<<<grid, block>>>(
-                    d_euler, d_eulerF,
-                    d_eLcS, d_eLcF, d_eRcS, d_eRcF,
-                    d_micro, d_macro, d_focc, d_lcount,
-                    dt, n, E_max, microLog, blockSize, blockMax, macroLog,
-                    a0, b0, bA, bB_tile, d_tile_num, d_tile_den);
+                if (triplet) {
+                    triplet_sim_tile_kernel_wide<<<grid, block>>>(
+                        d_euler, d_nodeS, d_micro, d_macro, d_focc, d_lcount,
+                        dt, n, E_max, microLog, blockSize, blockMax, macroLog,
+                        a0, b0, bA, bB_tile, d_tile_num, d_tile_den);
+                } else {
+                    sim_tile_kernel_wide<<<grid, block>>>(
+                        d_euler, d_eulerF,
+                        d_eLcS, d_eLcF, d_eRcS, d_eRcF,
+                        d_micro, d_macro, d_focc, d_lcount,
+                        dt, n, E_max, microLog, blockSize, blockMax, macroLog,
+                        a0, b0, bA, bB_tile, d_tile_num, d_tile_den);
+                }
                 SIM_CUDA_CHECK(cudaDeviceSynchronize());
                 SIM_CUDA_CHECK(cudaMemcpy(h_tile_num, d_tile_num,
                     (long long)bA * bB_tile * sizeof(double), cudaMemcpyDeviceToHost));
@@ -959,7 +1107,7 @@ Java_stelarx_gpu_GPUSimilarityMatrix_computeSimilarityGPUWide(
         }
     }
 
-    cudaFree(d_euler); cudaFree(d_eulerF);
+    cudaFree(d_euler); cudaFree(d_nodeS); cudaFree(d_eulerF);
     cudaFree(d_eLcS); cudaFree(d_eLcF);
     cudaFree(d_eRcS); cudaFree(d_eRcF);
     cudaFree(d_micro); cudaFree(d_macro);
@@ -968,11 +1116,15 @@ Java_stelarx_gpu_GPUSimilarityMatrix_computeSimilarityGPUWide(
     cudaFreeHost(h_tile_num); cudaFreeHost(h_tile_den);
 
     env->ReleaseIntArrayElements   (j_euler_depths,        h_euler,  JNI_ABORT);
-    env->ReleaseDoubleArrayElements(j_euler_F,             h_eulerF, JNI_ABORT);
-    env->ReleaseIntArrayElements   (j_euler_left_child_s,  h_eLcS,   JNI_ABORT);
-    env->ReleaseDoubleArrayElements(j_euler_left_child_f,  h_eLcF,   JNI_ABORT);
-    env->ReleaseIntArrayElements   (j_euler_right_child_s, h_eRcS,   JNI_ABORT);
-    env->ReleaseDoubleArrayElements(j_euler_right_child_f, h_eRcF,   JNI_ABORT);
+    if (triplet) {
+        env->ReleaseIntArrayElements(j_euler_node_sizes, h_nodeS, JNI_ABORT);
+    } else {
+        env->ReleaseDoubleArrayElements(j_euler_F,             h_eulerF, JNI_ABORT);
+        env->ReleaseIntArrayElements   (j_euler_left_child_s,  h_eLcS,   JNI_ABORT);
+        env->ReleaseDoubleArrayElements(j_euler_left_child_f,  h_eLcF,   JNI_ABORT);
+        env->ReleaseIntArrayElements   (j_euler_right_child_s, h_eRcS,   JNI_ABORT);
+        env->ReleaseDoubleArrayElements(j_euler_right_child_f, h_eRcF,   JNI_ABORT);
+    }
     env->ReleaseByteArrayElements  (j_micro_argmin,        h_micro,  JNI_ABORT);
     env->ReleaseIntArrayElements   (j_macro_argmin,        h_macro,  JNI_ABORT);
     env->ReleaseIntArrayElements   (j_first_occ,           h_focc,   JNI_ABORT);

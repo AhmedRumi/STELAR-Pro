@@ -2,8 +2,8 @@ package stelarx;
 
 public class Config {
     public enum ComputeMode      { AUTO, CPU, GPU }
-    /** S1 is native candidates; S2 adds DISCO/completion/UPGMA/full-DP enrichment. */
-    public enum SearchSpace      { S1, S2, S3 }
+    /** S1 is native; S2-S4 use DISCO; S5 adds A-Pro greedy candidates independently. */
+    public enum SearchSpace      { S1, S2, S3, S4, S5 }
     public enum SearchMode       { LOCAL, FULL }
     /**
      * Which matrix is used to guide taxon insertion when auto-completing
@@ -86,6 +86,9 @@ public class Config {
     private int threadCount = Runtime.getRuntime().availableProcessors();
     private int numHashSeeds = 2;
     private long baseSeed = 0xDEADBEEFCAFEL;
+    /** Independent randomized A-Pro greedy searches used only by S5. */
+    private int s5Rounds = 4;
+    private long s5Seed = baseSeed;
     private int verbosity = 1; // 0=quiet 1=INFO 2=DEBUG 3=TRACE
     /** STELAR-Pro is intrinsically rooted; retained only for CLI compatibility. */
     private boolean treatAsUnrooted = false;
@@ -270,6 +273,13 @@ public class Config {
     public int getNumHashSeeds()              { return numHashSeeds; }
     public void setNumHashSeeds(int m)        { this.numHashSeeds = m; }
     public long getBaseSeed()                 { return baseSeed; }
+    public int getS5Rounds()                  { return s5Rounds; }
+    public void setS5Rounds(int rounds) {
+        if (rounds < 1) throw new IllegalArgumentException("--s5-rounds must be positive");
+        this.s5Rounds = rounds;
+    }
+    public long getS5Seed()                   { return s5Seed; }
+    public void setS5Seed(long seed)          { this.s5Seed = seed; }
     public int getVerbosity()                 { return verbosity; }
     public void setVerbosity(int v)           { this.verbosity = v; }
     public boolean getTreatAsUnrooted()       { return treatAsUnrooted; }
@@ -440,9 +450,8 @@ public class Config {
     public boolean isVerifyGreedyConsensus()        { return verifyGreedyConsensus; }
     public void setVerifyGreedyConsensus(boolean v) { this.verifyGreedyConsensus = v; }
 
-    // Greedy consensus build + polytomy resolution + emission to X is an
-    // INCOMPLETE, EXPERIMENTAL feature.  It is OFF by default: Phase 3.5 is
-    // skipped entirely (no compute, no memory) unless this flag is set.
+    // Legacy diagnostic opt-in for greedy consensus. Normal STELAR-Pro runs
+    // select the production path through search space S3 instead.
     private boolean consensusExperimental = false;
     public boolean isConsensusExperimental()        { return consensusExperimental; }
     public void setConsensusExperimental(boolean v) { this.consensusExperimental = v; }

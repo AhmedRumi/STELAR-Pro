@@ -10,7 +10,7 @@ import java.util.IdentityHashMap;
 import java.util.List;
 
 /**
- * Bridges polytomy-resolution emissions into the DP cluster set X.
+ * Bridges consensus-tree and polytomy-resolution emissions into DP cluster set X.
  *
  * Each {@link EmittedBipartition} carries a {@code ClusterHash} signature (computed
  * via the consensus tree's prefix scans with the SAME {@code TaxonHasher} as the
@@ -94,14 +94,17 @@ public final class EmissionBridge {
             // Tier 1: the orientation we want is already a scorable cluster.
             if (clusterTable.contains(regHash)) { tier1++; continue; }
 
-            // Tier 2: synthesize a consensus-anchored multi-range exemplar.
+            // Tier 2: synthesize a consensus-anchored exemplar. Direct
+            // consensus clades stay on the fast single-range representation.
             Integer ti = exemplarIndex.get(ct);
             if (ti == null) {
                 ti = clusterTreesMutable.size();
                 clusterTreesMutable.add(buildExemplar(ct, ti, numTaxa));
                 exemplarIndex.put(ct, ti);
             }
-            Cluster c = new Cluster(ti, mr.los, mr.his, regCompl, regSize);
+            Cluster c = mr.numRanges() == 1
+                ? new Cluster(ti, mr.los[0], mr.his[0], regCompl, numTaxa, regSize)
+                : new Cluster(ti, mr.los, mr.his, regCompl, regSize);
             if (clusterTable.addCluster(regHash, c)) tier2++;
         }
         return new int[]{ tier1, tier2 };

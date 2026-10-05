@@ -17,21 +17,21 @@ public final class CliPresetsTest {
         check(cfg.isKeepPolytomyDuringInference(),
             "keep-polytomy-during-inference config");
         cfg.setKeepPolytomyDuringInference(false);
-        for (int level = 1; level <= 3; level++) {
+        for (int level = 1; level <= 5; level++) {
             cfg.setCompletionMethod(Config.CompletionMethod.DISTANCE);
             cfg.setStepBFastRestriction(false);
             CliPresets.applySearchSpace("S" + level, cfg);
             check(cfg.getSearchSpace() == Config.SearchSpace.valueOf("S" + level),
                 "S" + level + " recognized");
-            assertPresetDefaults("S" + level, cfg, level == 2);
+            assertPresetDefaults("S" + level, cfg, level >= 2);
 
             CliPresets.applySearchSpace(Integer.toString(level), cfg);
             check(cfg.getSearchSpace() == Config.SearchSpace.valueOf("S" + level),
                 level + " recognized");
-            assertPresetDefaults(Integer.toString(level), cfg, level == 2);
+            assertPresetDefaults(Integer.toString(level), cfg, level >= 2);
         }
 
-        expectInvalid(() -> CliPresets.applySearchSpace("S4", cfg));
+        expectInvalid(() -> CliPresets.applySearchSpace("S6", cfg));
         expectInvalid(() -> CliPresets.applySearchSpace("S8", cfg));
         System.out.println("CLI preset mappings: PASS");
     }

@@ -31,14 +31,14 @@ import java.util.List;
 public final class GreedyConsensusVerifier {
 
     /**
-     * @param geneTrees     gene trees only (no UPGMA), per the ASTRAL-MP-faithful
-     *                      counting path.  Used for both bipartition counting
-     *                      and exemplar taxa enumeration.
+     * @param sourceTrees   trees used for bipartition counts and polytomy resolution
+     * @param exemplarTrees full global-indexed list used to enumerate exemplars
      * @param hasher        per-taxon hashes; same instance used to build pref.
      * @param sim           species similarity matrix (Phase 1b output); pass
      *                      null when --autocomplete is off — Step A is skipped.
      */
-    public static void dump(List<Tree> geneTrees, TaxonRegistry registry,
+    public static void dump(List<Tree> sourceTrees, List<Tree> exemplarTrees,
+                            TaxonRegistry registry,
                             ClusterTable clusterTable, PrefixHashArrays pref,
                             TaxonHasher hasher, SimilarityMatrix sim,
                             String outFile) throws IOException {
@@ -46,19 +46,19 @@ public final class GreedyConsensusVerifier {
             ? new PrintStream(new FileOutputStream(outFile)) : System.out;
 
         int n = registry.size();
-        int k = geneTrees.size();
+        int k = sourceTrees.size();
         out.printf("=== Phase GC (Greedy Consensus) Verification ===%n");
         out.printf("Taxa: %d  Gene trees: %d  (UPGMA excluded)%n", n, k);
         out.printf("Cluster-side entries in X (incl. UPGMA): %d%n%n", clusterTable.size());
 
         List<Bipartition> bps = BipartitionCounter.collectFromGeneTrees(
-            geneTrees, pref, clusterTable.getAllTaxaHash(), n);
+            sourceTrees, pref, clusterTable.getAllTaxaHash(), n);
         out.printf("Unique bipartitions: %d%n", bps.size());
 
         // ── Lockstep run of fast path + oracle ──
         LaminarForest forest    = new LaminarForest(n);
-        LaminarBuilder fast     = new LaminarBuilder(forest, geneTrees, n);
-        LaminarOracle oracle    = new LaminarOracle(n, geneTrees);
+        LaminarBuilder fast     = new LaminarBuilder(forest, exemplarTrees, n);
+        LaminarOracle oracle    = new LaminarOracle(n, exemplarTrees);
 
         ConsensusTree[] fastSnaps   = new ConsensusTree[GreedyConsensus.THRESHOLDS.length];
         String[]        oracleSnaps = new String[GreedyConsensus.THRESHOLDS.length];
@@ -207,7 +207,7 @@ public final class GreedyConsensusVerifier {
             EmissionBuffer buffer = new EmissionBuffer();
             long t0 = System.nanoTime();
             int total = PolytomyResolver.runAllParallel(
-                pool.tasks, geneTrees, sim, buffer, n, /*baseSeed=*/692L);
+                pool.tasks, sourceTrees, sim, buffer, n, /*baseSeed=*/692L);
             long ms = (System.nanoTime() - t0) / 1_000_000;
 
             int countA = 0, countB = 0;
@@ -266,6 +266,14 @@ public final class GreedyConsensusVerifier {
         }
 
         if (outFile != null) out.close();
+    }
+
+    /** Backward-compatible verifier entry point for list-local tree indices. */
+    public static void dump(List<Tree> sourceTrees, TaxonRegistry registry,
+                            ClusterTable clusterTable, PrefixHashArrays pref,
+                            TaxonHasher hasher, SimilarityMatrix sim,
+                            String outFile) throws IOException {
+        dump(sourceTrees, sourceTrees, registry, clusterTable, pref, hasher, sim, outFile);
     }
 
     /** Build "[TAG] ti=... size=... {taxa}" line for one emission. */

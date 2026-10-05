@@ -3,7 +3,7 @@ package stelarx.greedy;
 import stelarx.cluster.ClusterHash;
 
 /**
- * One bipartition emitted by polytomy resolution.
+ * One bipartition emitted by a consensus snapshot or its polytomy resolution.
  *
  *   signature      — double-hash signature ({@code ClusterHash}) computed via
  *                    the consensus-tree prefix-scan; matches gene-tree
@@ -11,8 +11,8 @@ import stelarx.cluster.ClusterHash;
  *   canonicalSide  — the SMALLER side, as a multi-range descriptor pointing
  *                    into the source consensus tree's {@code aCons} array
  *   size           — |canonicalSide|
- *   source         — 'A' for Step A (UPGMA on group similarity), 'B' for Step B
- *                    (sampleAndResolve / induced-split sampling)
+ *   source         — 'C' for a consensus-tree clade, 'A' for Step A (UPGMA on
+ *                    group similarity), or 'B' for Step B sampling
  *   thresholdIndex — which T[ti] snapshot the source polytomy lives in
  */
 public final class EmittedBipartition {

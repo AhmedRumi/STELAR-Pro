@@ -110,6 +110,23 @@ echo "  Building    : $SRC_SIM  ->  $OUT_SIM"
 "$NVCC_BIN" "${NVCC_FLAGS[@]}" -o "$OUT_SIM" "$SRC_SIM"
 echo "  OK"
 
+# ── S5 A-Pro quartet-greedy score kernel and in-process host bridge ──────────
+SRC_S5_SCORE="$ROOT/src/native/stelar_pro_s5_score.cu"
+OUT_S5_SCORE="$NATIVE_OUT_DIR/libstelar_pro_s5_score.so"
+echo "  Building    : $SRC_S5_SCORE  ->  $OUT_S5_SCORE"
+"$NVCC_BIN" "${NVCC_FLAGS[@]}" -D_XOPEN_SOURCE=700 -D_POSIX_C_SOURCE=200809L \
+  -o "$OUT_S5_SCORE" "$SRC_S5_SCORE"
+echo "  OK"
+
+SRC_S5_BRIDGE="$ROOT/src/native/stelar_pro_s5_gpu_bridge.cpp"
+OUT_S5_BRIDGE="$NATIVE_OUT_DIR/libstelar_pro_s5_greedy_gpu.so"
+echo "  Building    : $SRC_S5_BRIDGE  ->  $OUT_S5_BRIDGE"
+g++ -std=gnu++17 -O3 -fPIC -shared -pthread \
+  -I"${JAVA_HOME}/include" -I"${JAVA_HOME}/include/linux" \
+  "$SRC_S5_BRIDGE" -L"$NATIVE_OUT_DIR" -lstelar_pro_s5_score \
+  -Wl,-rpath,'$ORIGIN' -o "$OUT_S5_BRIDGE"
+echo "  OK"
+
 # Record what this build depends on. ensure_backends.sh compares the stamp with
 # the running machine and rebuilds when the libraries came from elsewhere.
 {

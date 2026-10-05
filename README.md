@@ -132,8 +132,26 @@ datasets and the outputs safety mirror untouched:
 STELAR-Pro uses S1 and its built-in smaller-side intersection path by default.
 S2 retains the original rooted/tagged multicopy trees for scoring, and enlarges
 the candidate search using completed DISCO single-copy trees, a UPGMA guide,
-and cross-tree transitions. Select it with `--search-space S2`. S3 remains
-reserved. The old intersection-selector options have been removed.
+and cross-tree transitions. S3 keeps all S2 candidates and additionally builds
+greedy consensus trees from the completed DISCO trees, adding their clades and
+polytomy refinements. S4 keeps S3's quartet guide for UPGMA and consensus, but
+uses rooted-triplet sister frequency for incomplete-tree completion. Select
+them with `--search-space S2`, `S3`, or `S4`. S5 is independent of those
+DISCO/completion/consensus paths: it adds four ASTRAL-Pro-style quartet-greedy
+species-tree proposals to S1, registers both rooted orientations of each
+greedy-tree edge, and uses STELAR-Pro's rooted-triplet full DP to choose and
+recombine candidates. Greedy placement/NNI is parallel across gene families
+on CPU or CUDA; the final weight calculation remains STELAR-Pro's CPU/GPU
+triplet scorer. The original rooted/tagged trees are the only scoring evidence
+in all modes. Select S5 with `--search-space S5`.
+The default four greedy searches can be changed with `--s5-rounds N`; use
+`--s5-seed N` to reproduce a chosen random search order.
+S5 reuses the bundled ASTRAL-Pro3 placement/NNI core (the same greedy-search
+family as ASTRAL-Pro2), but runs direct full-taxon placement at all sizes. It
+does not use Pro2's large-taxon two-step backbone or automatic four-round
+extension; those would introduce a separate intermediate quartet DP. S5's
+final restricted DP and all candidate weights remain rooted-triplet based.
+The old intersection-selector options have been removed.
 
 Score a supplied rooted species tree with:
 

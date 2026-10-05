@@ -33,6 +33,7 @@ javac -cp "${ROOT}/build" -d "$TEST_CLASSES" \
   "${ROOT}/test/CliPresetsTest.java" \
   "${ROOT}/test/PackedPreflightTest.java" \
   "${ROOT}/test/PackedSimilarityParityTest.java" \
+  "${ROOT}/test/TripletSimilarityTest.java" \
   "${ROOT}/test/SimilarityArgminTest.java" \
   "${ROOT}/test/ThreadingFailureTest.java" \
   "${ROOT}/test/WideSimilarityBoundaryTest.java" \
@@ -74,6 +75,7 @@ echo "Running rooted parser/polytomy/completion lifecycle tests..."
 java -cp "$CP" stelarx.completion.RootedPolytomyLifecycleTest \
   "${ROOT}/test/input/stelar_polytomy_incomplete_6taxa.tre"
 java -cp "$CP" PackedSimilarityParityTest "${ROOT}/test/input/test_incomplete.tre"
+java -cp "$CP" TripletSimilarityTest
 java -cp "$CP" SimilarityArgminTest \
   "${ROOT}/test/input/test_incomplete.tre" \
   "${ROOT}/test/input/stelar_polytomy_incomplete_6taxa.tre"
@@ -131,15 +133,17 @@ for invalid in species-missing species-unknown species-multiple species-root-pol
     --score-species-tree "${WORK}/${invalid}.tre"
 done
 expect_failure unrooted-mode "${JAVA[@]}" --cpu -q --unrooted -i "${WORK}/valid-genes.tre"
-expect_failure bad-preset "${JAVA[@]}" --cpu -q -i "${WORK}/valid-genes.tre" --search-space S4
+expect_failure bad-preset "${JAVA[@]}" --cpu -q -i "${WORK}/valid-genes.tre" --search-space S5
 grep -q "unknown search space" "${WORK}/reject-bad-preset.log"
 "${JAVA[@]}" --cpu -q -i "${WORK}/valid-genes.tre" --search-space S2 \
   >"${WORK}/accepted-S2.log" 2>&1
 grep -Fq "Triplet score" "${WORK}/accepted-S2.log"
-expect_failure reserved-S3 "${JAVA[@]}" --cpu -q \
-  -i "${WORK}/valid-genes.tre" --search-space S3
-grep -Fq "S3 is reserved for a future STELAR-Pro implementation" \
-  "${WORK}/reject-reserved-S3.log"
+"${JAVA[@]}" --cpu -q -i "${WORK}/valid-genes.tre" --search-space S3 \
+  >"${WORK}/accepted-S3.log" 2>&1
+grep -Fq "Triplet score" "${WORK}/accepted-S3.log"
+"${JAVA[@]}" --cpu -q -i "${WORK}/valid-genes.tre" --search-space S4 \
+  >"${WORK}/accepted-S4.log" 2>&1
+grep -Fq "Triplet score" "${WORK}/accepted-S4.log"
 for option in --intersection-method --im --weight-intersection-method; do
   label="removed-${option#--}"
   expect_failure "$label" "${JAVA[@]}" --cpu -q \

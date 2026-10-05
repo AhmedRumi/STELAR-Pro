@@ -82,6 +82,7 @@ struct Hasher{
 	}
 };
 
+
 string formatBootstrap(double s){
 	int a = floor(s);
 	int b = round(10 * (s - a));
@@ -165,6 +166,16 @@ struct AnnotatedTree{
 	}
 };
 
+// S5 can replace the per-locus quartet counter without changing placement or
+// NNI logic. The ordinary ASTRAL-Pro executable still uses ThreadPool below.
+struct QuartetScoreBackend {
+	virtual void updateSet(int color, int taxon) = 0;
+	virtual void updateGet() = 0;
+	virtual void scoreSet() = 0;
+	virtual score_t scoreGet() = 0;
+	virtual ~QuartetScoreBackend() = default;
+};
+
 struct PlacementAlgorithm{
 	
 	struct Node{
@@ -187,9 +198,11 @@ struct PlacementAlgorithm{
 	Tripartition trip;
 	const int ROUND_NN = -1;
 	ThreadPool &TP;
-	
-	PlacementAlgorithm(const vector<hash_t> &taxonHash, TripartitionInitializer &tripInit, ThreadPool& TP, int ROUND_NN):
-		taxonHash(taxonHash), rNN(ROUND_NN), trip(tripInit), ROUND_NN(ROUND_NN), TP(TP) {}
+	QuartetScoreBackend *scoreBackend = nullptr;
+
+	PlacementAlgorithm(const vector<hash_t> &taxonHash, TripartitionInitializer &tripInit, ThreadPool& TP, int ROUND_NN,
+	                   QuartetScoreBackend *scoreBackend = nullptr):
+		taxonHash(taxonHash), rNN(ROUND_NN), trip(tripInit), ROUND_NN(ROUND_NN), TP(TP), scoreBackend(scoreBackend) {}
 	
 	int& heavy(int v){
 		return nodes[v].heavy;
@@ -285,20 +298,24 @@ struct PlacementAlgorithm{
 	}
 	
 	void tripUpdateSet(int tgt, int i){
+		if (scoreBackend != nullptr) { scoreBackend->updateSet(tgt, i); return; }
 		Tripartition &t = trip;
 		TP.push([=, &t](int part)->score_t{t.updatePart(part, tgt, i); return 0;});
 	}
 
 	void tripUpdateGet(int tgt, int i){
+		if (scoreBackend != nullptr) { scoreBackend->updateGet(); return; }
 		TP.pop();
 	}
 
 	void tripScoreSet(){
+		if (scoreBackend != nullptr) { scoreBackend->scoreSet(); return; }
 		Tripartition &t = trip;
 		TP.push([=, &t](int part)->score_t{return t.scorePart(part);});
 	}
 
 	score_t tripScoreGet(){
+		if (scoreBackend != nullptr) return scoreBackend->scoreGet();
 		return TP.pop();
 	}
 

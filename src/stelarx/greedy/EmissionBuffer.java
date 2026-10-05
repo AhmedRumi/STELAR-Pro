@@ -6,7 +6,7 @@ import java.util.Collection;
 import java.util.concurrent.ConcurrentHashMap;
 
 /**
- * Thread-safe accumulator for polytomy-resolution emissions.
+ * Thread-safe accumulator for consensus-clade and polytomy-resolution emissions.
  *
  * Keyed by {@link ClusterHash} signature. In parallel polytomy resolution each
  * task owns a private instance, so adaptive-round novelty cannot be contaminated
@@ -39,7 +39,9 @@ public final class EmissionBuffer {
 
     private static EmittedBipartition prefer(EmittedBipartition a,
                                               EmittedBipartition b) {
-        int c = Character.compare(a.source, b.source); // Step A before Step B
+        // Prefer the direct consensus ('C') descriptor because it is one
+        // contiguous range; otherwise retain Step A before Step B.
+        int c = Integer.compare(sourceRank(a.source), sourceRank(b.source));
         if (c != 0) return c < 0 ? a : b;
         c = Integer.compare(a.thresholdIndex, b.thresholdIndex);
         if (c != 0) return c < 0 ? a : b;
@@ -54,6 +56,15 @@ public final class EmissionBuffer {
             if (c != 0) return c < 0 ? a : b;
         }
         return b;
+    }
+
+    private static int sourceRank(char source) {
+        return switch (source) {
+            case 'C' -> 0;
+            case 'A' -> 1;
+            case 'B' -> 2;
+            default  -> 3;
+        };
     }
 
     public boolean contains(ClusterHash sig) { return emitted.containsKey(sig); }

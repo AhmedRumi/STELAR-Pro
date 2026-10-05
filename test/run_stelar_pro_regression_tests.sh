@@ -40,11 +40,14 @@ grep -q "Triplet score" "${WORK}/default.log"
   --search-space S2 -o "${WORK}/s2.tre" >"${WORK}/s2.log" 2>&1
 test -s "${WORK}/s2.tre"
 grep -q "Triplet score" "${WORK}/s2.log"
-expect_failure reserved-S3 \
-  "${JAVA[@]}" --cpu -q \
-    -i "${ROOT}/test/input/test_incomplete.tre" --search-space S3
-grep -qF "S3 is reserved for a future STELAR-Pro implementation" \
-  "${WORK}/reserved-S3.log"
+"${JAVA[@]}" --cpu -q -i "${ROOT}/test/input/test_incomplete.tre" \
+  --search-space S3 -o "${WORK}/s3.tre" >"${WORK}/s3.log" 2>&1
+test -s "${WORK}/s3.tre"
+grep -q "Triplet score" "${WORK}/s3.log"
+"${JAVA[@]}" --cpu -q -i "${ROOT}/test/input/test_incomplete.tre" \
+  --search-space S4 -o "${WORK}/s4.tre" >"${WORK}/s4.log" 2>&1
+test -s "${WORK}/s4.tre"
+grep -q "Triplet score" "${WORK}/s4.log"
 
 for option in --intersection-method --im --weight-intersection-method; do
   label="removed-${option#--}"
