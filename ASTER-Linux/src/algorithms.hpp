@@ -39,6 +39,8 @@ typedef unsigned __int128 hash_t;
 #include<thread>
 #include<cmath>
 #include<memory>
+#include<functional>
+#include<stdexcept>
 #include<iomanip>
 #include<limits>
 
@@ -1565,12 +1567,37 @@ struct ConstrainedOptimizationAlgorithm{
 		}
 	}
 	
-	void twoStepWorkflow(PlacementAlgorithm &pAlg){
+	// A null resolver retains ASTRAL-Pro's quartet-DP backbone. S5 supplies a
+	// rooted-triplet DP resolver while reusing the placement and NNI stages.
+	void twoStepWorkflow(PlacementAlgorithm &pAlg,
+		const function<string(const vector<string>&, const vector<int>&)> &backboneResolver = {},
+		const function<string(const vector<int>&)> &priorBackboneResolver = {}){
 		int N = ntaxa, rId = roundId;
 		int n = sqrt(N) * log2(names.size()) / 4;
 		vector<int> order;
-		if (rId == 0){
-			ConstrainedOptimizationAlgorithm alg(*this);
+		if (priorBackboneResolver){
+			// Later S5 rounds start from the previous STELAR-DP tree restricted
+			// to a fresh random subset; the rest of A-Pro's grouped placement is shared.
+			for (int i = 0; i < N; i++) order.push_back(i);
+			shuffle(order.begin(), order.end(), RND_GENERATOR);
+			vector<int> selected(order.begin(), order.begin() + n);
+			string backbone = priorBackboneResolver(selected);
+			if (backbone.empty()) throw runtime_error("S5 previous triplet-DP backbone is empty");
+			unordered_set<int> added;
+			unordered_map<string, int> selectedNameToId;
+			for (int id: selected) selectedNameToId[names[id]] = id;
+			int cursor = 0;
+			guideSubtree(pAlg, backbone, selectedNameToId, cursor, added);
+			if ((int) added.size() != n || pAlg.rootNodeId < 0
+					|| pAlg.rootLeafId != selected[0])
+				throw runtime_error("S5 previous backbone does not match its selected taxa");
+			pAlg.nnMove();
+		}
+		else if (rId == 0){
+			unique_ptr<ConstrainedOptimizationAlgorithm> alg;
+			if (!backboneResolver) alg.reset(new ConstrainedOptimizationAlgorithm(*this));
+			vector<string> subsetGuides;
+			if (backboneResolver) subsetGuides.reserve(n);
 			for (int i = 1; i < N; i++) order.push_back(i);
 			shuffle(order.begin(), order.end(), RND_GENERATOR);
 			order.push_back(order[0]);
@@ -1579,13 +1606,14 @@ struct ConstrainedOptimizationAlgorithm{
 			for (int i = 1; i < n; i++) hashsum += taxonHash[order[i]];
 			
 			pAlg.taxonHash[0] = -hashsum;
-			alg.taxonHash[0] = -hashsum;
+			if (alg) alg->taxonHash[0] = -hashsum;
 			for (int r = 0; r < n; r++){
 				LOG << "Guide Tree " << r << "/" << n << endl;
 				for (int i = 0; i < n; i++) pAlg.order.push_back(order[i]);
 				shuffle(pAlg.order.begin(), pAlg.order.end(), RND_GENERATOR);
 				pAlg.run();
-				alg.addTripartitions(pAlg.tripHash);
+				if (alg) alg->addTripartitions(pAlg.tripHash);
+				else subsetGuides.push_back(pAlg.printTree(names));
 				for (int i = 0; i < n; i++) pAlg.tripUpdateSet(-1, order[i]);
 				for (int i = 0; i < n; i++) pAlg.tripUpdateGet(-1, order[i]);
 				pAlg.tripHash.clear();
@@ -1596,8 +1624,22 @@ struct ConstrainedOptimizationAlgorithm{
 				pAlg.orderId = 0;
 				pAlg.rNN = ROUND_NN;
 			}
-			alg.computeOptimalTree();
-			alg.createPlacementAlgorithm(pAlg, 1);
+			if (alg){
+				alg->computeOptimalTree();
+				alg->createPlacementAlgorithm(pAlg, 1);
+			}
+			else {
+				vector<int> selected(order.begin(), order.begin() + n);
+				string backbone = backboneResolver(subsetGuides, selected);
+				if (backbone.empty()) throw runtime_error("S5 triplet-DP backbone is empty");
+				unordered_set<int> added;
+				unordered_map<string, int> selectedNameToId;
+				for (int id: selected) selectedNameToId[names[id]] = id;
+				int cursor = 0;
+				guideSubtree(pAlg, backbone, selectedNameToId, cursor, added);
+				if ((int) added.size() != n || pAlg.rootNodeId < 0 || pAlg.rootLeafId != 0)
+					throw runtime_error("S5 triplet-DP backbone does not match its selected taxa");
+			}
 			pAlg.taxonHash[0] = taxonHash[0];
 		}
 		else{

@@ -86,7 +86,7 @@ public class Config {
     private int threadCount = Runtime.getRuntime().availableProcessors();
     private int numHashSeeds = 2;
     private long baseSeed = 0xDEADBEEFCAFEL;
-    /** Independent randomized A-Pro greedy searches used only by S5. */
+    /** Greedy trees added per initial or adaptive S5 DP pass. */
     private int s5Rounds = 4;
     private long s5Seed = baseSeed;
     private int verbosity = 1; // 0=quiet 1=INFO 2=DEBUG 3=TRACE

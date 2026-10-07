@@ -144,13 +144,19 @@ recombine candidates. Greedy placement/NNI is parallel across gene families
 on CPU or CUDA; the final weight calculation remains STELAR-Pro's CPU/GPU
 triplet scorer. The original rooted/tagged trees are the only scoring evidence
 in all modes. Select S5 with `--search-space S5`.
-The default four greedy searches can be changed with `--s5-rounds N`; use
-`--s5-seed N` to reproduce a chosen random search order.
-S5 reuses the bundled ASTRAL-Pro3 placement/NNI core (the same greedy-search
-family as ASTRAL-Pro2), but runs direct full-taxon placement at all sizes. It
-does not use Pro2's large-taxon two-step backbone or automatic four-round
-extension; those would introduce a separate intermediate quartet DP. S5's
-final restricted DP and all candidate weights remain rooted-triplet based.
+Each DP pass adds four greedy trees by default (`--s5-rounds N` changes this
+batch size); `--s5-seed N` makes the pass sequence reproducible. With fewer than 100
+taxa, S5 uses direct full-taxon greedy placement. At 100 taxa or more, each
+initial round uses ASTRAL-Pro's two-step search: build randomized subset guide trees,
+infer their backbone using STELAR-Pro's rooted-triplet DP on the original
+tagged gene trees restricted to that subset, then insert the remaining taxa
+in groups and run NNI. After the initial full STELAR DP, up to five additional
+passes induce a new random backbone from the preceding STELAR tree, add another
+batch of greedy proposals, and rerun the full DP. All S1 and earlier S5
+candidates remain available. Search stops when the rooted tree no longer
+changes, following the ASTRAL-Pro2 supplement's tree-stability rule; the
+bundled ASTRAL-Pro3 binary instead uses score improvement and a different cap.
+Every backbone and full-tree DP remains rooted-triplet based.
 The old intersection-selector options have been removed.
 
 Score a supplied rooted species tree with:

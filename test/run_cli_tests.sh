@@ -84,6 +84,8 @@ javac -cp "${ROOT}/build" -d "$WORK" \
   "${ROOT}/test/AProGreedySearchTest.java"
 java -Djava.library.path="${ROOT}/native" -cp "${ROOT}/build:${WORK}" \
   AProGreedySearchTest >/dev/null 2>&1
+java -Djava.library.path="${ROOT}/native" -cp "${ROOT}/build:${WORK}" \
+  AProGreedySearchTest --large-smoke >/dev/null 2>&1
 for option in --intersection-method --im --weight-intersection-method; do
   expect_launcher_failure "removed-${option#--}" \
     "${option} was removed" "$option" I1

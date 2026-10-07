@@ -19,6 +19,7 @@ import stelarx.gpu.GPUWeightCalculator;
 import stelarx.partition.PartitionTable;
 import stelarx.pro.DiscoDecomposer;
 import stelarx.pro.AProGreedySearch;
+import stelarx.pro.S5OverallSearch;
 import stelarx.pro.GeneTreeRooterTagger;
 import stelarx.pro.GeneTreePolytomyResolver;
 import stelarx.pro.UniqueTaxonSubtreeHashes;
@@ -191,10 +192,11 @@ public class Main {
                 boolean gpuGreedy = cfg.getComputeMode() == Config.ComputeMode.GPU;
                 long t1b = PhaseLogger.begin("Phase 1b S5 A-Pro greedy proposals", gpuGreedy);
                 // The resolved input is re-tagged by the in-process A-Pro scorer.
-                // Greedy trees propose rooted clusters only: Phase 4/6 below
-                // still scores the original rooted/tagged multicopy gene trees.
+                // Greedy trees provide root-invariant candidate clusters; only
+                // original rooted/tagged multicopy trees supply scoring data.
                 List<Tree> greedyTrees = AProGreedySearch.generate(
-                    preprocessingInput, registry, originalTrees.size(),
+                    preprocessingInput, cfg.getInputFile(), registry,
+                    originalTrees.size(),
                     cfg.getThreadCount(), cfg.getS5Seed(), cfg.getS5Rounds(), gpuGreedy);
                 List<Tree> candidateTrees = new ArrayList<>(
                     originalTrees.size() + greedyTrees.size());
@@ -601,6 +603,45 @@ public class Main {
                 registry, hasher);
             finalTripletScore = inference.getLastTripletScore();
             PhaseLogger.end("Phase 7  Inference", t7, false);
+
+            if (cfg.getSearchSpace() == Config.SearchSpace.S5) {
+                // The initial four greedy proposals have already been optimized
+                // by STELAR DP. Retain S1 and every proposal in later passes.
+                List<Tree> accumulated = new ArrayList<>(trees);
+                weightTable = null;
+                partTable = null;
+                dpTable = null;
+                clusterTable = null;
+                weightClusterTrees = null;
+                candidateHashes = null;
+                System.gc();
+                for (int pass = 1; pass <= 5; pass++) {
+                    boolean gpuSearch = cfg.getComputeMode() == Config.ComputeMode.GPU;
+                    long t7b = PhaseLogger.begin(
+                        "Phase 7b S5 adaptive DP pass " + pass, gpuSearch);
+                    String previousTree = speciesTree;
+                    List<Tree> added = AProGreedySearch.generate(
+                        preprocessingInput, cfg.getInputFile(), registry,
+                        accumulated.size(), cfg.getThreadCount(),
+                        cfg.getS5Seed() + pass, cfg.getS5Rounds(),
+                        gpuSearch, previousTree);
+                    accumulated.addAll(added);
+                    S5OverallSearch.Result updated = S5OverallSearch.infer(
+                        originalTrees, accumulated, registry);
+                    boolean unchanged = S5OverallSearch.sameRootedTopology(
+                        previousTree, updated.newick(), registry);
+                    speciesTree = updated.newick();
+                    finalTripletScore = updated.tripletScore();
+                    Logging.info("S5 adaptive DP pass %d/5: +%d greedy trees, "
+                        + "%d total; rooted topology %s", pass, added.size(),
+                        accumulated.size() - originalTrees.size(),
+                        unchanged ? "unchanged (stop)" : "changed");
+                    PhaseLogger.end("Phase 7b S5 adaptive DP pass " + pass,
+                        t7b, gpuSearch);
+                    if (unchanged) break;
+                    System.gc();
+                }
+            }
 
             // Persist the inferred topology before the independent final scoring
             // pass.  If scoring encounters an environmental/runtime failure, the
@@ -1139,7 +1180,8 @@ public class Main {
                                                  S3 adds DISCO-tree greedy consensus;
                                                  S4 uses rooted triplets for tree completion only;
                                                  S5 adds A-Pro quartet-greedy candidates
-              --s5-rounds N                  Independent S5 greedy searches (default: 4)
+              --s5-rounds N                  Greedy trees per S5 DP pass (default: 4;
+                                             >=100 taxa use triplet-DP two-step backbones)
               --s5-seed N                    S5 greedy-search random seed
               --search-mode local|full         Legacy/advanced DP search control
               --large-n-score-type T            int128 (exact) | double
