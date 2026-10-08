@@ -13,9 +13,9 @@ import java.util.List;
 import java.util.concurrent.atomic.AtomicInteger;
 
 /**
- * Builds the quartet-based taxon similarity matrix from gene trees.
+ * Builds quartet (S2/S3) and rooted-triplet (S4) taxon similarity matrices.
  *
- * Reproduces ASTRAL-MP's SimilarityMatrix.populateByQuartetDistance exactly:
+ * The quartet path reproduces ASTRAL-MP's populateByQuartetDistance:
  * for each tree T with kt leaves, and for each pair (a, b) both present in T,
  *   num_T(a, b) = same_side_T(a, b)
  *              = number of quartets {a, b, x, y} resolved by T where a and b

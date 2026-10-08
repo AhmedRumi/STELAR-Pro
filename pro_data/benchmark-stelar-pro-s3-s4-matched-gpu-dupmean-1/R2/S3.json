@@ -1,0 +1,36 @@
+{
+  "command": [
+    "/home/rumi/Documents/STELAR-Pro/run.sh",
+    "--no-build",
+    "--no-notify",
+    "--gpu-strict",
+    "--threads",
+    "28",
+    "--xmx",
+    "8g",
+    "--search-space",
+    "S3",
+    "--quiet",
+    "--input",
+    "/home/rumi/Documents/STELAR-Pro/pro_data/simphy-200taxa-1000gt-10rep-dupmean-1-lb-2e-10-noloss/R2/all_gt.tre",
+    "--output",
+    "/home/rumi/Documents/STELAR-Pro/pro_data/benchmark-stelar-pro-s3-s4-matched-gpu-dupmean-1/R2/S3.tre"
+  ],
+  "exit_code": 0,
+  "wall_seconds": 23.20390983900006,
+  "timeout_seconds": 600,
+  "java_sha256": "d7eaa52d4ec70f21",
+  "cuda_sha256": "9ddfe5428301eca6",
+  "phase_seconds": {
+    "Phase 1  Parse gene trees": 0.501,
+    "Phase 1b S3 DISCO + completion + UPGMA guide": 0.782,
+    "Phase 2  Taxon hashing": 0.018,
+    "Phase 3  Cluster extraction": 0.623,
+    "Phase 3.5 Greedy consensus build + polytomy resolution": 0.7,
+    "Phase 4  Rooted child-partition extraction": 0.078,
+    "Phase 5  DP local transitions": 0.221,
+    "Phase 5b Cross-tree transitions": 0.124,
+    "Phase 6  Weight calculation": 15.773,
+    "Phase 7  Inference": 0.078
+  }
+}

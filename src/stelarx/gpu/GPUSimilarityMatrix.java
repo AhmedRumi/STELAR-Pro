@@ -1,9 +1,10 @@
 package stelarx.gpu;
 
 /**
- * JNI bridge to the CUDA similarity-matrix computation kernel.
+ * JNI bridge to CUDA quartet and rooted-triplet similarity kernels.
  *
- * Implements the validated bridge formula:
+ * The formula below describes quartet mode; S4's triplet mode uses rooted
+ * LCA subtree sizes with the same pair tiling and tree batching.
  *
  *   same_side_T(a,b)  =  C2(kt − 2)  −  QD_T(a,b)
  *

@@ -1,17 +1,15 @@
 package stelarx.completion;
 
 /**
- * Quartet-based taxon similarity matrix.
+ * Taxon similarity matrix for quartet (S2/S3) or rooted-triplet (S4) guides.
  *
  * For taxa a and b:
  *   M[a][b] = Σ_{t: a,b present} num_t(a,b)
  *             ──────────────────────────────
  *             Σ_{t: a,b present} den_t(a,b)
  *
- * where:
- *   num_t(a,b) = S[LCA_t(a,b)] − C2(subLC[c_a]) − C2(subLC[c_b])
- *   den_t(a,b) = C2(k_t − 2)
- *   k_t        = leaf count of tree t
+ * The builder supplies the quartet or triplet numerator and denominator;
+ * this container normalizes either measure in the same way.
  *
  * After normalize():
  *   sim[a][b]  ∈ [0,1], diagonal = 1, symmetric

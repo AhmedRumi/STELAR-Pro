@@ -20,6 +20,9 @@ import stelarx.partition.PartitionTable;
 import stelarx.pro.DiscoDecomposer;
 import stelarx.pro.AProGreedySearch;
 import stelarx.pro.S5OverallSearch;
+import stelarx.pro.S6GreedySearch;
+import stelarx.pro.S6OverallSearch;
+import stelarx.pro.S6TripletSupport;
 import stelarx.pro.GeneTreeRooterTagger;
 import stelarx.pro.GeneTreePolytomyResolver;
 import stelarx.pro.UniqueTaxonSubtreeHashes;
@@ -174,21 +177,41 @@ public class Main {
             // ── Phase 1b: Optional candidate-tree enrichment ─────────────────
             // S2-S4 decompose multicopy trees with DISCO, complete those
             // single-copy trees, and add a UPGMA guide. S3/S4 later add greedy
-            // consensus candidates. S4 changes only the completion matrix.
-            // S5 independently adds A-Pro quartet-greedy proposal trees to S1.
+            // consensus candidates. S4 uses triplet similarity throughout.
+            // S5 adds A-Pro quartet-greedy trees; independent S6 adds rooted
+            // STELAR-triplet-greedy trees. Both always retain the S1 candidates.
             //
             // IMPORTANT: originalTrees is saved before enrichment and is used for
             // rooted-partition extraction (Phase 4) and weights (Phase 6). Candidate
             // trees may contain completed or guide-tree relationships, but those
             // artificial relationships never become scoring observations.
             List<Tree> originalTrees = trees; // always points to pre-completion trees
+            S6TripletSupport s6Support = null;
             List<Tree> consensusSourceTrees = List.of(); // completed DISCO trees for S3
             SimilarityMatrix similarityMatrix = null; // visible to Phase 3.5 (Step A)
             Tree upgmaGuideTree = null; // S2/S3 candidate and optional legacy guide
             boolean discoSearch = cfg.getSearchSpace() == Config.SearchSpace.S2
                 || cfg.getSearchSpace() == Config.SearchSpace.S3
                 || cfg.getSearchSpace() == Config.SearchSpace.S4;
-            if (cfg.getSearchSpace() == Config.SearchSpace.S5 && !cfg.isScoreOnly()) {
+            if (cfg.getSearchSpace() == Config.SearchSpace.S6 && !cfg.isScoreOnly()) {
+                long t1b = PhaseLogger.begin("Phase 1b S6 rooted-triplet greedy proposals",
+                    cfg.getComputeMode() == Config.ComputeMode.GPU);
+                s6Support = S6TripletSupport.build(originalTrees, registry.size(),
+                    cfg.getThreadCount());
+                List<Tree> greedyTrees = S6GreedySearch.generate(s6Support,
+                    originalTrees, cfg.getInputFile(), registry, originalTrees.size(),
+                    cfg.getS6Seed(), cfg.getS6Rounds(), null);
+                List<Tree> candidateTrees = new ArrayList<>(
+                    originalTrees.size() + greedyTrees.size());
+                candidateTrees.addAll(originalTrees);
+                candidateTrees.addAll(greedyTrees);
+                trees = candidateTrees;
+                Logging.info("S6 candidates: %d original gene trees + %d rooted "
+                    + "triplet-greedy proposal(s); weights use original genes only",
+                    originalTrees.size(), greedyTrees.size());
+                PhaseLogger.end("Phase 1b S6 rooted-triplet greedy proposals", t1b,
+                    cfg.getComputeMode() == Config.ComputeMode.GPU);
+            } else if (cfg.getSearchSpace() == Config.SearchSpace.S5 && !cfg.isScoreOnly()) {
                 boolean gpuGreedy = cfg.getComputeMode() == Config.ComputeMode.GPU;
                 long t1b = PhaseLogger.begin("Phase 1b S5 A-Pro greedy proposals", gpuGreedy);
                 // The resolved input is re-tagged by the in-process A-Pro scorer.
@@ -227,34 +250,26 @@ public class Main {
                     disco.duplicationCuts(), disco.discardedSmallTrees());
 
                 if (!completedDiscoTrees.isEmpty()) {
-                    // Keep S3's quartet matrix for UPGMA and consensus. S4 uses
-                    // a rooted-triplet matrix solely for incomplete-tree insertion,
-                    // then releases it before constructing the unchanged S3 guide.
-                    // Neither matrix contributes weight/scoring evidence.
+                    // S4 reuses one rooted-triplet matrix for completion, UPGMA,
+                    // and consensus; S2/S3 retain their quartet matrix. These
+                    // guide matrices never contribute scoring evidence.
                     if (cfg.getSearchSpace() == Config.SearchSpace.S4) {
-                        SimilarityMatrix completionMatrix = gpuSim
+                        similarityMatrix = gpuSim
                             ? SimilarityMatrixBuilder.buildTripletGPU(
                                 completedDiscoTrees, registry.size())
                             : SimilarityMatrixBuilder.buildTripletCPU(
                                 completedDiscoTrees, registry.size());
-                        List<Tree> uncompletedDiscoTrees = completedDiscoTrees;
-                        completedDiscoTrees = TreeCompleter.completeAll(
-                            completedDiscoTrees, completionMatrix, registry.size());
-                        completionMatrix = null; // avoid retaining two O(n²) matrices
-                        similarityMatrix = gpuSim
-                            ? SimilarityMatrixBuilder.buildGPU(
-                                uncompletedDiscoTrees, registry.size())
-                            : SimilarityMatrixBuilder.buildCPU(
-                                uncompletedDiscoTrees, registry.size());
+                        Logging.info("S4 similarity: one rooted-triplet matrix for "
+                            + "DISCO completion, UPGMA, and consensus");
                     } else {
                         similarityMatrix = gpuSim
                             ? SimilarityMatrixBuilder.buildGPU(
                                 completedDiscoTrees, registry.size())
                             : SimilarityMatrixBuilder.buildCPU(
                                 completedDiscoTrees, registry.size());
-                        completedDiscoTrees = TreeCompleter.completeAll(
-                            completedDiscoTrees, similarityMatrix, registry.size());
                     }
+                    completedDiscoTrees = TreeCompleter.completeAll(
+                        completedDiscoTrees, similarityMatrix, registry.size());
                     for (Tree candidateTree : completedDiscoTrees) {
                         markSyntheticCandidateNodes(candidateTree.root);
                     }
@@ -431,8 +446,11 @@ public class Main {
             // Resolve each INPUT gene-tree polytomy against the UPGMA guide tree into
             // arm-union (multi-range) clusters (ASTRAL-MP addBipartitionsFromSignleIndTreesToX).
             // Distinct from rooted-partition scoring; gated since it enlarges X.
+            // No DISCO components means S4 has no triplet guide for this optional step.
             if (cfg.isResolveInputGeneTreePolytomies()
-                    && anyPolytomous(trees, originalTrees.size())) {
+                    && anyPolytomous(trees, originalTrees.size())
+                    && (cfg.getSearchSpace() != Config.SearchSpace.S4
+                        || similarityMatrix != null)) {
                 long t36 = PhaseLogger.begin("Phase 3.6 Gene-tree polytomy enrichment", false);
                 int nT = registry.size();
                 if (similarityMatrix == null) {
@@ -641,6 +659,42 @@ public class Main {
                     if (unchanged) break;
                     System.gc();
                 }
+            } else if (cfg.getSearchSpace() == Config.SearchSpace.S6) {
+                // Repeat triplet-guided proposal generation around the previous
+                // STELAR-DP tree; candidates and original evidence accumulate.
+                List<Tree> accumulated = new ArrayList<>(trees);
+                weightTable = null;
+                partTable = null;
+                dpTable = null;
+                clusterTable = null;
+                weightClusterTrees = null;
+                candidateHashes = null;
+                System.gc();
+                for (int pass = 1; pass <= 5; pass++) {
+                    long t7b = PhaseLogger.begin(
+                        "Phase 7b S6 adaptive DP pass " + pass,
+                        cfg.getComputeMode() == Config.ComputeMode.GPU);
+                    String previousTree = speciesTree;
+                    List<Tree> added = S6GreedySearch.generate(s6Support,
+                        originalTrees, cfg.getInputFile(), registry,
+                        accumulated.size(), cfg.getS6Seed() + pass,
+                        cfg.getS6Rounds(), previousTree);
+                    accumulated.addAll(added);
+                    S6OverallSearch.Result updated = S6OverallSearch.infer(
+                        originalTrees, accumulated, registry);
+                    boolean unchanged = S6OverallSearch.sameRootedTopology(
+                        previousTree, updated.newick(), registry);
+                    speciesTree = updated.newick();
+                    finalTripletScore = updated.tripletScore();
+                    Logging.info("S6 adaptive DP pass %d/5: +%d greedy trees, "
+                        + "%d total; rooted topology %s", pass, added.size(),
+                        accumulated.size() - originalTrees.size(),
+                        unchanged ? "unchanged (stop)" : "changed");
+                    PhaseLogger.end("Phase 7b S6 adaptive DP pass " + pass,
+                        t7b, cfg.getComputeMode() == Config.ComputeMode.GPU);
+                    if (unchanged) break;
+                    System.gc();
+                }
             }
 
             // Persist the inferred topology before the independent final scoring
@@ -777,6 +831,14 @@ public class Main {
                 case "--s5-seed" -> {
                     if (++i >= args.length) return false;
                     cfg.setS5Seed(Long.parseLong(args[i]));
+                }
+                case "--s6-rounds" -> {
+                    if (++i >= args.length) return false;
+                    cfg.setS6Rounds(Integer.parseInt(args[i]));
+                }
+                case "--s6-seed" -> {
+                    if (++i >= args.length) return false;
+                    cfg.setS6Seed(Long.parseLong(args[i]));
                 }
                 case "--search-mode"   -> {
                     if (++i >= args.length) return false;
@@ -1175,14 +1237,17 @@ public class Main {
               -vv | -vvv                       Debug or trace logging
 
             Search and scoring:
-              --search-space S1|S2|S3|S4|S5    S1 native search (default); S2 adds DISCO,
+              --search-space S1|S2|S3|S4|S5|S6    S1 native search (default); S2 adds DISCO,
                                                  completion, UPGMA, and cross-tree transitions;
                                                  S3 adds DISCO-tree greedy consensus;
-                                                 S4 uses rooted triplets for tree completion only;
-                                                 S5 adds A-Pro quartet-greedy candidates
+                                                 S4 uses one triplet similarity matrix throughout;
+                                                 S5 adds A-Pro quartet-greedy candidates;
+                                                 S6 adds rooted-triplet greedy candidates
               --s5-rounds N                  Greedy trees per S5 DP pass (default: 4;
                                              >=100 taxa use triplet-DP two-step backbones)
               --s5-seed N                    S5 greedy-search random seed
+              --s6-rounds N                  Rooted-triplet greedy trees per S6 DP pass (default: 4)
+              --s6-seed N                    S6 greedy-search random seed
               --search-mode local|full         Legacy/advanced DP search control
               --large-n-score-type T            int128 (exact) | double
               --no-prune-search-space           Disable reachability pruning

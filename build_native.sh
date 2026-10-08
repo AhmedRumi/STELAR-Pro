@@ -127,6 +127,13 @@ g++ -std=gnu++17 -O3 -fPIC -shared -pthread \
   -Wl,-rpath,'$ORIGIN' -o "$OUT_S5_BRIDGE"
 echo "  OK"
 
+# ── S6 rooted-triplet support tensor ─────────────────────────────────────────
+SRC_S6="$ROOT/src/native/stelar_pro_s6_triplets.cu"
+OUT_S6="$NATIVE_OUT_DIR/libstelar_pro_s6_triplets_gpu.so"
+echo "  Building    : $SRC_S6  ->  $OUT_S6"
+"$NVCC_BIN" "${NVCC_FLAGS[@]}" -o "$OUT_S6" "$SRC_S6"
+echo "  OK"
+
 # Record what this build depends on. ensure_backends.sh compares the stamp with
 # the running machine and rebuilds when the libraries came from elsewhere.
 {

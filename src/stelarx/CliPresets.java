@@ -42,8 +42,8 @@ final class CliPresets {
             }
             case "4", "s4" -> {
                 cfg.setSearchSpace(Config.SearchSpace.S4);
-                // S4 keeps S3's UPGMA/consensus guide and changes only the
-                // incomplete-tree insertion matrix to rooted-triplet similarity.
+                // S4 keeps S3's candidate pipeline, replacing its guide
+                // similarity for completion, UPGMA, and consensus with triplets.
                 cfg.setSearchMode(Config.SearchMode.FULL);
             }
             case "5", "s5" -> {
@@ -52,8 +52,13 @@ final class CliPresets {
                 // cross-tree transitions let STELAR's triplet DP recombine them.
                 cfg.setSearchMode(Config.SearchMode.FULL);
             }
+            case "6", "s6" -> {
+                cfg.setSearchSpace(Config.SearchSpace.S6);
+                // S6 independently adds rooted triplet-greedy trees to S1.
+                cfg.setSearchMode(Config.SearchMode.FULL);
+            }
             default -> throw new IllegalArgumentException(
-                "unknown search space '" + value + "' (expected S1-S5 or 1-5)");
+                "unknown search space '" + value + "' (expected S1-S6 or 1-6)");
         }
     }
 

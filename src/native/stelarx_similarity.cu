@@ -1,10 +1,11 @@
 /**
  * stelarx_similarity.cu
  * =====================
- * GPU similarity-matrix computation reproducing ASTRAL-MP's
- * SimilarityMatrix.populateByQuartetDistance byte-for-byte.
+ * CUDA quartet and rooted-triplet similarity matrices. Quartet mode
+ * reproduces ASTRAL-MP's populateByQuartetDistance; triplet mode uses
+ * rooted LCA subtree sizes with the same pair tiling.
  *
- * FORMULA (bridge identity, validated 1141/1141 pairs):
+ * QUARTET FORMULA (bridge identity, validated 1141/1141 pairs):
  *   same_side_T(a, b)  =  C2(kt − 2)  −  QD_T(a, b)
  *
  * O(1) closed form for QD via Euler tour + RMQ:

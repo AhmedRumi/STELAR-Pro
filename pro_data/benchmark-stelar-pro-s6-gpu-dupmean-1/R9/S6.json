@@ -1,0 +1,26 @@
+{
+  "command": [
+    "/home/rumi/Documents/STELAR-Pro/run.sh",
+    "--no-build",
+    "--no-notify",
+    "--gpu-strict",
+    "--threads",
+    "28",
+    "--xmx",
+    "8g",
+    "--search-space",
+    "S6",
+    "--s6-rounds",
+    "4",
+    "--s6-seed",
+    "233",
+    "--quiet",
+    "--input",
+    "/home/rumi/Documents/STELAR-Pro/pro_data/simphy-200taxa-1000gt-10rep-dupmean-1-lb-2e-10-noloss/R9/all_gt.tre",
+    "--output",
+    "/home/rumi/Documents/STELAR-Pro/pro_data/benchmark-stelar-pro-s6-gpu-dupmean-1/R9/S6.tre"
+  ],
+  "exit_code": 0,
+  "wall_seconds": 149.4183593859998,
+  "timeout_seconds": 600
+}

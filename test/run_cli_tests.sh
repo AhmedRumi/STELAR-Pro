@@ -22,7 +22,7 @@ HELP_TEXT="$(NO_COLOR=1 "${ROOT}/stelar-pro" --help 2>&1)"
 [[ "$HELP_TEXT" == *"--search-space"* ]]
 [[ "$HELP_TEXT" == *"S2 (DISCO/completion/UPGMA/full search)"* ]]
 [[ "$HELP_TEXT" == *"S3 (S2 + DISCO-tree greedy consensus)"* ]]
-[[ "$HELP_TEXT" == *"S4 (S3 + rooted-triplet completion)"* ]]
+[[ "$HELP_TEXT" == *"S4 (S3 with rooted-triplet similarity)"* ]]
 [[ "$HELP_TEXT" == *"S5 (A-Pro greedy trees + S1; rooted-triplet full DP)"* ]]
 [[ "$HELP_TEXT" != *"--intersection-method"* ]]
 [[ "$HELP_TEXT" != *"--weight-intersection-method"* ]]
@@ -66,10 +66,16 @@ NO_COLOR=1 "${ROOT}/stelar-pro" --no-build --cpu -q \
   -o "$S3_TREE" --search-space S3 >/dev/null 2>&1
 [[ -s "$S3_TREE" ]]
 S4_TREE="${WORK}/s4-species-tree.tre"
-NO_COLOR=1 "${ROOT}/stelar-pro" --no-build --cpu -q \
+S4_LOG="${WORK}/s4.log"
+NO_COLOR=1 "${ROOT}/stelar-pro" --no-build --cpu \
   -i "${ROOT}/test/input/stelar_candidate_5taxa.tre" \
-  -o "$S4_TREE" --search-space S4 >/dev/null 2>&1
+  -o "$S4_TREE" --search-space S4 >"$S4_LOG" 2>&1
 [[ -s "$S4_TREE" ]]
+[[ "$(grep -Fc 'S4 similarity: one rooted-triplet matrix' "$S4_LOG")" -eq 1 ]]
+! grep -Fq 'Building similarity matrix (CPU)' "$S4_LOG"
+javac -cp "${ROOT}/build" -d "$WORK" \
+  "${ROOT}/test/TripletSimilarityTest.java"
+java -cp "${ROOT}/build:${WORK}" TripletSimilarityTest >/dev/null 2>&1
 S5_TREE="${WORK}/s5-species-tree.tre"
 NO_COLOR=1 "${ROOT}/stelar-pro" --no-build --cpu -q \
   -i "${ROOT}/test/input/stelar_candidate_5taxa.tre" \

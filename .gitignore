@@ -28,5 +28,6 @@ __pycache__/
 # symbol versions, -march=native, GPU compute capability), so none are tracked.
 native/*.so
 native/.build-stamp
+native/.s6-cpu-build-stamp
 native/.build.log
 ASTER-Linux/bin/

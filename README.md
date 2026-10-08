@@ -134,8 +134,9 @@ S2 retains the original rooted/tagged multicopy trees for scoring, and enlarges
 the candidate search using completed DISCO single-copy trees, a UPGMA guide,
 and cross-tree transitions. S3 keeps all S2 candidates and additionally builds
 greedy consensus trees from the completed DISCO trees, adding their clades and
-polytomy refinements. S4 keeps S3's quartet guide for UPGMA and consensus, but
-uses rooted-triplet sister frequency for incomplete-tree completion. Select
+polytomy refinements. S4 keeps S3's candidate pipeline, but uses one
+rooted-triplet sister-frequency matrix for completion, UPGMA, and consensus.
+Its distance view is derived as `1 − similarity`. Select
 them with `--search-space S2`, `S3`, or `S4`. S5 is independent of those
 DISCO/completion/consensus paths: it adds four ASTRAL-Pro-style quartet-greedy
 species-tree proposals to S1, registers both rooted orientations of each
@@ -157,6 +158,29 @@ candidates remain available. Search stops when the rooted tree no longer
 changes, following the ASTRAL-Pro2 supplement's tree-stability rule; the
 bundled ASTRAL-Pro3 binary instead uses score improvement and a different cap.
 Every backbone and full-tree DP remains rooted-triplet based.
+
+S6 is independent of S2–S5: select `--search-space S6`. It keeps every S1
+candidate and adds four rooted species-tree proposals per DP pass by default
+(`--s6-rounds N`, `--s6-seed N`). Unlike S5, **all greedy placement and rooted
+NNI decisions use STELAR-Pro's speciation-driven triplet score** from the
+original tagged multicopy gene trees. A support tensor reproduces the existing
+STELAR-Pro split weights; duplicate copies are collapsed within each child
+species set, and duplication-rooted nodes contribute no observations.
+For 100 or more taxa, S6 builds randomized subset guides, infers a rooted
+STELAR-DP backbone, groups the remaining taxa by their preferred backbone
+edge, then places and refines them by triplet score. Later passes restrict the
+previous rooted STELAR tree to a fresh subset, accumulate all S1 and S6
+candidates, and stop when the rooted DP topology is unchanged or after five
+additional passes. S6 does not use ASTRAL-Pro's quartet placement counter or
+DISCO/completion/consensus; ASTRAL-Pro3 is used only for the common input
+rooting/tagging preprocessing. CPU threads or CUDA parallelize support-tensor
+construction, while the existing CPU/GPU STELAR engines perform final DP
+weighting. The dense support tensor uses O(n³) memory (about 61 MiB at 200 taxa),
+so S6 is currently intended for moderate taxon counts.
+
+The 1-lb, ten-replicate comparison can be reproduced with
+`python3 scripts/benchmark_s6_dupmean1.py`; it writes a resumable per-replicate
+run directory and `pro_data/STELAR_PRO_S6_VS_S5_ASTRAL_PRO3_DUPMEAN_1_GPU_SUMMARY.md`.
 The old intersection-selector options have been removed.
 
 Score a supplied rooted species tree with:
