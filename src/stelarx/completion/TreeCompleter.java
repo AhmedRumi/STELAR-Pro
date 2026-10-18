@@ -31,6 +31,36 @@ import java.util.concurrent.atomic.AtomicInteger;
  */
 public class TreeCompleter {
 
+    /** Reuses the read-only nearest-neighbour index across bounded completion batches. */
+    public static final class PreparedCompletion {
+        private final PolyMatrix matrix;
+        private final int numTaxa;
+
+        private PreparedCompletion(PolyMatrix matrix, int numTaxa) {
+            this.matrix = matrix;
+            this.numTaxa = numTaxa;
+        }
+
+        /** Complete independent trees in parallel; only this batch is retained. */
+        public List<Tree> completeBatch(List<Tree> trees) {
+            Tree[] result = trees.toArray(new Tree[0]);
+            Threading.processRangeParallel(result.length, i -> {
+                if (!result[i].isComplete) {
+                    result[i] = completeTreeRootPreserving(result[i], matrix, numTaxa);
+                }
+            });
+            return Arrays.asList(result);
+        }
+    }
+
+    /** Prepare the expensive sorted rows once before streaming S2 batches. */
+    public static PreparedCompletion prepare(SimilarityMatrix sim, int numTaxa) {
+        PolyMatrix matrix = sim.isPacked()
+            ? new PackedPolyMatrix(sim, SortedRowsBuilder.buildPackedCPU(sim))
+            : new DensePolyMatrix(sim.sim, SortedRowsBuilder.buildCPU(sim.dist, numTaxa), numTaxa);
+        return new PreparedCompletion(matrix, numTaxa);
+    }
+
     /**
      * Complete all incomplete trees in the list using the four-point algorithm.
      *

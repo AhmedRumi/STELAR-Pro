@@ -411,6 +411,23 @@ public class ClusterTable {
         return true;
     }
 
+    /** Record one streamed S2 candidate, retaining the first compact exemplar. */
+    public boolean addStreamedCandidate(ClusterHash hash, int treeIndex,
+                                        int left, int right, int leafCount) {
+        if (hash.equals(allTaxaHash)) return false;
+        Entry existing = table.get(hash);
+        if (existing != null) {
+            existing.frequency++;
+            return false;
+        }
+        // Most completed-tree clades are duplicates: allocate an exemplar only
+        // for a genuinely new candidate, not on every streamed occurrence.
+        Cluster exemplar = new Cluster(treeIndex, left, right, false, leafCount);
+        table.put(hash, new Entry(hash, exemplar));
+        sizeBins.computeIfAbsent(hash.size, k -> new ArrayList<>()).add(hash);
+        return true;
+    }
+
     /** True iff any inserted exemplar is multi-range (gates the GPU weight path). */
     public boolean hasMultiRange() { return hasMultiRange; }
 

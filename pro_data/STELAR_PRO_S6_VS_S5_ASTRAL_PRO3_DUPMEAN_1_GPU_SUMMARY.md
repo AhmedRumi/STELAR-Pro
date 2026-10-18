@@ -28,3 +28,30 @@ Pairwise output-tree check: S6 versus S3 has RF 0 in 10/10 replicates; versus S4
 The per-replicate table emphasizes S6 against its direct S5 predecessor and ASTRAL-Pro3; S3/S4 are included in the aggregate. S4 uses the revised single-triplet-matrix run for R6–R10 and the earlier S4 run for R1–R5.
 
 S6 proposals use only the rooted-triplet support of the original tagged gene trees; S1 candidates are retained, and all final DP weights use the same original genes.
+
+## Peak-memory follow-up (current status)
+
+The same ten duplication-mean-1 inputs were rerun for memory measurement.
+Peak process RSS is GNU `/usr/bin/time`'s `%M` high-water mark, converted from
+KiB to MiB; it includes the whole measured process but **not** GPU VRAM.
+The new runs are separate from the RF/timing runs above.
+
+| Method | Successful memory runs | Peak RSS, mean ± sample SD | Range | Peak GPU VRAM |
+|:--|--:|--:|--:|--:|
+| STELAR-Pro S4 | 0/10 | Pending | Pending | Pending |
+| STELAR-Pro S6 | 0/10 | Pending | Pending | Pending |
+| ASTRAL-Pro3 | 10/10 | **491.6 ± 8.7 MiB** | 483.0–500.8 MiB | Not applicable (CPU) |
+
+All ten ASTRAL-Pro3 runs exited successfully using 28 CPU threads and seed 42.
+Their per-replicate `*.time` and JSON records are under
+[`benchmark-memory-s4-s6-astral-pro3-dupmean-1/gpu/`](benchmark-memory-s4-s6-astral-pro3-dupmean-1/gpu/).
+The reproducible runner is
+[`scripts/benchmark_memory_dupmean1.py`](../scripts/benchmark_memory_dupmean1.py).
+
+S4/S6 strict-CUDA measurements could not start: `nvidia-smi` reports an NVIDIA
+driver/library mismatch (loaded kernel module 595.91.07 versus userspace
+595.99.02), and STELAR-Pro's `--gpu-strict` probe reports no CUDA device.
+An 8 GiB `--xmx` setting from earlier runs is only a Java heap **limit**, not
+a measured memory footprint; no S4/S6 RSS or VRAM comparison is inferred from
+it. Once CUDA is available, run the script with
+`--methods S4 S6 --backend gpu` to fill the pending rows.

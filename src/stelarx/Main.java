@@ -26,6 +26,7 @@ import stelarx.pro.S6TripletSupport;
 import stelarx.pro.GeneTreeRooterTagger;
 import stelarx.pro.GeneTreePolytomyResolver;
 import stelarx.pro.UniqueTaxonSubtreeHashes;
+import stelarx.pro.S2CandidateStreamer;
 import stelarx.weight.WeightTable;
 import stelarx.hash.PrefixHashArrays;
 import stelarx.hash.TaxonHasher;
@@ -186,6 +187,14 @@ public class Main {
             // trees may contain completed or guide-tree relationships, but those
             // artificial relationships never become scoring observations.
             List<Tree> originalTrees = trees; // always points to pre-completion trees
+            // Verification modes that inspect completed node graphs keep the
+            // legacy materialized route; normal S2 inference streams them.
+            boolean streamS2 = cfg.getSearchSpace() == Config.SearchSpace.S2
+                && !cfg.isScoreOnly() && !cfg.isVerifyHash()
+                && !cfg.isVerifyClusters() && !cfg.isVerifyDPSpace()
+                && !cfg.isVerifyGreedyConsensus() && !cfg.isConsensusExperimental()
+                && !cfg.isResolveInputGeneTreePolytomies();
+            List<Tree> s2DiscoTrees = List.of();
             S6TripletSupport s6Support = null;
             List<Tree> consensusSourceTrees = List.of(); // completed DISCO trees for S3
             SimilarityMatrix similarityMatrix = null; // visible to Phase 3.5 (Step A)
@@ -268,16 +277,22 @@ public class Main {
                             : SimilarityMatrixBuilder.buildCPU(
                                 completedDiscoTrees, registry.size());
                     }
-                    completedDiscoTrees = TreeCompleter.completeAll(
-                        completedDiscoTrees, similarityMatrix, registry.size());
-                    for (Tree candidateTree : completedDiscoTrees) {
-                        markSyntheticCandidateNodes(candidateTree.root);
+                    if (streamS2) {
+                        // Mutable references let each raw DISCO component be
+                        // released immediately after its completion batch.
+                        s2DiscoTrees = new ArrayList<>(completedDiscoTrees);
+                    } else {
+                        completedDiscoTrees = TreeCompleter.completeAll(
+                            completedDiscoTrees, similarityMatrix, registry.size());
+                        for (Tree candidateTree : completedDiscoTrees) {
+                            markSyntheticCandidateNodes(candidateTree.root);
+                        }
                     }
 
                     upgmaGuideTree = UPGMAClusterer.build(
                         similarityMatrix, originalTrees.size() + completedDiscoTrees.size());
                     markSyntheticCandidateNodes(upgmaGuideTree.root);
-                    if (cfg.getDumpCompletedTreesFile() != null) {
+                    if (!streamS2 && cfg.getDumpCompletedTreesFile() != null) {
                         dumpCompletedTrees(completedDiscoTrees, registry,
                             cfg.getDumpCompletedTreesFile());
                     }
@@ -288,17 +303,26 @@ public class Main {
 
                 // Keep a stable view of the completed single-copy sources. Their
                 // global treeIndex values refer to the full candidate list below.
-                consensusSourceTrees = List.copyOf(completedDiscoTrees);
+                if (!streamS2) consensusSourceTrees = List.copyOf(completedDiscoTrees);
 
-                List<Tree> candidateTrees = new ArrayList<>(originalTrees.size()
-                    + completedDiscoTrees.size() + (upgmaGuideTree == null ? 0 : 1));
-                candidateTrees.addAll(originalTrees);
-                candidateTrees.addAll(completedDiscoTrees);
-                if (upgmaGuideTree != null) candidateTrees.add(upgmaGuideTree);
-                trees = candidateTrees;
+                if (!streamS2) {
+                    List<Tree> candidateTrees = new ArrayList<>(originalTrees.size()
+                        + completedDiscoTrees.size() + (upgmaGuideTree == null ? 0 : 1));
+                    candidateTrees.addAll(originalTrees);
+                    candidateTrees.addAll(completedDiscoTrees);
+                    if (upgmaGuideTree != null) candidateTrees.add(upgmaGuideTree);
+                    trees = candidateTrees;
+                }
                 Logging.info("%s candidate sources: %d original + %d completed DISCO + %d UPGMA tree",
                     cfg.getSearchSpace(), originalTrees.size(), completedDiscoTrees.size(),
                     upgmaGuideTree == null ? 0 : 1);
+                if (streamS2) {
+                    Logging.info("S2 candidate extraction will stream completed trees in bounded batches");
+                    // Only the mutable batch source should retain raw DISCO
+                    // components; it clears each processed entry in Phase 5.
+                    completedDiscoTrees = List.of();
+                    disco = null;
+                }
                 PhaseLogger.end("Phase 1b " + cfg.getSearchSpace()
                     + " candidate enrichment", t1b, gpuSim);
             } else if (cfg.isAutoCompleteIncompleteTrees() || cfg.isVerifyDistanceMatrix()
@@ -438,7 +462,7 @@ public class Main {
                 return;
             }
 
-            if (cfg.getDumpClustersFile() != null) {
+            if (!streamS2 && cfg.getDumpClustersFile() != null) {
                 dumpClusters(clusterTable, trees, registry, cfg.getDumpClustersFile());
             }
 
@@ -523,11 +547,11 @@ public class Main {
             // the 100k-class overflow path: established one-shot runs receive no
             // extra full-GC pause. The JVM may ignore the hint when explicit GC
             // is disabled, without affecting correctness.
-            boolean reclaimStreamedSimilarity = similarityMatrix != null
+            boolean reclaimStreamedSimilarity = !streamS2 && similarityMatrix != null
                 && similarityMatrix.usedStreamedHostBatches();
-            // The matrix has no consumers after Phase 3.5. Always end its
-            // lifetime here; only overflow-streamed runs pay for an immediate GC.
-            similarityMatrix = null;
+            // S2's bounded completion still needs this matrix in Phase 5;
+            // all other paths can end its lifetime after consensus.
+            if (!streamS2) similarityMatrix = null;
             if (reclaimStreamedSimilarity) {
                 long heapBefore = Runtime.getRuntime().totalMemory()
                     - Runtime.getRuntime().freeMemory();
@@ -559,6 +583,22 @@ public class Main {
             // X, rooted partitions, and DP transitions now own every canonical
             // hash they need; discard the much larger per-node lookup indexes.
             candidateHashes.release();
+            if (streamS2) {
+                // Preserve completion's per-tree CPU parallelism, but merge each
+                // bounded batch directly into X/DP before releasing node graphs.
+                int batchSize = Math.min(256, Math.max(64, cfg.getThreadCount()));
+                S2CandidateStreamer.Result streamed = S2CandidateStreamer.add(
+                    s2DiscoTrees, similarityMatrix, upgmaGuideTree, originalTrees,
+                    clusterTable, dpTable, hasher, registry, batchSize,
+                    cfg.getDumpCompletedTreesFile());
+                trees = streamed.exemplarTrees();
+                weightClusterTrees = trees;
+                s2DiscoTrees = List.of();
+                similarityMatrix = null;
+                if (cfg.getDumpClustersFile() != null) {
+                    dumpClusters(clusterTable, trees, registry, cfg.getDumpClustersFile());
+                }
+            }
             PhaseLogger.end("Phase 5  DP local transitions", t5, false);
 
             // ── Phase 5b: Cross-tree transitions (Mode 2, optional) ───────────

@@ -290,6 +290,13 @@ still use the original rooted/tagged multicopy trees only. See
 [`TreeCompleter.java`](../src/stelarx/completion/TreeCompleter.java), and
 [`UPGMAClusterer.java`](../src/stelarx/completion/UPGMAClusterer.java).
 
+Normal S2 inference streams completion in bounded CPU-parallel batches. Each
+batch's clades and local splits are merged into the global candidate/DP tables;
+completed node graphs, raw DISCO components, and temporary hashes are then
+released. Only leaf-order and position indexes for trees that introduced a new
+candidate survive as weight/reconstruction exemplars. S3/S4 still materialize
+completed trees because their consensus Step B reads source-tree topology.
+
 UPGMA repeatedly merges the active clusters of greatest pair similarity;
 the intercluster similarity is the size-weighted average of underlying pair
 similarities. Its branch/merge order proposes a hierarchy; that hierarchy is
@@ -389,7 +396,7 @@ all CUDA kernels. Phase boundaries and actual backend choices are logged.
 | Preprocess; duplicate-invariant subtree hashes; partition extraction | Host-side tree traversals and small-to-large merges | No corresponding end-to-end CUDA tree traversal |
 | S2/S3 quartet pair matrix | Reference scatter over source trees (the current `buildCPU` tree loop is sequential) | Euler/RMQ preparation on CPU workers; `(a,b)` pair-tiled similarity kernel, tree-data batching |
 | S4 triplet pair matrix | Per-tree tour/RMQ builds in parallel, then disjoint pair-row workers | Parallel host tour/flattening; pair-tiled triplet-LCA kernels, compact/wide RMQ and batching |
-| DISCO completion | Different source trees completed in parallel; insertion within one tree remains ordered | No separate completion CUDA kernel |
+| DISCO completion | Different source trees completed in parallel; S2 bounds the active batch and discards completed node graphs after candidate extraction; insertion within one tree remains ordered | No separate completion CUDA kernel |
 | UPGMA | Parallel best-pair scans/reductions and row updates within a merge; merge sequence serial | No separate UPGMA CUDA kernel |
 | S3/S4 consensus | Frequency-sorted laminar pass; distinct polytomy-resolution tasks scheduled across workers | No separate consensus CUDA kernel; it may consume a GPU-built matrix |
 | Cross-tree DP-space construction | Parallel per-parent-cluster matching | CUDA complement/match builder; Java owns resulting transition table |

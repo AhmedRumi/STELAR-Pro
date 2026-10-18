@@ -132,7 +132,10 @@ datasets and the outputs safety mirror untouched:
 STELAR-Pro uses S1 and its built-in smaller-side intersection path by default.
 S2 retains the original rooted/tagged multicopy trees for scoring, and enlarges
 the candidate search using completed DISCO single-copy trees, a UPGMA guide,
-and cross-tree transitions. S3 keeps all S2 candidates and additionally builds
+and cross-tree transitions. Normal S2 inference completes DISCO trees in bounded
+CPU-parallel batches, merges their candidates and local transitions, and drops
+their node graphs; only compact indexes for novel candidate exemplars remain.
+S3 keeps all S2 candidates and additionally builds
 greedy consensus trees from the completed DISCO trees, adding their clades and
 polytomy refinements. S4 keeps S3's candidate pipeline, but uses one
 rooted-triplet sister-frequency matrix for completion, UPGMA, and consensus.

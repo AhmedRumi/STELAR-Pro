@@ -220,6 +220,18 @@ public class DPTable {
         transitions.computeIfAbsent(parent, k -> new LinkedHashSet<>()).add(split);
     }
 
+    /** Merge one completed S2 tree's rooted local transition into the existing DP space. */
+    public void addStreamedTransition(ClusterHash parent, ClusterHash left, ClusterHash right) {
+        if (left.size + right.size != parent.size) {
+            throw new IllegalArgumentException("Overlapping streamed S2 transition");
+        }
+        totalEmitted++;
+        if (transitions.computeIfAbsent(parent, k -> new LinkedHashSet<>())
+                .add(new BipartitionSplit(left, right))) {
+            uniqueSplits++;
+        }
+    }
+
     /**
      * Compute a finalized ClusterHash for the range [lo,hi) in tree ti.
      * complement=true gives the super-complement S\[lo,hi) (w.r.t. ALL n taxa).
