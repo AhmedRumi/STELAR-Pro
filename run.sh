@@ -67,6 +67,7 @@ Optional:
                      Optional two-column gene-copy to species mapping
   --cpu              Force CPU mode
   --gpu              Force GPU mode
+                     S5 greedy proposals still use A-Pro's CPU worker pool
   --auto             Automatically select CUDA or CPU (default)
   --gpu-strict       Require CUDA; do not fall back to CPU
   --search-space     S1 (default) | S2 (DISCO/completion/UPGMA/full search) |
@@ -77,6 +78,7 @@ Optional:
   --search-mode      local | full
   --s5-rounds N      Number of independent S5 greedy searches (default: 4)
   --s5-seed N        S5 greedy-search random seed
+  --s5-adaptive-passes N  Extra S5 search/DP passes (0-5; default: 5)
   --s6-rounds N      Number of independent S6 greedy searches (default: 4)
   --s6-seed N        S6 greedy-search random seed
   --no-prune-search-space  Disable the DP-reachability weight prune (default: on)
@@ -187,7 +189,7 @@ while [[ $# -gt 0 ]]; do
       PROGRAM_ARGS+=("$1" "$2")
       shift 2
       ;;
-    --search-space|--search-mode|--s5-rounds|--s5-seed|--s6-rounds|--s6-seed|-t|--threads|--num-threads|-m|--seeds|--large-n-score-type|--large-score-type|--anchor-taxon|--gpu-batch-size|--gpu-batches|--gpu-vram-control-factor|--gpu-vram-occupancy-factor|--gpu-treewalk-vram-cap-mb|--gpu-progress-interval|--gpu-dp-state-space-construction-output-cap|--gpu-dp-state-space-progress-time-interval|--gpu-dp-state-space-progress-max-steps|--gpu-dist-tile-size|--gpu-sim-vram-cap-mb|--dump-clusters|--dump-completed-gene-trees|--completion-method|--stepb-restriction|--taxa-file|--species-list|--species-list-file|--taxa-set|--taxa-operation|--gene-species-map)
+    --search-space|--search-mode|--s5-rounds|--s5-seed|--s5-adaptive-passes|--s6-rounds|--s6-seed|-t|--threads|--num-threads|-m|--seeds|--large-n-score-type|--large-score-type|--anchor-taxon|--gpu-batch-size|--gpu-batches|--gpu-vram-control-factor|--gpu-vram-occupancy-factor|--gpu-treewalk-vram-cap-mb|--gpu-progress-interval|--gpu-dp-state-space-construction-output-cap|--gpu-dp-state-space-progress-time-interval|--gpu-dp-state-space-progress-max-steps|--gpu-dist-tile-size|--gpu-sim-vram-cap-mb|--dump-clusters|--dump-completed-gene-trees|--completion-method|--stepb-restriction|--taxa-file|--species-list|--species-list-file|--taxa-set|--taxa-operation|--gene-species-map)
       PROGRAM_ARGS+=("$1" "$2")
       shift 2
       ;;

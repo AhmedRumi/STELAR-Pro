@@ -221,25 +221,26 @@ public class Main {
                 PhaseLogger.end("Phase 1b S6 rooted-triplet greedy proposals", t1b,
                     cfg.getComputeMode() == Config.ComputeMode.GPU);
             } else if (cfg.getSearchSpace() == Config.SearchSpace.S5 && !cfg.isScoreOnly()) {
-                boolean gpuGreedy = cfg.getComputeMode() == Config.ComputeMode.GPU;
-                long t1b = PhaseLogger.begin("Phase 1b S5 A-Pro greedy proposals", gpuGreedy);
+                // A-Pro partitions gene families across native CPU workers. Keep
+                // GPU mode for STELAR's later triplet DP/weights, not this search.
+                long t1b = PhaseLogger.begin("Phase 1b S5 A-Pro greedy proposals", false);
                 // The resolved input is re-tagged by the in-process A-Pro scorer.
                 // Greedy trees provide root-invariant candidate clusters; only
                 // original rooted/tagged multicopy trees supply scoring data.
                 List<Tree> greedyTrees = AProGreedySearch.generate(
                     preprocessingInput, cfg.getInputFile(), registry,
-                    originalTrees.size(),
-                    cfg.getThreadCount(), cfg.getS5Seed(), cfg.getS5Rounds(), gpuGreedy);
+                    originalTrees.size(), cfg.getThreadCount(), cfg.getS5Seed(),
+                    cfg.getS5Rounds(), false);
                 List<Tree> candidateTrees = new ArrayList<>(
                     originalTrees.size() + greedyTrees.size());
                 candidateTrees.addAll(originalTrees);
                 candidateTrees.addAll(greedyTrees);
                 trees = candidateTrees;
                 Logging.info("S5 candidates: %d original gene trees + %d A-Pro "
-                        + "quartet-greedy proposal(s) (%s); triplet scoring remains original-only",
-                    originalTrees.size(), greedyTrees.size(),
-                    gpuGreedy ? "GPU" : "CPU");
-                PhaseLogger.end("Phase 1b S5 A-Pro greedy proposals", t1b, gpuGreedy);
+                        + "quartet-greedy proposal(s) (CPU, %d threads); "
+                        + "triplet scoring remains original-only",
+                    originalTrees.size(), greedyTrees.size(), cfg.getThreadCount());
+                PhaseLogger.end("Phase 1b S5 A-Pro greedy proposals", t1b, false);
             } else if (discoSearch && !cfg.isScoreOnly()) {
                 boolean gpuSim = cfg.getComputeMode() == Config.ComputeMode.GPU
                     && GPUSimilarityMatrix.tryLoad();
@@ -662,7 +663,8 @@ public class Main {
             finalTripletScore = inference.getLastTripletScore();
             PhaseLogger.end("Phase 7  Inference", t7, false);
 
-            if (cfg.getSearchSpace() == Config.SearchSpace.S5) {
+            if (cfg.getSearchSpace() == Config.SearchSpace.S5
+                    && cfg.getS5AdaptivePasses() > 0) {
                 // The initial four greedy proposals have already been optimized
                 // by STELAR DP. Retain S1 and every proposal in later passes.
                 List<Tree> accumulated = new ArrayList<>(trees);
@@ -673,16 +675,21 @@ public class Main {
                 weightClusterTrees = null;
                 candidateHashes = null;
                 System.gc();
-                for (int pass = 1; pass <= 5; pass++) {
-                    boolean gpuSearch = cfg.getComputeMode() == Config.ComputeMode.GPU;
+                for (int pass = 1; pass <= cfg.getS5AdaptivePasses(); pass++) {
+                    boolean gpuTripletDP = cfg.getComputeMode() == Config.ComputeMode.GPU;
                     long t7b = PhaseLogger.begin(
-                        "Phase 7b S5 adaptive DP pass " + pass, gpuSearch);
+                        "Phase 7b S5 adaptive pass " + pass + " (CPU greedy + triplet DP)",
+                        gpuTripletDP);
                     String previousTree = speciesTree;
+                    long greedyStart = System.nanoTime();
                     List<Tree> added = AProGreedySearch.generate(
                         preprocessingInput, cfg.getInputFile(), registry,
                         accumulated.size(), cfg.getThreadCount(),
                         cfg.getS5Seed() + pass, cfg.getS5Rounds(),
-                        gpuSearch, previousTree);
+                        false, previousTree);
+                    Logging.info("S5 adaptive pass %d: %d CPU greedy proposals "
+                            + "with %d threads in %d ms", pass, added.size(),
+                        cfg.getThreadCount(), (System.nanoTime() - greedyStart) / 1_000_000);
                     accumulated.addAll(added);
                     S5OverallSearch.Result updated = S5OverallSearch.infer(
                         originalTrees, accumulated, registry);
@@ -690,12 +697,13 @@ public class Main {
                         previousTree, updated.newick(), registry);
                     speciesTree = updated.newick();
                     finalTripletScore = updated.tripletScore();
-                    Logging.info("S5 adaptive DP pass %d/5: +%d greedy trees, "
-                        + "%d total; rooted topology %s", pass, added.size(),
+                    Logging.info("S5 adaptive DP pass %d/%d: +%d greedy trees, "
+                        + "%d total; rooted topology %s", pass,
+                        cfg.getS5AdaptivePasses(), added.size(),
                         accumulated.size() - originalTrees.size(),
                         unchanged ? "unchanged (stop)" : "changed");
-                    PhaseLogger.end("Phase 7b S5 adaptive DP pass " + pass,
-                        t7b, gpuSearch);
+                    PhaseLogger.end("Phase 7b S5 adaptive pass " + pass
+                        + " (CPU greedy + triplet DP)", t7b, gpuTripletDP);
                     if (unchanged) break;
                     System.gc();
                 }
@@ -867,6 +875,10 @@ public class Main {
                 case "--s5-rounds" -> {
                     if (++i >= args.length) return false;
                     cfg.setS5Rounds(Integer.parseInt(args[i]));
+                }
+                case "--s5-adaptive-passes" -> {
+                    if (++i >= args.length) return false;
+                    cfg.setS5AdaptivePasses(Integer.parseInt(args[i]));
                 }
                 case "--s5-seed" -> {
                     if (++i >= args.length) return false;
@@ -1268,7 +1280,8 @@ public class Main {
                                                  CPU worker threads (default: available cores)
               --auto                           Automatically use CUDA or fall back to CPU (default)
               --cpu                            Force CPU execution; do not require GPU libraries
-              --gpu                            Prefer CUDA; warn and fall back to CPU if unavailable
+              --gpu                            Prefer CUDA; S5 greedy proposals still use CPU workers
+                                                 (warn and fall back to CPU if CUDA is unavailable)
               --gpu-strict                     Require CUDA; fail before reading input if unavailable
               --diagnose                       Print installation/hardware diagnostics and exit
               -v, --version                    Print version and exit
@@ -1286,6 +1299,7 @@ public class Main {
               --s5-rounds N                  Greedy trees per S5 DP pass (default: 4;
                                              >=100 taxa use triplet-DP two-step backbones)
               --s5-seed N                    S5 greedy-search random seed
+              --s5-adaptive-passes N         Extra S5 search/DP passes (0-5; default: 5)
               --s6-rounds N                  Rooted-triplet greedy trees per S6 DP pass (default: 4)
               --s6-seed N                    S6 greedy-search random seed
               --search-mode local|full         Legacy/advanced DP search control

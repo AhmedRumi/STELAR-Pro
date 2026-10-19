@@ -18,8 +18,9 @@ public final class AProGreedySearchTest {
         if (!AProGreedySearch.tryLoad()) {
             throw new AssertionError("S5 greedy native library was not loaded");
         }
-        if (args.length > 0 && args[0].equals("--large-smoke")) {
-            largeTwoStepSmoke();
+        if (args.length > 0 && (args[0].equals("--large-smoke")
+                || args[0].equals("--large-smoke-cpu-only"))) {
+            largeTwoStepSmoke(args[0].equals("--large-smoke-cpu-only"));
             return;
         }
         if (args.length > 0) {
@@ -99,7 +100,7 @@ public final class AProGreedySearchTest {
     }
 
     /** Exercise the >=100-taxon subset backbone rather than only direct placement. */
-    private static void largeTwoStepSmoke() throws Exception {
+    private static void largeTwoStepSmoke(boolean cpuOnly) throws Exception {
         Path input = Files.createTempFile("s5-two-step-test-", ".tre");
         try {
             String gene = balancedTree(1, 101) + ";\n";
@@ -112,7 +113,7 @@ public final class AProGreedySearchTest {
                 List<Tree> cpu = AProGreedySearch.generate(
                     input.toString(), input.toString(), registry, 2, 4, 233L, 2, false);
                 List<Tree> gpu = null;
-                if (AProGreedySearch.tryLoadGPU()) {
+                if (!cpuOnly && AProGreedySearch.tryLoadGPU()) {
                     Config.getInstance().setComputeMode(Config.ComputeMode.GPU);
                     gpu = AProGreedySearch.generate(
                         input.toString(), input.toString(), registry, 2, 4, 233L, 2, true);

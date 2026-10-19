@@ -88,6 +88,8 @@ public class Config {
     private long baseSeed = 0xDEADBEEFCAFEL;
     /** Greedy trees added per initial or adaptive S5 DP pass. */
     private int s5Rounds = 4;
+    /** Extra S5 search/DP passes after the first inferred tree; zero keeps only that tree. */
+    private int s5AdaptivePasses = 5;
     private long s5Seed = baseSeed;
     /** Rooted-triplet greedy proposals per S6 DP pass. */
     private int s6Rounds = 4;
@@ -280,6 +282,12 @@ public class Config {
     public void setS5Rounds(int rounds) {
         if (rounds < 1) throw new IllegalArgumentException("--s5-rounds must be positive");
         this.s5Rounds = rounds;
+    }
+    public int getS5AdaptivePasses()          { return s5AdaptivePasses; }
+    public void setS5AdaptivePasses(int passes) {
+        if (passes < 0 || passes > 5)
+            throw new IllegalArgumentException("--s5-adaptive-passes must be between 0 and 5");
+        this.s5AdaptivePasses = passes;
     }
     public long getS5Seed()                   { return s5Seed; }
     public void setS5Seed(long seed)          { this.s5Seed = seed; }

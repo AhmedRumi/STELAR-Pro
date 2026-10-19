@@ -206,6 +206,8 @@ public class Banner {
             out.println("    " + row("S5 greedy searches", c(WHT,
                 cfg.getS5Rounds() + (cfg.getS5Rounds() == 1 ? " round" : " rounds")
                     + " (seed " + cfg.getS5Seed() + ")")));
+            out.println("    " + row("S5 adaptive passes", c(WHT,
+                Integer.toString(cfg.getS5AdaptivePasses()))));
         }
         if (cfg.getSearchSpace() == Config.SearchSpace.S6) {
             out.println("    " + row("S6 greedy searches", c(WHT,

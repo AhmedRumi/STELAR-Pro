@@ -115,7 +115,7 @@ public final class AProGreedySearch {
     private static String inferTripletBackbone(String taggedInputFile,
                                                String[] guideNewicks,
                                                String[] selectedTaxa,
-                                               boolean gpu) throws IOException {
+                                               boolean greedyGpu) throws IOException {
         if (taggedInputFile == null || guideNewicks.length == 0
                 || selectedTaxa.length < 4) {
             throw new IllegalArgumentException("Invalid S5 two-step backbone input");
@@ -153,13 +153,17 @@ public final class AProGreedySearch {
         DPTable dp = new DPTable(guides, guidePrefix, clusters, guideHashes, 0);
         guideHashes.release();
         geneHashes.release();
-        dp.addCrossTreeTransitions(clusters, gpu && GPUDPBuilder.tryLoad());
+        // The native greedy scorer and STELAR's triplet backend are independent.
+        // In particular, production S5 uses CPU greedy scoring even in GPU mode.
+        boolean gpuTripletDP = Config.getInstance().getComputeMode()
+            == Config.ComputeMode.GPU && GPUDPBuilder.tryLoad();
+        dp.addCrossTreeTransitions(clusters, gpuTripletDP);
         WeightTable weights = new WeightTable(dp, partitions, clusters, guides, genes);
         Inference inference = new Inference();
         String rooted = inference.run(dp, weights, clusters, guides, subset, hasher);
-        Logging.info("S5 two-step backbone: %d taxa, %d quartet-greedy guides, "
-            + "STELAR triplet score %s", subset.size(), guides.size(),
-            inference.getLastTripletScore());
+        Logging.info("S5 two-step backbone: %d taxa, %d quartet-greedy guides "
+            + "(%s scorer), STELAR triplet score %s", subset.size(), guides.size(),
+            greedyGpu ? "GPU" : "CPU", inference.getLastTripletScore());
 
         // A-Pro places onto an unrooted backbone anchored at taxon 0. Retain
         // the triplet-DP-selected topology while changing only its Newick root.

@@ -402,16 +402,18 @@ all CUDA kernels. Phase boundaries and actual backend choices are logged.
 | Cross-tree DP-space construction | Parallel per-parent-cluster matching | CUDA complement/match builder; Java owns resulting transition table |
 | Common STELAR `W` weight calculation | Parallel per-candidate-split workers; duplicate-aware position-vector membership | Batched one-thread-per-split smaller-side kernel, CSR copy positions, binary search and reduction; multi-range consensus clusters supported |
 | Final rooted DP/reconstruction | Java memoized optimization and traceback | No CUDA kernel for the DP recurrence itself |
-| S5 greedy proposals | A-Pro native worker partitions of gene families for quartet-color updates; search orchestration/placement/NNI | GPU color counters own gene families and reduce scores; host still controls placement/NNI and STELAR backbones |
+| S5 greedy proposals | A-Pro native worker partitions of gene families for quartet-color updates; search orchestration/placement/NNI | None in the production S5 greedy path; GPU mode still accelerates later STELAR DP-space and weight stages |
 | S6 tensor and greedy proposals | Native tensor builder partitions output by outgroup across threads (Java fallback exists); Java insertion/NNI | One CUDA block per outgroup; threads stream speciation partitions and atomically accumulate `H`; insertion/NNI stay Java |
 
 The common GPU split-weight path uses the fixed
 `SMALLER_SIDE_TRAVERSAL` intersection method in current `Config`, with
 free-VRAM-aware candidate batching. Both CPU/GPU count duplicate taxa once
 through sorted copy-position vectors. An alternative prefix-sum kernel remains
-in the codebase, but it is **not the current default**. S5 GPU means native
-quartet-counter acceleration, not that the entire greedy search runs on the
-GPU. S6 GPU similarly accelerates tensor construction and common DP-space/
+in the codebase, but it is **not the current default**. S5 always uses the
+native A-Pro CPU worker pool for quartet-greedy proposals, even when the
+overall run selects GPU mode. Its older CUDA quartet scorer remains available
+for direct comparison tests but is not selected by the inference pipeline.
+S6 GPU similarly accelerates tensor construction and common DP-space/
 weight stages, not each sequential insertion/NNI decision. Kernel and host
 entry points are in
 [`stelarx_similarity.cu`](../src/native/stelarx_similarity.cu),

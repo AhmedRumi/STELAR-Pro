@@ -45,6 +45,7 @@ public final class S2CandidateStreamer {
         ClusterHash[] leaves = singletonHashes(hasher);
         TreeCompleter.PreparedCompletion completer = discoTrees.isEmpty()
             ? null : TreeCompleter.prepare(similarity, n);
+        int initialClusters = clusters.size();
         int newClusters = 0;
         long transitions = 0;
         int retained = 0;
@@ -80,17 +81,23 @@ public final class S2CandidateStreamer {
                 // No completed node graph or per-node hash index survives this batch.
                 completed = null;
                 if (end == discoTrees.size() || (end / batchSize) % 100 == 0) {
-                    Logging.info("S2 streamed completion: %d/%d DISCO trees, +%d unique clusters",
+                    // UPGMA is emitted after the DISCO batches, so this is not
+                    // the final S2 candidate total.
+                    Logging.info("S2 DISCO progress: %d/%d trees, +%d unique clusters "
+                            + "(UPGMA pending)",
                         end, discoTrees.size(), newClusters);
                 }
             }
         }
 
+        int discoNewClusters = newClusters;
+        int upgmaNewClusters = 0;
         if (upgma != null) {
             Counts counts = new Counts();
             int index = exemplars.size();
             emit(upgma.root, upgma, index, leaves, hasher.numSeeds(), clusters, dp, counts);
             newClusters += counts.newClusters;
+            upgmaNewClusters = counts.newClusters;
             transitions += counts.transitions;
             if (counts.newClusters > 0) {
                 exemplars.add(Tree.candidateExemplar(index, upgma, n));
@@ -101,10 +108,15 @@ public final class S2CandidateStreamer {
             Logging.info("Completed gene trees written to %s (%d trees)",
                 completedTreesFile, discoTrees.size());
         }
+        if (clusters.size() != initialClusters + newClusters) {
+            throw new IllegalStateException("S2 streamed candidate count disagrees with X");
+        }
         Logging.info("S2 streamed candidates: %d DISCO + %d UPGMA proposal(s), "
-                + "+%d unique clusters, %d local transitions, %d compact exemplars retained",
+                + "+%d unique clusters (%d DISCO, %d UPGMA; %d total in X), "
+                + "%d local transitions, %d compact exemplars retained",
             discoTrees.size(), upgma == null ? 0 : 1,
-            newClusters, transitions, retained);
+            newClusters, discoNewClusters, upgmaNewClusters, clusters.size(),
+            transitions, retained);
         return new Result(exemplars, newClusters, discoTrees.size(), retained, transitions);
     }
 
