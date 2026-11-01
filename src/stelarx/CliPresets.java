@@ -12,10 +12,8 @@ final class CliPresets {
     static void applySearchSpace(String value, Config cfg) {
         String preset = normalize(value);
 
-        // A preset is a complete, deterministic configuration.  This also makes
-        // command-line ordering unsurprising: options are applied left-to-right,
-        // so a later legacy flag can fine-tune a preset and a later preset resets
-        // all search-space flags.
+        // A preset chooses the candidate source and its default DP search mode.
+        // Explicit cross-tree CLI flags are applied after all presets are parsed.
         cfg.setSearchMode(Config.SearchMode.LOCAL);
         cfg.setAutoCompleteIncompleteTrees(false);
         cfg.setCompletionMethod(Config.CompletionMethod.SIMILARITY);
@@ -30,9 +28,7 @@ final class CliPresets {
             case "1", "s1" -> cfg.setSearchSpace(Config.SearchSpace.S1);
             case "2", "s2" -> {
                 cfg.setSearchSpace(Config.SearchSpace.S2);
-                // S2 contains every local transition plus compatible cross-tree
-                // recombinations over the enriched candidate cluster set.
-                cfg.setSearchMode(Config.SearchMode.FULL);
+                // DISCO/completion/UPGMA local transitions are included by default.
             }
             case "3", "s3" -> {
                 cfg.setSearchSpace(Config.SearchSpace.S3);
@@ -48,14 +44,11 @@ final class CliPresets {
             }
             case "5", "s5" -> {
                 cfg.setSearchSpace(Config.SearchSpace.S5);
-                // S5 adds A-Pro greedy-tree candidates to native S1 candidates;
-                // cross-tree transitions let STELAR's triplet DP recombine them.
-                cfg.setSearchMode(Config.SearchMode.FULL);
+                // S5 adds A-Pro greedy-tree candidates to S1; recombination is optional.
             }
             case "6", "s6" -> {
                 cfg.setSearchSpace(Config.SearchSpace.S6);
                 // S6 independently adds rooted triplet-greedy trees to S1.
-                cfg.setSearchMode(Config.SearchMode.FULL);
             }
             default -> throw new IllegalArgumentException(
                 "unknown search space '" + value + "' (expected S1-S6 or 1-6)");

@@ -17,7 +17,7 @@ import java.util.List;
  * same binary-partition formula as {@code WeightTable}. No guide tree is an
  * observation, and duplication-rooted gene nodes never contribute.</p>
  */
-public final class S6TripletSupport {
+public final class S6TripletSupport implements S6ScoreSource {
     private static boolean loadAttempted;
     private static boolean loaded;
     private static boolean gpuLoadAttempted;
@@ -36,6 +36,26 @@ public final class S6TripletSupport {
 
     public int taxa() { return n; }
     public int partitionCount() { return partitionCount; }
+
+    /** Dense implementation is retained as an independent parity oracle. */
+    @Override public S6ScoreSource fork() { return this; }
+    @Override public Focus focus(int taxon) {
+        return (a, b, c) -> {
+            if (a != taxon && b != taxon && c != taxon)
+                throw new IllegalArgumentException("Triplet does not contain focused taxon");
+            return support(a, b, c);
+        };
+    }
+    @Override public long[] groupScores(int[] a, int[] b, int[] c) {
+        long[] scores = new long[3];
+        for (int x : a) for (int y : b) for (int z : c) {
+            scores[0] += support(x, y, z);
+            scores[1] += support(x, z, y);
+            scores[2] += support(y, z, x);
+        }
+        return scores;
+    }
+    @Override public void close() {}
 
     public long support(int a, int b, int outgroup) {
         if (a == b || a == outgroup || b == outgroup) return 0L;

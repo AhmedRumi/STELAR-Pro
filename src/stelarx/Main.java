@@ -22,7 +22,8 @@ import stelarx.pro.AProGreedySearch;
 import stelarx.pro.S5OverallSearch;
 import stelarx.pro.S6GreedySearch;
 import stelarx.pro.S6OverallSearch;
-import stelarx.pro.S6TripletSupport;
+import stelarx.pro.S6DynamicTripletSupport;
+import stelarx.pro.S6ScoreSource;
 import stelarx.pro.GeneTreeRooterTagger;
 import stelarx.pro.GeneTreePolytomyResolver;
 import stelarx.pro.UniqueTaxonSubtreeHashes;
@@ -113,6 +114,7 @@ public class Main {
         String unrootedInputFile = cfg.getInputFile();
         Path automaticResolvedInput = null;
         Path automaticTaggedInput = null;
+        S6ScoreSource s6Support = null;
 
         try {
             String preprocessingInput = unrootedInputFile;
@@ -195,7 +197,6 @@ public class Main {
                 && !cfg.isVerifyGreedyConsensus() && !cfg.isConsensusExperimental()
                 && !cfg.isResolveInputGeneTreePolytomies();
             List<Tree> s2DiscoTrees = List.of();
-            S6TripletSupport s6Support = null;
             List<Tree> consensusSourceTrees = List.of(); // completed DISCO trees for S3
             SimilarityMatrix similarityMatrix = null; // visible to Phase 3.5 (Step A)
             Tree upgmaGuideTree = null; // S2/S3 candidate and optional legacy guide
@@ -205,7 +206,7 @@ public class Main {
             if (cfg.getSearchSpace() == Config.SearchSpace.S6 && !cfg.isScoreOnly()) {
                 long t1b = PhaseLogger.begin("Phase 1b S6 rooted-triplet greedy proposals",
                     cfg.getComputeMode() == Config.ComputeMode.GPU);
-                s6Support = S6TripletSupport.build(originalTrees, registry.size(),
+                s6Support = S6DynamicTripletSupport.build(originalTrees, registry.size(),
                     cfg.getThreadCount());
                 List<Tree> greedyTrees = S6GreedySearch.generate(s6Support,
                     originalTrees, cfg.getInputFile(), registry, originalTrees.size(),
@@ -220,6 +221,12 @@ public class Main {
                     originalTrees.size(), greedyTrees.size());
                 PhaseLogger.end("Phase 1b S6 rooted-triplet greedy proposals", t1b,
                     cfg.getComputeMode() == Config.ComputeMode.GPU);
+                if (cfg.getMaxSearchPasses() == 1) {
+                    // One-pass inference never reads greedy support again.
+                    s6Support.close();
+                    s6Support = null;
+                    System.gc();
+                }
             } else if (cfg.getSearchSpace() == Config.SearchSpace.S5 && !cfg.isScoreOnly()) {
                 // A-Pro partitions gene families across native CPU workers. Keep
                 // GPU mode for STELAR's later triplet DP/weights, not this search.
@@ -664,9 +671,9 @@ public class Main {
             PhaseLogger.end("Phase 7  Inference", t7, false);
 
             if (cfg.getSearchSpace() == Config.SearchSpace.S5
-                    && cfg.getS5AdaptivePasses() > 0) {
-                // The initial four greedy proposals have already been optimized
-                // by STELAR DP. Retain S1 and every proposal in later passes.
+                    && cfg.getMaxSearchPasses() > 1) {
+                // The initial greedy proposals have already been optimized by
+                // STELAR DP. Retain S1 and every proposal in later passes.
                 List<Tree> accumulated = new ArrayList<>(trees);
                 weightTable = null;
                 partTable = null;
@@ -675,7 +682,7 @@ public class Main {
                 weightClusterTrees = null;
                 candidateHashes = null;
                 System.gc();
-                for (int pass = 1; pass <= cfg.getS5AdaptivePasses(); pass++) {
+                for (int pass = 1; pass < cfg.getMaxSearchPasses(); pass++) {
                     boolean gpuTripletDP = cfg.getComputeMode() == Config.ComputeMode.GPU;
                     long t7b = PhaseLogger.begin(
                         "Phase 7b S5 adaptive pass " + pass + " (CPU greedy + triplet DP)",
@@ -699,7 +706,7 @@ public class Main {
                     finalTripletScore = updated.tripletScore();
                     Logging.info("S5 adaptive DP pass %d/%d: +%d greedy trees, "
                         + "%d total; rooted topology %s", pass,
-                        cfg.getS5AdaptivePasses(), added.size(),
+                        cfg.getMaxSearchPasses() - 1, added.size(),
                         accumulated.size() - originalTrees.size(),
                         unchanged ? "unchanged (stop)" : "changed");
                     PhaseLogger.end("Phase 7b S5 adaptive pass " + pass
@@ -707,7 +714,8 @@ public class Main {
                     if (unchanged) break;
                     System.gc();
                 }
-            } else if (cfg.getSearchSpace() == Config.SearchSpace.S6) {
+            } else if (cfg.getSearchSpace() == Config.SearchSpace.S6
+                    && cfg.getMaxSearchPasses() > 1) {
                 // Repeat triplet-guided proposal generation around the previous
                 // STELAR-DP tree; candidates and original evidence accumulate.
                 List<Tree> accumulated = new ArrayList<>(trees);
@@ -718,7 +726,7 @@ public class Main {
                 weightClusterTrees = null;
                 candidateHashes = null;
                 System.gc();
-                for (int pass = 1; pass <= 5; pass++) {
+                for (int pass = 1; pass < cfg.getMaxSearchPasses(); pass++) {
                     long t7b = PhaseLogger.begin(
                         "Phase 7b S6 adaptive DP pass " + pass,
                         cfg.getComputeMode() == Config.ComputeMode.GPU);
@@ -734,8 +742,9 @@ public class Main {
                         previousTree, updated.newick(), registry);
                     speciesTree = updated.newick();
                     finalTripletScore = updated.tripletScore();
-                    Logging.info("S6 adaptive DP pass %d/5: +%d greedy trees, "
-                        + "%d total; rooted topology %s", pass, added.size(),
+                    Logging.info("S6 adaptive DP pass %d/%d: +%d greedy trees, "
+                        + "%d total; rooted topology %s", pass,
+                        cfg.getMaxSearchPasses() - 1, added.size(),
                         accumulated.size() - originalTrees.size(),
                         unchanged ? "unchanged (stop)" : "changed");
                     PhaseLogger.end("Phase 7b S6 adaptive DP pass " + pass,
@@ -743,6 +752,13 @@ public class Main {
                     if (unchanged) break;
                     System.gc();
                 }
+            }
+
+            // The focused CUDA index and borrowed colour states serve search
+            // construction only; final scoring uses the original gene trees.
+            if (s6Support != null) {
+                s6Support.close();
+                s6Support = null;
             }
 
             // Persist the inferred topology before the independent final scoring
@@ -801,6 +817,7 @@ public class Main {
             analysisCompleted = true;
 
         } finally {
+            if (s6Support != null) s6Support.close();
             Threading.shutdown();
             cfg.setInputFile(unrootedInputFile);
             if (automaticTaggedInput != null) Files.deleteIfExists(automaticTaggedInput);
@@ -815,6 +832,7 @@ public class Main {
     }
 
     private static boolean parseArgs(String[] args, Config cfg) {
+        Config.SearchMode explicitSearchMode = null;
         for (int i = 0; i < args.length; i++) {
             if (args[i].startsWith("--log-file=")) {
                 String path = args[i].substring("--log-file=".length());
@@ -880,6 +898,10 @@ public class Main {
                     if (++i >= args.length) return false;
                     cfg.setS5AdaptivePasses(Integer.parseInt(args[i]));
                 }
+                case "--max-search-passes" -> {
+                    if (++i >= args.length) return false;
+                    cfg.setMaxSearchPasses(Integer.parseInt(args[i]));
+                }
                 case "--s5-seed" -> {
                     if (++i >= args.length) return false;
                     cfg.setS5Seed(Long.parseLong(args[i]));
@@ -892,12 +914,16 @@ public class Main {
                     if (++i >= args.length) return false;
                     cfg.setS6Seed(Long.parseLong(args[i]));
                 }
+                case "--cross-tree-splits" ->
+                    explicitSearchMode = Config.SearchMode.FULL;
+                case "--no-cross-tree-splits" ->
+                    explicitSearchMode = Config.SearchMode.LOCAL;
                 case "--search-mode"   -> {
                     if (++i >= args.length) return false;
                     if (args[i].equalsIgnoreCase("full"))
-                        cfg.setSearchMode(Config.SearchMode.FULL);
+                        explicitSearchMode = Config.SearchMode.FULL;
                     else if (args[i].equalsIgnoreCase("local"))
-                        cfg.setSearchMode(Config.SearchMode.LOCAL);
+                        explicitSearchMode = Config.SearchMode.LOCAL;
                     else {
                         System.err.println("Unknown --search-mode: " + args[i]
                             + " (expected: local | full)");
@@ -1003,6 +1029,8 @@ public class Main {
                 default -> { System.err.println("Unknown arg: " + args[i]); return false; }
             }
         }
+        // Search-mode overrides are independent of --search-space argument order.
+        if (explicitSearchMode != null) cfg.setSearchMode(explicitSearchMode);
         if (cfg.getInputFile() == null && !cfg.isDiagnose()) return false;
         if (cfg.isExtractTaxa() && cfg.isScoreOnly()) {
             System.err.println("--extract-taxa cannot be combined with --score-species-tree");
@@ -1291,7 +1319,7 @@ public class Main {
 
             Search and scoring:
               --search-space S1|S2|S3|S4|S5|S6    S1 native search (default); S2 adds DISCO,
-                                                 completion, UPGMA, and cross-tree transitions;
+                                                 completion and UPGMA candidates;
                                                  S3 adds DISCO-tree greedy consensus;
                                                  S4 uses one triplet similarity matrix throughout;
                                                  S5 adds A-Pro quartet-greedy candidates;
@@ -1299,10 +1327,13 @@ public class Main {
               --s5-rounds N                  Greedy trees per S5 DP pass (default: 4;
                                              >=100 taxa use triplet-DP two-step backbones)
               --s5-seed N                    S5 greedy-search random seed
-              --s5-adaptive-passes N         Extra S5 search/DP passes (0-5; default: 5)
+              --max-search-passes N          Maximum S5/S6 search/DP passes (default: 1)
+              --s5-adaptive-passes N         Legacy S5 alias: N extra passes (0-5)
               --s6-rounds N                  Rooted-triplet greedy trees per S6 DP pass (default: 4)
               --s6-seed N                    S6 greedy-search random seed
-              --search-mode local|full         Legacy/advanced DP search control
+              --cross-tree-splits             Enable cross-tree DP splits for S2/S5/S6
+              --no-cross-tree-splits          Disable them (S2/S5/S6 default)
+              --search-mode local|full         Legacy alias for cross-tree control
               --large-n-score-type T            int128 (exact) | double
               --no-prune-search-space           Disable reachability pruning
               --rooted | --unrooted             Compatibility flags; normal STELAR-Pro runs
@@ -1582,15 +1613,17 @@ public class Main {
 
     /** Keep preset-owned search-space combinations from being changed accidentally. */
     private static void validateCurrentProScope(Config cfg) {
+        boolean fixedMode = cfg.getSearchSpace() == Config.SearchSpace.S1
+            || cfg.getSearchSpace() == Config.SearchSpace.S3
+            || cfg.getSearchSpace() == Config.SearchSpace.S4;
         Config.SearchMode expectedMode = cfg.getSearchSpace() == Config.SearchSpace.S1
             ? Config.SearchMode.LOCAL : Config.SearchMode.FULL;
-        if (cfg.getSearchMode() != expectedMode
+        if ((fixedMode && cfg.getSearchMode() != expectedMode)
                 || cfg.isAutoCompleteIncompleteTrees()
                 || cfg.isConsensusExperimental()
                 || cfg.isResolveInputGeneTreePolytomies()) {
             throw new UnsupportedOperationException(
-                cfg.getSearchSpace() + " requires its built-in "
-                    + expectedMode.name().toLowerCase() + " search configuration");
+                cfg.getSearchSpace() + " does not support that search configuration");
         }
     }
 

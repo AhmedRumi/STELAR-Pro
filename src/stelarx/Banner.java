@@ -194,25 +194,28 @@ public class Banner {
         // ── Search ─────────────────────────────────────────────────────────
         String searchSpace = switch (cfg.getSearchSpace()) {
             case S1 -> "S1  (default)";
-            case S2 -> "S2  (DISCO + completion + UPGMA + cross-tree)";
+            case S2 -> "S2  (DISCO + completion + UPGMA candidates)";
             case S3 -> "S3  (S2 + DISCO greedy consensus)";
             case S4 -> "S4  (S3 with rooted-triplet similarity)";
             case S5 -> "S5  (A-Pro greedy + native candidates + triplet DP)";
             case S6 -> "S6  (rooted-triplet greedy + native candidates + triplet DP)";
         };
         out.println("    " + row("Search space",  c(WHT, searchSpace)));
-        out.println("    " + row("Search mode",   c(WHT, cfg.getSearchMode().name().toLowerCase())));
+        out.println("    " + row("Cross-tree splits", c(WHT,
+            cfg.getSearchMode() == Config.SearchMode.FULL ? "enabled" : "disabled")));
         if (cfg.getSearchSpace() == Config.SearchSpace.S5) {
             out.println("    " + row("S5 greedy searches", c(WHT,
                 cfg.getS5Rounds() + (cfg.getS5Rounds() == 1 ? " round" : " rounds")
                     + " (seed " + cfg.getS5Seed() + ")")));
-            out.println("    " + row("S5 adaptive passes", c(WHT,
-                Integer.toString(cfg.getS5AdaptivePasses()))));
+            out.println("    " + row("Max search passes", c(WHT,
+                Integer.toString(cfg.getMaxSearchPasses()))));
         }
         if (cfg.getSearchSpace() == Config.SearchSpace.S6) {
             out.println("    " + row("S6 greedy searches", c(WHT,
                 cfg.getS6Rounds() + (cfg.getS6Rounds() == 1 ? " round" : " rounds")
                     + " (seed " + cfg.getS6Seed() + ")")));
+            out.println("    " + row("Max search passes", c(WHT,
+                Integer.toString(cfg.getMaxSearchPasses()))));
         }
         out.println("    " + row("Hash seeds",    c(WHT, String.valueOf(cfg.getNumHashSeeds()))));
 

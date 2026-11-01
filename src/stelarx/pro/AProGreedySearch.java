@@ -157,7 +157,9 @@ public final class AProGreedySearch {
         // In particular, production S5 uses CPU greedy scoring even in GPU mode.
         boolean gpuTripletDP = Config.getInstance().getComputeMode()
             == Config.ComputeMode.GPU && GPUDPBuilder.tryLoad();
-        dp.addCrossTreeTransitions(clusters, gpuTripletDP);
+        // The user-selected cross-tree mode also applies to subset backbones.
+        if (Config.getInstance().getSearchMode() == Config.SearchMode.FULL)
+            dp.addCrossTreeTransitions(clusters, gpuTripletDP);
         WeightTable weights = new WeightTable(dp, partitions, clusters, guides, genes);
         Inference inference = new Inference();
         String rooted = inference.run(dp, weights, clusters, guides, subset, hasher);

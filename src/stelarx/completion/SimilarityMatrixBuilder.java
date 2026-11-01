@@ -52,6 +52,8 @@ public class SimilarityMatrixBuilder {
 
     private static final int COMPACT_MAX_TOUR = Character.MAX_VALUE + 1;
     private static final int MAX_JAVA_ARRAY_LENGTH = Integer.MAX_VALUE - 8;
+    /** Bounds compact tour/RMQ flattening on the host; CUDA has a separate VRAM cap. */
+    private static final int COMPACT_HOST_BATCH_MIB = 64;
     /**
      * Host flattening cap used only when the established one-shot wide layout
      * cannot fit. Native CUDA batching is normally 512 MiB, so 1 GiB keeps at
@@ -402,13 +404,17 @@ public class SimilarityMatrixBuilder {
             || !fitsJavaArray((long)k * n);
         boolean forceWide = Boolean.getBoolean("stelarpro.similarity.forceWide");
 
-        if (forceWide || compactTourOverflow || compactLayoutOverflow) {
+        // A whole-input array overflow no longer requires wide RMQ: compact
+        // host batches keep each individual Java array within its limit.
+        if (compactLayoutOverflow && !forceWide && !compactTourOverflow) {
+            Logging.info("GPU similarity compact full-input arrays exceed a Java limit; "
+                + "using bounded compact host batches");
+        }
+        if (forceWide || compactTourOverflow) {
             String reason = forceWide
                 ? "forced by -Dstelarpro.similarity.forceWide=true"
-                : compactTourOverflow
-                    ? "maximum Euler tour " + eMaxRaw + " exceeds compact limit "
-                        + COMPACT_MAX_TOUR
-                    : "compact flat layout exceeds the Java single-array limit";
+                : "maximum Euler tour " + eMaxRaw + " exceeds compact limit "
+                    + COMPACT_MAX_TOUR;
             Logging.info("GPU similarity RMQ: wide blocked mode (%s)", reason);
             return buildGPUWide(trees, n, eMaxRaw);
         }
@@ -418,6 +424,47 @@ public class SimilarityMatrixBuilder {
     }
 
     private static SimilarityMatrix buildGPUCompact(List<Tree> trees, int n) {
+        int k = trees.size();
+        SimilarityMatrix sm = new SimilarityMatrix(n);
+        int batchSize = compactHostBatchSize(trees, n);
+        int batches = (int)((k + (long)batchSize - 1L) / batchSize);
+        Logging.info("GPU compact similarity: %d trees in %d host batch(es), up to %d trees/batch",
+            k, batches, batchSize);
+        for (int from = 0; from < k;) {
+            int to = (int)Math.min(k, from + (long)batchSize);
+            accumulateGPUCompact(trees.subList(from, to), n, sm);
+            from = to;
+        }
+        // Native calls add raw numerator/denominator contributions; normalize only once.
+        sm.normalize();
+        return sm;
+    }
+
+    private static int compactHostBatchSize(List<Tree> trees, int n) {
+        int k = trees.size();
+        if (k == 0) return 1;
+        int budgetMiB = Integer.getInteger(
+            "stelarpro.similarity.compactHostBatchMiB", COMPACT_HOST_BATCH_MIB);
+        if (budgetMiB < 1) {
+            throw new IllegalArgumentException("compactHostBatchMiB must be positive");
+        }
+        int eMax = nextPowerOfTwo(maximumTourLength(trees));
+        int logMax = sparseLog(eMax);
+        // 30 Euler bytes + 2 sparse bytes per level, plus per-leaf/per-tree metadata.
+        long perTree = (long)eMax * (30L + 2L * logMax) + 4L * n + 8L;
+        long budget = (long)budgetMiB << 20;
+        long arrayLimit = Math.min(MAX_JAVA_ARRAY_LENGTH / (long)eMax,
+            Math.min(MAX_JAVA_ARRAY_LENGTH / ((long)eMax * logMax),
+                MAX_JAVA_ARRAY_LENGTH / (long)n));
+        if (arrayLimit < 1L) {
+            throw new IllegalArgumentException("one compact similarity tour exceeds a Java array limit");
+        }
+        long count = Math.min(k, Math.min(Math.max(1L, budget / perTree), arrayLimit));
+        return (int)Math.max(1L, count);
+    }
+
+    /** Build, flatten, and release only one host batch before the next is allocated. */
+    private static void accumulateGPUCompact(List<Tree> trees, int n, SimilarityMatrix sm) {
         int k = trees.size();
         Logging.info("Building FullTourData for %d trees (parallel CPU)", k);
 
@@ -517,6 +564,7 @@ public class SimilarityMatrixBuilder {
 
             eulerLen [i] = len;
             leafCount[i] = td.leafCount;
+            tours[i] = null; // Flattened data is the only representation needed by CUDA.
             flatBar.update(flatDone.incrementAndGet());
         });
         flatBar.done();
@@ -527,7 +575,6 @@ public class SimilarityMatrixBuilder {
         double progressInterval = cfg.getGpuDpProgressInterval();
         int    progressMaxSteps = cfg.getGpuDpProgressMaxSteps();
 
-        SimilarityMatrix sm = new SimilarityMatrix(n);
         int treeCapMiB = effectiveTreeCapMiB(sm, cfg);
         GPUSimilarityMatrix.computeSimilarityGPU(
             eulerDepths,
@@ -546,8 +593,6 @@ public class SimilarityMatrixBuilder {
             sm.packedSegmentShift()
         );
 
-        sm.normalize();
-        return sm;
     }
 
     private static SimilarityMatrix buildGPUWide(List<Tree> trees, int n, int eMaxRaw) {

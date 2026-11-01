@@ -14,6 +14,60 @@ import java.util.List;
 
 /** Exhaustive small-set parity with STELAR's binary split-weight equation. */
 public final class S6TripletSupportTest {
+    private static String balancedTree(int begin, int end, int shift) {
+        if (end - begin == 1) return "S" + (1 + (begin - 1 + shift) % 100);
+        int mid = (begin + end) / 2;
+        return "(" + balancedTree(begin, mid, shift) + ","
+            + balancedTree(mid, end, shift) + ")";
+    }
+
+    /** Covers parallel guides, full-tree NNI, and adaptive placement at n>=100. */
+    private static void largeParallelSmoke() throws Exception {
+        Path input = Files.createTempFile("s6-parallel-test-", ".tre");
+        try {
+            // Discordant gene topologies exercise nontrivial NNI scores.
+            Files.writeString(input, balancedTree(1, 101, 0) + ";\n"
+                + balancedTree(1, 101, 37) + ";\n");
+            TaxonRegistry registry = new TaxonRegistry();
+            List<Tree> genes = TreeParser.parseGeneTrees(input.toString(), registry);
+            Config.getInstance().setComputeMode(Config.ComputeMode.CPU);
+            S6TripletSupport support = S6TripletSupport.build(genes,
+                registry.size(), 4);
+            Threading.start(1);
+            List<Tree> serial;
+            List<Tree> serialAdaptive;
+            try {
+                serial = S6GreedySearch.generate(support, genes,
+                    input.toString(), registry, genes.size(), 233L, 1, null);
+                serialAdaptive = S6GreedySearch.generate(support, genes,
+                    input.toString(), registry, genes.size() + 1, 234L, 1,
+                    serial.get(0).toNewick(registry));
+            } finally {
+                Threading.shutdown();
+            }
+            Threading.start(4);
+            try {
+                List<Tree> parallel = S6GreedySearch.generate(support, genes,
+                    input.toString(), registry, genes.size(), 233L, 1, null);
+                List<Tree> parallelAdaptive = S6GreedySearch.generate(support,
+                    genes, input.toString(), registry, genes.size() + 1, 234L, 1,
+                    serial.get(0).toNewick(registry));
+                if (parallel.get(0).leafCount != 100
+                        || !serial.get(0).toNewick(registry)
+                            .equals(parallel.get(0).toNewick(registry)))
+                    throw new AssertionError("S6 initial parallel topology mismatch");
+                if (!serialAdaptive.get(0).toNewick(registry)
+                        .equals(parallelAdaptive.get(0).toNewick(registry)))
+                    throw new AssertionError("S6 adaptive parallel topology mismatch");
+            } finally {
+                Threading.shutdown();
+            }
+            System.out.println("S6 100-taxon serial/parallel two-step and adaptive parity passed");
+        } finally {
+            Files.deleteIfExists(input);
+        }
+    }
+
     private static long manual(TreeNode node, Tree tree, BitSet a, BitSet b) {
         if (node.isLeaf()) return 0;
         long score = manual(node.left, tree, a, b)
@@ -48,6 +102,10 @@ public final class S6TripletSupportTest {
     }
 
     public static void main(String[] args) throws Exception {
+        if (args.length == 1 && args[0].equals("--large-parallel")) {
+            largeParallelSmoke();
+            return;
+        }
         Path input = Files.createTempFile("s6-triplet-support-test-", ".tre");
         try {
             Files.writeString(input,

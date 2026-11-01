@@ -1,6 +1,5 @@
-// S6 CUDA support builder: independent outgroups occupy independent blocks;
-// each thread streams distinct gene partitions and atomically accumulates the
-// exact number of speciation-rooted ab|c observations.
+// S6 CUDA support. The dense tensor builder remains for parity tests; the
+// production path builds only the focused slices needed for insertions.
 #include <jni.h>
 #include <cuda_runtime.h>
 #include <cstdint>
@@ -49,6 +48,51 @@ __global__ void buildTensor(int n, int partCount, const int* parts,
         }
     }
 }
+
+// Insertion uses only triplets containing x. The inverted index builds that
+// O(n²) slice by visiting child sides containing x, never the full tensor.
+__global__ void focusedByMembership(int n, const int* parts,
+                                    const int* children, const int* taxa,
+                                    const int* partOfChild,
+                                    const int* taxonChildren, int first, int last,
+                                    int x, unsigned long long* output) {
+    int membership = first + blockIdx.x * blockDim.x + threadIdx.x;
+    if (membership >= last) return;
+    int side = taxonChildren[membership];
+    int p = partOfChild[side];
+    unsigned long long* paired = output + static_cast<size_t>(n) * n;
+    for (int out = parts[p]; out < parts[p + 1]; out++) {
+        if (out == side) continue;
+        int end = children[out + 1];
+        for (int i = children[out]; i < end; i++) {
+            int a = taxa[i];
+            if (a == x) continue;
+            for (int j = i + 1; j < end; j++) {
+                int b = taxa[j];
+                if (b != x) atomicAdd(output + a * n + b, 1ULL);
+            }
+        }
+        for (int i = children[out]; i < end; i++) {
+            int c = taxa[i];
+            if (c == x) continue;
+            for (int j = children[side]; j < children[side + 1]; j++) {
+                int a = taxa[j];
+                if (a != x && a != c) atomicAdd(paired + c * n + a, 1ULL);
+            }
+        }
+    }
+}
+
+struct FocusIndex {
+    int n, partCount;
+    int *parts = nullptr, *children = nullptr, *taxa = nullptr;
+    int *partOfChild = nullptr, *taxonChildren = nullptr;
+    std::vector<int> offsets;
+    ~FocusIndex() {
+        cudaFree(parts); cudaFree(children); cudaFree(taxa);
+        cudaFree(partOfChild); cudaFree(taxonChildren);
+    }
+};
 
 }  // namespace
 
@@ -105,4 +149,97 @@ Java_stelarx_pro_S6TripletSupport_buildNativeGPU(JNIEnv* env, jclass, jint n,
         if (cls) env->ThrowNew(cls, error.what());
         return nullptr;
     }
+}
+
+extern "C" JNIEXPORT jlong JNICALL
+Java_stelarx_pro_S6DynamicTripletSupport_createFocusIndex(JNIEnv* env, jclass,
+    jint n, jintArray jParts, jintArray jChildren, jintArray jTaxa,
+    jintArray jPartOfChild, jintArray jOffsets, jintArray jTaxonChildren) {
+    FocusIndex* index = new FocusIndex();
+    try {
+        int pLen = env->GetArrayLength(jParts);
+        int cLen = env->GetArrayLength(jChildren);
+        int tLen = env->GetArrayLength(jTaxa);
+        int mLen = env->GetArrayLength(jTaxonChildren);
+        if (n < 3 || pLen < 2 || cLen < 3 ||
+                env->GetArrayLength(jPartOfChild) != cLen - 1 ||
+                env->GetArrayLength(jOffsets) != n + 1 || mLen != tLen)
+            throw std::invalid_argument("invalid S6 focused index dimensions");
+        index->n = n;
+        index->partCount = pLen - 1;
+        std::vector<int> p(pLen), c(cLen), t(tLen), member(mLen), partOf(cLen - 1);
+        index->offsets.resize(n + 1);
+        env->GetIntArrayRegion(jParts, 0, pLen, p.data());
+        env->GetIntArrayRegion(jChildren, 0, cLen, c.data());
+        env->GetIntArrayRegion(jTaxa, 0, tLen, t.data());
+        env->GetIntArrayRegion(jPartOfChild, 0, cLen - 1, partOf.data());
+        env->GetIntArrayRegion(jOffsets, 0, n + 1, index->offsets.data());
+        env->GetIntArrayRegion(jTaxonChildren, 0, mLen, member.data());
+        if (env->ExceptionCheck()) { delete index; return 0; }
+        check(cudaMalloc(&index->parts, pLen * sizeof(int)), "allocating focused parts");
+        check(cudaMalloc(&index->children, cLen * sizeof(int)), "allocating focused children");
+        check(cudaMalloc(&index->taxa, tLen * sizeof(int)), "allocating focused taxa");
+        check(cudaMalloc(&index->partOfChild, (cLen - 1) * sizeof(int)),
+            "allocating focused part lookup");
+        check(cudaMalloc(&index->taxonChildren, mLen * sizeof(int)),
+            "allocating focused taxon lookup");
+        check(cudaMemcpy(index->parts, p.data(), pLen * sizeof(int), cudaMemcpyHostToDevice),
+            "copying focused parts");
+        check(cudaMemcpy(index->children, c.data(), cLen * sizeof(int), cudaMemcpyHostToDevice),
+            "copying focused children");
+        check(cudaMemcpy(index->taxa, t.data(), tLen * sizeof(int), cudaMemcpyHostToDevice),
+            "copying focused taxa");
+        check(cudaMemcpy(index->partOfChild, partOf.data(), (cLen - 1) * sizeof(int),
+            cudaMemcpyHostToDevice), "copying focused part lookup");
+        check(cudaMemcpy(index->taxonChildren, member.data(), mLen * sizeof(int),
+            cudaMemcpyHostToDevice), "copying focused taxon lookup");
+        return reinterpret_cast<jlong>(index);
+    } catch (const std::exception& error) {
+        delete index;
+        jclass cls = env->FindClass("java/lang/IllegalStateException");
+        if (cls) env->ThrowNew(cls, error.what());
+        return 0;
+    }
+}
+
+extern "C" JNIEXPORT void JNICALL
+Java_stelarx_pro_S6DynamicTripletSupport_fillFocus(JNIEnv* env, jclass,
+    jlong handle, jint x, jlongArray destination) {
+    auto* index = reinterpret_cast<FocusIndex*>(handle);
+    unsigned long long* output = nullptr;
+    jlong* host = nullptr;
+    try {
+        if (!index || x < 0 || x >= index->n ||
+                env->GetArrayLength(destination) != 2LL * index->n * index->n)
+            throw std::invalid_argument("invalid S6 focused support request");
+        size_t bytes = 2ULL * index->n * index->n * sizeof(uint64_t);
+        check(cudaMalloc(&output, bytes), "allocating focused output");
+        check(cudaMemset(output, 0, bytes), "clearing focused output");
+        int first = index->offsets[x], last = index->offsets[x + 1];
+        if (last > first) {
+            int blocks = (last - first + 255) / 256;
+            focusedByMembership<<<blocks, 256>>>(index->n,
+                index->parts, index->children, index->taxa,
+                index->partOfChild, index->taxonChildren,
+                first, last, x, output);
+            check(cudaGetLastError(), "launching focused membership kernel");
+        }
+        host = env->GetLongArrayElements(destination, nullptr);
+        if (!host) { cudaFree(output); return; }
+        check(cudaMemcpy(host, output, bytes, cudaMemcpyDeviceToHost),
+            "copying focused support");
+        env->ReleaseLongArrayElements(destination, host, 0);
+        cudaFree(output);
+    } catch (const std::exception& error) {
+        if (host) env->ReleaseLongArrayElements(destination, host, JNI_ABORT);
+        cudaFree(output);
+        jclass cls = env->FindClass("java/lang/IllegalStateException");
+        if (cls) env->ThrowNew(cls, error.what());
+    }
+}
+
+extern "C" JNIEXPORT void JNICALL
+Java_stelarx_pro_S6DynamicTripletSupport_destroyFocusIndex(JNIEnv*, jclass,
+    jlong handle) {
+    delete reinterpret_cast<FocusIndex*>(handle);
 }

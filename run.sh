@@ -70,15 +70,18 @@ Optional:
                      S5 greedy proposals still use A-Pro's CPU worker pool
   --auto             Automatically select CUDA or CPU (default)
   --gpu-strict       Require CUDA; do not fall back to CPU
-  --search-space     S1 (default) | S2 (DISCO/completion/UPGMA/full search) |
+  --search-space     S1 (default) | S2 (DISCO/completion/UPGMA candidates) |
                      S3 (S2 + DISCO-tree greedy consensus) |
                      S4 (S3 with rooted-triplet similarity) |
-                     S5 (A-Pro greedy trees + S1; rooted-triplet full DP) |
-                     S6 (rooted-triplet greedy trees + S1; triplet full DP)
+                     S5 (A-Pro greedy trees + S1; rooted-triplet DP) |
+                     S6 (rooted-triplet greedy trees + S1; triplet DP)
   --search-mode      local | full
+  --cross-tree-splits     Enable cross-tree splits for S2/S5/S6 (default: off)
+  --no-cross-tree-splits  Disable cross-tree splits
   --s5-rounds N      Number of independent S5 greedy searches (default: 4)
   --s5-seed N        S5 greedy-search random seed
-  --s5-adaptive-passes N  Extra S5 search/DP passes (0-5; default: 5)
+  --max-search-passes N   Max S5/S6 search/DP passes, including first (default: 1)
+  --s5-adaptive-passes N  Legacy alias for N extra S5 passes (0-5)
   --s6-rounds N      Number of independent S6 greedy searches (default: 4)
   --s6-seed N        S6 greedy-search random seed
   --no-prune-search-space  Disable the DP-reachability weight prune (default: on)
@@ -189,7 +192,7 @@ while [[ $# -gt 0 ]]; do
       PROGRAM_ARGS+=("$1" "$2")
       shift 2
       ;;
-    --search-space|--search-mode|--s5-rounds|--s5-seed|--s5-adaptive-passes|--s6-rounds|--s6-seed|-t|--threads|--num-threads|-m|--seeds|--large-n-score-type|--large-score-type|--anchor-taxon|--gpu-batch-size|--gpu-batches|--gpu-vram-control-factor|--gpu-vram-occupancy-factor|--gpu-treewalk-vram-cap-mb|--gpu-progress-interval|--gpu-dp-state-space-construction-output-cap|--gpu-dp-state-space-progress-time-interval|--gpu-dp-state-space-progress-max-steps|--gpu-dist-tile-size|--gpu-sim-vram-cap-mb|--dump-clusters|--dump-completed-gene-trees|--completion-method|--stepb-restriction|--taxa-file|--species-list|--species-list-file|--taxa-set|--taxa-operation|--gene-species-map)
+    --search-space|--search-mode|--max-search-passes|--s5-rounds|--s5-seed|--s5-adaptive-passes|--s6-rounds|--s6-seed|-t|--threads|--num-threads|-m|--seeds|--large-n-score-type|--large-score-type|--anchor-taxon|--gpu-batch-size|--gpu-batches|--gpu-vram-control-factor|--gpu-vram-occupancy-factor|--gpu-treewalk-vram-cap-mb|--gpu-progress-interval|--gpu-dp-state-space-construction-output-cap|--gpu-dp-state-space-progress-time-interval|--gpu-dp-state-space-progress-max-steps|--gpu-dist-tile-size|--gpu-sim-vram-cap-mb|--dump-clusters|--dump-completed-gene-trees|--completion-method|--stepb-restriction|--taxa-file|--species-list|--species-list-file|--taxa-set|--taxa-operation|--gene-species-map)
       PROGRAM_ARGS+=("$1" "$2")
       shift 2
       ;;
@@ -202,7 +205,7 @@ while [[ $# -gt 0 ]]; do
       PROGRAM_ARGS+=("$1")
       shift
       ;;
-    --rooted|--unrooted|--keep-polytomy-during-inference|--anchor-outgroup|--anchor|--no-anchor-outgroup|--no-anchor|--no-prune-search-space|--no-prune-unreachable|--prune-search-space|--prune-unreachable|--no-gpu-batch|--consensus-experimental|--stepb-quadratic-nn-balls|--stepb-random-leftover-resolution|--stepb-process-large-polytomies|--resolve-input-gene-tree-polytomies|--verify-parse|--verify-hash|--verify-clusters|--verify-partitions|--verify-dp|--verify-weights|--verify-distance-matrix|--verify-similarity-matrix|--verify-upgma|--verify-greedy-consensus|--autocomplete-incomplete-gene-trees|--extract-taxa|-v|-vv|-vvv|-q|--quiet)
+    --rooted|--unrooted|--keep-polytomy-during-inference|--anchor-outgroup|--anchor|--no-anchor-outgroup|--no-anchor|--no-prune-search-space|--no-prune-unreachable|--prune-search-space|--prune-unreachable|--no-gpu-batch|--cross-tree-splits|--no-cross-tree-splits|--consensus-experimental|--stepb-quadratic-nn-balls|--stepb-random-leftover-resolution|--stepb-process-large-polytomies|--resolve-input-gene-tree-polytomies|--verify-parse|--verify-hash|--verify-clusters|--verify-partitions|--verify-dp|--verify-weights|--verify-distance-matrix|--verify-similarity-matrix|--verify-upgma|--verify-greedy-consensus|--autocomplete-incomplete-gene-trees|--extract-taxa|-v|-vv|-vvv|-q|--quiet)
       PROGRAM_ARGS+=("$1")
       shift
       ;;

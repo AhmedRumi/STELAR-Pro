@@ -9,6 +9,7 @@ public final class CliPresetsTest {
         check(cfg.getWeightIntersectionMethod()
                 == Config.WeightIntersectionMethod.SMALLER_SIDE_TRAVERSAL,
             "built-in duplicate-aware intersection method");
+        check(cfg.getMaxSearchPasses() == 1, "one search pass by default");
         assertS1Defaults("default", cfg);
 
         check(!cfg.isKeepPolytomyDuringInference(),
@@ -17,21 +18,25 @@ public final class CliPresetsTest {
         check(cfg.isKeepPolytomyDuringInference(),
             "keep-polytomy-during-inference config");
         cfg.setKeepPolytomyDuringInference(false);
-        for (int level = 1; level <= 5; level++) {
+        for (int level = 1; level <= 6; level++) {
             cfg.setCompletionMethod(Config.CompletionMethod.DISTANCE);
             cfg.setStepBFastRestriction(false);
             CliPresets.applySearchSpace("S" + level, cfg);
             check(cfg.getSearchSpace() == Config.SearchSpace.valueOf("S" + level),
                 "S" + level + " recognized");
-            assertPresetDefaults("S" + level, cfg, level >= 2);
+            assertPresetDefaults("S" + level, cfg, level == 3 || level == 4);
 
             CliPresets.applySearchSpace(Integer.toString(level), cfg);
             check(cfg.getSearchSpace() == Config.SearchSpace.valueOf("S" + level),
                 level + " recognized");
-            assertPresetDefaults(Integer.toString(level), cfg, level >= 2);
+            assertPresetDefaults(Integer.toString(level), cfg, level == 3 || level == 4);
         }
 
-        expectInvalid(() -> CliPresets.applySearchSpace("S6", cfg));
+        cfg.setMaxSearchPasses(3);
+        check(cfg.getS5AdaptivePasses() == 2, "max passes includes initial pass");
+        cfg.setS5AdaptivePasses(0);
+        check(cfg.getMaxSearchPasses() == 1, "legacy zero extra passes");
+        expectInvalid(() -> cfg.setMaxSearchPasses(0));
         expectInvalid(() -> CliPresets.applySearchSpace("S8", cfg));
         System.out.println("CLI preset mappings: PASS");
     }
