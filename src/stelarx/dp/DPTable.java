@@ -48,6 +48,7 @@ public class DPTable {
     private final UniqueTaxonSubtreeHashes uniqueTaxonHashes;
     /** Greedy A-Pro trees are unrooted proposals; rotate only these, never genes. */
     private final int firstS5GreedyTreeIndex;
+    private final int lastS5GreedyTreeIndex;
 
     // -------------------------------------------------------------------------
 
@@ -71,9 +72,18 @@ public class DPTable {
     public DPTable(List<Tree> trees, PrefixHashArrays pref, ClusterTable clusterTable,
                    UniqueTaxonSubtreeHashes uniqueTaxonHashes,
                    int firstS5GreedyTreeIndex) {
+        this(trees, pref, clusterTable, uniqueTaxonHashes,
+            firstS5GreedyTreeIndex, Integer.MAX_VALUE);
+    }
+
+    /** S7 rotates only A-Pro greedy edges; completed DISCO trees stay rooted. */
+    public DPTable(List<Tree> trees, PrefixHashArrays pref, ClusterTable clusterTable,
+                   UniqueTaxonSubtreeHashes uniqueTaxonHashes,
+                   int firstS5GreedyTreeIndex, int lastS5GreedyTreeIndex) {
         long t0 = System.nanoTime();
         this.uniqueTaxonHashes = uniqueTaxonHashes;
         this.firstS5GreedyTreeIndex = firstS5GreedyTreeIndex;
+        this.lastS5GreedyTreeIndex = lastS5GreedyTreeIndex;
         this.m        = uniqueTaxonHashes == null
             ? pref.numSeeds() : uniqueTaxonHashes.numSeeds();
         this.rootHash = clusterTable.getAllTaxaHash();
@@ -97,7 +107,7 @@ public class DPTable {
         Logging.info("DP table: %d clusters with splits, %d unique splits (%d emitted) in %d ms",
             transitions.size(), uniqueSplits, totalEmitted, ms);
         if (s5RotationTransitions > 0) {
-            Logging.info("S5 greedy rooting: %d opposite-edge transitions emitted",
+            Logging.info("A-Pro greedy rooting: %d opposite-edge transitions emitted",
                 s5RotationTransitions);
         }
         if (overlappingSpeciationNodes > 0) {
@@ -126,7 +136,8 @@ public class DPTable {
         // ordinary DP base cases while their incident edge can contribute a
         // resolution for the opposite side of the bipartition.
         if (u.isLeaf()) {
-            if (ti >= firstS5GreedyTreeIndex) emitType2(u, ti, false, pref);
+            if (ti >= firstS5GreedyTreeIndex && ti < lastS5GreedyTreeIndex)
+                emitType2(u, ti, false, pref);
             return;
         }
 
@@ -145,7 +156,8 @@ public class DPTable {
         // For an unrooted greedy tree, moving the root across edge (u,parent)
         // turns the complement of u into a rooted subtree. This rotation adds
         // its binary transition without materializing O(n) rerooted tree copies.
-        if (ti >= firstS5GreedyTreeIndex) emitType2(u, ti, false, pref);
+        if (ti >= firstS5GreedyTreeIndex && ti < lastS5GreedyTreeIndex)
+            emitType2(u, ti, false, pref);
 
         // Admission depends only on the event tag. Resolver-created nodes tagged
         // as speciation are therefore handled exactly like original nodes.

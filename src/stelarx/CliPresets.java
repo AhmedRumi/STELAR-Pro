@@ -49,8 +49,12 @@ final class CliPresets {
                 cfg.setSearchSpace(Config.SearchSpace.S6);
                 // S6 independently adds rooted triplet-greedy trees to S1.
             }
+            case "7", "s7" -> {
+                cfg.setSearchSpace(Config.SearchSpace.S7);
+                // S7 combines A-Pro greedy and streamed DISCO/UPGMA candidates.
+            }
             default -> throw new IllegalArgumentException(
-                "unknown search space '" + value + "' (expected S1-S6 or 1-6)");
+                "unknown search space '" + value + "' (expected S1-S7 or 1-7)");
         }
     }
 

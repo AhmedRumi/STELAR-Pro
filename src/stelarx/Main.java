@@ -178,22 +178,25 @@ public class Main {
             }
 
             // ── Phase 1b: Optional candidate-tree enrichment ─────────────────
-            // S2-S4 decompose multicopy trees with DISCO, complete those
+            // S2-S4 and S7 decompose multicopy trees with DISCO, complete those
             // single-copy trees, and add a UPGMA guide. Only S3 adds greedy
             // consensus candidates; S4 uses triplet similarity for its guide.
-            // S5 adds A-Pro quartet-greedy trees; independent S6 adds rooted
-            // STELAR-triplet-greedy trees. Both always retain the S1 candidates.
+            // S5 adds A-Pro quartet-greedy trees; S7 adds these plus S2's
+            // completed DISCO and UPGMA proposals. S6 uses triplet-greedy trees.
+            // Every path retains the S1 candidates.
             //
             // IMPORTANT: originalTrees is saved before enrichment and is used for
             // rooted-partition extraction (Phase 4) and weights (Phase 6). Candidate
             // trees may contain completed or guide-tree relationships, but those
             // artificial relationships never become scoring observations.
             List<Tree> originalTrees = trees; // always points to pre-completion trees
+            int greedyProposalCount = 0;
             // Verification modes that inspect completed node graphs keep the
             // materialized route; normal S2/S4 inference streams proposals.
             boolean streamDiscoCandidates =
                 (cfg.getSearchSpace() == Config.SearchSpace.S2
-                    || cfg.getSearchSpace() == Config.SearchSpace.S4)
+                    || cfg.getSearchSpace() == Config.SearchSpace.S4
+                    || cfg.getSearchSpace() == Config.SearchSpace.S7)
                 && !cfg.isScoreOnly() && !cfg.isVerifyHash()
                 && !cfg.isVerifyClusters() && !cfg.isVerifyDPSpace()
                 && !cfg.isVerifyGreedyConsensus() && !cfg.isConsensusExperimental()
@@ -201,10 +204,11 @@ public class Main {
             List<Tree> streamedDiscoTrees = List.of();
             List<Tree> consensusSourceTrees = List.of(); // completed DISCO trees for S3
             SimilarityMatrix similarityMatrix = null; // visible to Phase 3.5 (Step A)
-            Tree upgmaGuideTree = null; // S2/S3/S4 candidate and optional guide
+            Tree upgmaGuideTree = null; // DISCO-path candidate and optional guide
             boolean discoSearch = cfg.getSearchSpace() == Config.SearchSpace.S2
                 || cfg.getSearchSpace() == Config.SearchSpace.S3
-                || cfg.getSearchSpace() == Config.SearchSpace.S4;
+                || cfg.getSearchSpace() == Config.SearchSpace.S4
+                || cfg.getSearchSpace() == Config.SearchSpace.S7;
             if (cfg.getSearchSpace() == Config.SearchSpace.S6 && !cfg.isScoreOnly()) {
                 long t1b = PhaseLogger.begin("Phase 1b S6 rooted-triplet greedy proposals",
                     cfg.getComputeMode() == Config.ComputeMode.GPU);
@@ -229,28 +233,38 @@ public class Main {
                     s6Support = null;
                     System.gc();
                 }
-            } else if (cfg.getSearchSpace() == Config.SearchSpace.S5 && !cfg.isScoreOnly()) {
+            } else if ((cfg.getSearchSpace() == Config.SearchSpace.S5
+                    || cfg.getSearchSpace() == Config.SearchSpace.S7)
+                    && !cfg.isScoreOnly()) {
                 // A-Pro partitions gene families across native CPU workers. Keep
                 // GPU mode for STELAR's later triplet DP/weights, not this search.
-                long t1b = PhaseLogger.begin("Phase 1b S5 A-Pro greedy proposals", false);
+                String greedyPhase = "Phase 1b " + cfg.getSearchSpace()
+                    + " A-Pro greedy proposals";
+                long t1b = PhaseLogger.begin(greedyPhase, false);
                 // The resolved input is re-tagged by the in-process A-Pro scorer.
                 // Greedy trees provide root-invariant candidate clusters; only
                 // original rooted/tagged multicopy trees supply scoring data.
+                int rounds = cfg.getSearchSpace() == Config.SearchSpace.S7
+                    ? cfg.getS7Rounds() : cfg.getS5Rounds();
+                long seed = cfg.getSearchSpace() == Config.SearchSpace.S7
+                    ? cfg.getS7Seed() : cfg.getS5Seed();
                 List<Tree> greedyTrees = AProGreedySearch.generate(
                     preprocessingInput, cfg.getInputFile(), registry,
-                    originalTrees.size(), cfg.getThreadCount(), cfg.getS5Seed(),
-                    cfg.getS5Rounds(), false);
+                    originalTrees.size(), cfg.getThreadCount(), seed, rounds, false);
+                greedyProposalCount = greedyTrees.size();
                 List<Tree> candidateTrees = new ArrayList<>(
                     originalTrees.size() + greedyTrees.size());
                 candidateTrees.addAll(originalTrees);
                 candidateTrees.addAll(greedyTrees);
                 trees = candidateTrees;
-                Logging.info("S5 candidates: %d original gene trees + %d A-Pro "
+                Logging.info("%s candidates: %d original gene trees + %d A-Pro "
                         + "quartet-greedy proposal(s) (CPU, %d threads); "
                         + "triplet scoring remains original-only",
-                    originalTrees.size(), greedyTrees.size(), cfg.getThreadCount());
-                PhaseLogger.end("Phase 1b S5 A-Pro greedy proposals", t1b, false);
-            } else if (discoSearch && !cfg.isScoreOnly()) {
+                    cfg.getSearchSpace(), originalTrees.size(), greedyTrees.size(),
+                    cfg.getThreadCount());
+                PhaseLogger.end(greedyPhase, t1b, false);
+            }
+            if (discoSearch && !cfg.isScoreOnly()) {
                 boolean gpuSim = cfg.getComputeMode() == Config.ComputeMode.GPU
                     && GPUSimilarityMatrix.tryLoad();
                 long t1b = PhaseLogger.begin(
@@ -261,7 +275,7 @@ public class Main {
                 // untouched because Phase 4/6 must score the GDL triplet model
                 // against the rooted/tagged multicopy families themselves.
                 DiscoDecomposer.Result disco = DiscoDecomposer.decomposeAll(
-                    originalTrees, registry.size(), originalTrees.size(), 4);
+                    originalTrees, registry.size(), trees.size(), 4);
                 List<Tree> completedDiscoTrees = disco.trees();
                 Logging.info("%s DISCO: %d rooted/tagged family tree(s) -> %d retained "
                         + "single-copy tree(s); %d duplication cut(s), %d tree(s) below 4 leaves discarded",
@@ -300,7 +314,7 @@ public class Main {
                     }
 
                     upgmaGuideTree = UPGMAClusterer.build(
-                        similarityMatrix, originalTrees.size() + completedDiscoTrees.size());
+                        similarityMatrix, trees.size() + completedDiscoTrees.size());
                     markSyntheticCandidateNodes(upgmaGuideTree.root);
                     if (!streamDiscoCandidates && cfg.getDumpCompletedTreesFile() != null) {
                         dumpCompletedTrees(completedDiscoTrees, registry,
@@ -316,15 +330,16 @@ public class Main {
                 if (!streamDiscoCandidates) consensusSourceTrees = List.copyOf(completedDiscoTrees);
 
                 if (!streamDiscoCandidates) {
-                    List<Tree> candidateTrees = new ArrayList<>(originalTrees.size()
+                    List<Tree> candidateTrees = new ArrayList<>(trees.size()
                         + completedDiscoTrees.size() + (upgmaGuideTree == null ? 0 : 1));
-                    candidateTrees.addAll(originalTrees);
+                    candidateTrees.addAll(trees);
                     candidateTrees.addAll(completedDiscoTrees);
                     if (upgmaGuideTree != null) candidateTrees.add(upgmaGuideTree);
                     trees = candidateTrees;
                 }
-                Logging.info("%s candidate sources: %d original + %d completed DISCO + %d UPGMA tree",
-                    cfg.getSearchSpace(), originalTrees.size(), completedDiscoTrees.size(),
+                Logging.info("%s candidate sources: %d original + %d greedy + %d completed DISCO + %d UPGMA tree",
+                    cfg.getSearchSpace(), originalTrees.size(), greedyProposalCount,
+                    completedDiscoTrees.size(),
                     upgmaGuideTree == null ? 0 : 1);
                 if (streamDiscoCandidates) {
                     Logging.info("%s candidate extraction will stream completed trees in bounded batches",
@@ -462,10 +477,15 @@ public class Main {
             // small-to-large set merging replaces arbitrary-range structures.
             UniqueTaxonSubtreeHashes candidateHashes =
                 new UniqueTaxonSubtreeHashes(trees, hasher);
-            int firstS5GreedyTreeIndex = cfg.getSearchSpace() == Config.SearchSpace.S5
+            boolean aProGreedySearch = cfg.getSearchSpace() == Config.SearchSpace.S5
+                || cfg.getSearchSpace() == Config.SearchSpace.S7;
+            int firstS5GreedyTreeIndex = aProGreedySearch
                 ? originalTrees.size() : Integer.MAX_VALUE;
+            int lastS5GreedyTreeIndex = aProGreedySearch
+                ? originalTrees.size() + greedyProposalCount : Integer.MAX_VALUE;
             ClusterTable clusterTable = new ClusterTable(
-                trees, pref, registry.size(), candidateHashes, firstS5GreedyTreeIndex);
+                trees, pref, registry.size(), candidateHashes,
+                firstS5GreedyTreeIndex, lastS5GreedyTreeIndex);
             PhaseLogger.end("Phase 3  Cluster extraction", t3, false);
 
             if (cfg.isVerifyClusters()) {
@@ -561,7 +581,7 @@ public class Main {
             // is disabled, without affecting correctness.
             boolean reclaimStreamedSimilarity = !streamDiscoCandidates && similarityMatrix != null
                 && similarityMatrix.usedStreamedHostBatches();
-            // S2/S4 bounded completion still needs this matrix in Phase 5;
+            // S2/S4/S7 bounded completion still needs this matrix in Phase 5;
             // all other paths can end its lifetime after consensus.
             if (!streamDiscoCandidates) similarityMatrix = null;
             if (reclaimStreamedSimilarity) {
@@ -591,7 +611,8 @@ public class Main {
             // ── Phase 5: Local DP transitions from candidate-source trees ────
             long t5 = PhaseLogger.begin("Phase 5  DP local transitions", false);
             DPTable dpTable = new DPTable(
-                trees, pref, clusterTable, candidateHashes, firstS5GreedyTreeIndex);
+                trees, pref, clusterTable, candidateHashes,
+                firstS5GreedyTreeIndex, lastS5GreedyTreeIndex);
             // X, rooted partitions, and DP transitions now own every canonical
             // hash they need; discard the much larger per-node lookup indexes.
             candidateHashes.release();
@@ -600,7 +621,7 @@ public class Main {
                 // bounded batch directly into X/DP before releasing node graphs.
                 int batchSize = Math.min(256, Math.max(64, cfg.getThreadCount()));
                 S2CandidateStreamer.Result streamed = S2CandidateStreamer.add(
-                    streamedDiscoTrees, similarityMatrix, upgmaGuideTree, originalTrees,
+                    streamedDiscoTrees, similarityMatrix, upgmaGuideTree, trees,
                     clusterTable, dpTable, hasher, registry, batchSize,
                     cfg.getDumpCompletedTreesFile(), cfg.getSearchSpace().toString());
                 trees = streamed.exemplarTrees();
@@ -917,6 +938,14 @@ public class Main {
                 case "--s6-seed" -> {
                     if (++i >= args.length) return false;
                     cfg.setS6Seed(Long.parseLong(args[i]));
+                }
+                case "--s7-rounds" -> {
+                    if (++i >= args.length) return false;
+                    cfg.setS7Rounds(Integer.parseInt(args[i]));
+                }
+                case "--s7-seed" -> {
+                    if (++i >= args.length) return false;
+                    cfg.setS7Seed(Long.parseLong(args[i]));
                 }
                 case "--cross-tree-splits" ->
                     explicitSearchMode = Config.SearchMode.FULL;
@@ -1322,12 +1351,13 @@ public class Main {
               -vv | -vvv                       Debug or trace logging
 
             Search and scoring:
-              --search-space S1|S2|S3|S4|S5|S6    S1 native search (default); S2 adds DISCO,
+              --search-space S1|S2|S3|S4|S5|S6|S7    S1 native search (default); S2 adds DISCO,
                                                  completion and UPGMA candidates;
                                                  S3 adds DISCO-tree greedy consensus;
                                                  S4 uses S2's streamed candidates with a triplet guide;
                                                  S5 adds A-Pro quartet-greedy candidates;
-                                                 S6 adds rooted-triplet greedy candidates
+                                                 S6 adds rooted-triplet greedy candidates;
+                                                 S7 combines S5 greedy with S2 DISCO/UPGMA
               --s5-rounds N                  Greedy trees per S5 DP pass (default: 4;
                                              >=100 taxa use triplet-DP two-step backbones)
               --s5-seed N                    S5 greedy-search random seed
@@ -1335,8 +1365,10 @@ public class Main {
               --s5-adaptive-passes N         Legacy S5 alias: N extra passes (0-5)
               --s6-rounds N                  Rooted-triplet greedy trees per S6 DP pass (default: 4)
               --s6-seed N                    S6 greedy-search random seed
-              --cross-tree-splits             Enable cross-tree DP splits for S2/S4/S5/S6
-              --no-cross-tree-splits          Disable them (S2/S4/S5/S6 default)
+              --s7-rounds N                  S7 A-Pro greedy trees (default: 4)
+              --s7-seed N                    S7 greedy-search random seed
+              --cross-tree-splits             Enable cross-tree DP splits for S2/S4/S5/S6/S7
+              --no-cross-tree-splits          Disable them (S2/S4/S5/S6/S7 default)
               --search-mode local|full         Legacy alias for cross-tree control
               --large-n-score-type T            int128 (exact) | double
               --no-prune-search-space           Disable reachability pruning
@@ -1624,7 +1656,9 @@ public class Main {
         if ((fixedMode && cfg.getSearchMode() != expectedMode)
                 || cfg.isAutoCompleteIncompleteTrees()
                 || cfg.isConsensusExperimental()
-                || cfg.isResolveInputGeneTreePolytomies()) {
+                || cfg.isResolveInputGeneTreePolytomies()
+                || (cfg.getSearchSpace() == Config.SearchSpace.S7
+                    && cfg.getMaxSearchPasses() != 1)) {
             throw new UnsupportedOperationException(
                 cfg.getSearchSpace() + " does not support that search configuration");
         }

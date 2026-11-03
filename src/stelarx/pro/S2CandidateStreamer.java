@@ -17,7 +17,7 @@ import java.io.PrintStream;
 import java.util.ArrayList;
 import java.util.List;
 
-/** Streams S2/S4 completed DISCO proposals into X and the rooted DP space. */
+/** Streams DISCO proposals for S2/S4/S7 into X and the rooted DP space. */
 public final class S2CandidateStreamer {
     private S2CandidateStreamer() {}
 
@@ -31,7 +31,7 @@ public final class S2CandidateStreamer {
      * survive for later CPU/CUDA membership lookups.
      */
     public static Result add(List<Tree> discoTrees, SimilarityMatrix similarity,
-                             Tree upgma, List<Tree> originalTrees,
+                             Tree upgma, List<Tree> baseTrees,
                              ClusterTable clusters, DPTable dp,
                              TaxonHasher hasher, TaxonRegistry registry,
                              int batchSize, String completedTreesFile,
@@ -39,10 +39,12 @@ public final class S2CandidateStreamer {
         if (batchSize < 1) throw new IllegalArgumentException("DISCO batch size must be positive");
         int n = registry.size();
         if (discoTrees.isEmpty() && upgma == null && completedTreesFile == null) {
-            return new Result(originalTrees, 0, 0, 0, 0);
+            return new Result(baseTrees, 0, 0, 0, 0);
         }
-        List<Tree> exemplars = new ArrayList<>(originalTrees.size() + discoTrees.size() + 1);
-        exemplars.addAll(originalTrees);
+        // S7's base also contains its A-Pro greedy trees. Their exemplar
+        // indices remain stable while completed DISCO trees are streamed.
+        List<Tree> exemplars = new ArrayList<>(baseTrees.size() + discoTrees.size() + 1);
+        exemplars.addAll(baseTrees);
         ClusterHash[] leaves = singletonHashes(hasher);
         TreeCompleter.PreparedCompletion completer = discoTrees.isEmpty()
             ? null : TreeCompleter.prepare(similarity, n);

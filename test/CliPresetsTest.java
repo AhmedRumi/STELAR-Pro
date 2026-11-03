@@ -18,7 +18,7 @@ public final class CliPresetsTest {
         check(cfg.isKeepPolytomyDuringInference(),
             "keep-polytomy-during-inference config");
         cfg.setKeepPolytomyDuringInference(false);
-        for (int level = 1; level <= 6; level++) {
+        for (int level = 1; level <= 7; level++) {
             cfg.setCompletionMethod(Config.CompletionMethod.DISTANCE);
             cfg.setStepBFastRestriction(false);
             CliPresets.applySearchSpace("S" + level, cfg);
@@ -36,6 +36,11 @@ public final class CliPresetsTest {
         check(cfg.getS5AdaptivePasses() == 2, "max passes includes initial pass");
         cfg.setS5AdaptivePasses(0);
         check(cfg.getMaxSearchPasses() == 1, "legacy zero extra passes");
+        cfg.setS7Rounds(3);
+        cfg.setS7Seed(17);
+        check(cfg.getS7Rounds() == 3 && cfg.getS7Seed() == 17,
+            "S7 options are independent of S5");
+        check(cfg.getS5Rounds() == 4, "S5 rounds unchanged by S7");
         expectInvalid(() -> cfg.setMaxSearchPasses(0));
         expectInvalid(() -> CliPresets.applySearchSpace("S8", cfg));
         System.out.println("CLI preset mappings: PASS");

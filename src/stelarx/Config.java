@@ -3,7 +3,7 @@ package stelarx;
 public class Config {
     public enum ComputeMode      { AUTO, CPU, GPU }
     /** S1 is native; S2-S4 use DISCO; S5/S6 are independent greedy paths. */
-    public enum SearchSpace      { S1, S2, S3, S4, S5, S6 }
+    public enum SearchSpace      { S1, S2, S3, S4, S5, S6, S7 }
     public enum SearchMode       { LOCAL, FULL }
     /**
      * Which matrix is used to guide taxon insertion when auto-completing
@@ -94,6 +94,9 @@ public class Config {
     /** Rooted-triplet greedy proposals per S6 DP pass. */
     private int s6Rounds = 4;
     private long s6Seed = baseSeed;
+    /** A-Pro greedy proposals used only by the combined S7 search. */
+    private int s7Rounds = 4;
+    private long s7Seed = baseSeed;
     private int verbosity = 1; // 0=quiet 1=INFO 2=DEBUG 3=TRACE
     /** STELAR-Pro is intrinsically rooted; retained only for CLI compatibility. */
     private boolean treatAsUnrooted = false;
@@ -305,6 +308,13 @@ public class Config {
     }
     public long getS6Seed()                   { return s6Seed; }
     public void setS6Seed(long seed)          { this.s6Seed = seed; }
+    public int getS7Rounds()                  { return s7Rounds; }
+    public void setS7Rounds(int rounds) {
+        if (rounds < 1) throw new IllegalArgumentException("--s7-rounds must be positive");
+        this.s7Rounds = rounds;
+    }
+    public long getS7Seed()                   { return s7Seed; }
+    public void setS7Seed(long seed)          { this.s7Seed = seed; }
     public int getVerbosity()                 { return verbosity; }
     public void setVerbosity(int v)           { this.verbosity = v; }
     public boolean getTreatAsUnrooted()       { return treatAsUnrooted; }

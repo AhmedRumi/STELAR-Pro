@@ -163,7 +163,7 @@ public final class AProGreedySearch {
         WeightTable weights = new WeightTable(dp, partitions, clusters, guides, genes);
         Inference inference = new Inference();
         String rooted = inference.run(dp, weights, clusters, guides, subset, hasher);
-        Logging.info("S5 two-step backbone: %d taxa, %d quartet-greedy guides "
+        Logging.info("A-Pro two-step backbone: %d taxa, %d quartet-greedy guides "
             + "(%s scorer), STELAR triplet score %s", subset.size(), guides.size(),
             greedyGpu ? "GPU" : "CPU", inference.getLastTripletScore());
 

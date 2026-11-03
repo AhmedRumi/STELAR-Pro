@@ -132,8 +132,8 @@ datasets and the outputs safety mirror untouched:
 STELAR-Pro uses S1 and its built-in smaller-side intersection path by default.
 S2 retains the original rooted/tagged multicopy trees for scoring, and enlarges
 the candidate search using completed DISCO single-copy trees and a UPGMA guide.
-Cross-tree splits are disabled by default in S2, S4, S5, and S6; enable them with
-`--cross-tree-splits`. For S5/S6 this also controls their subset-backbone DP.
+Cross-tree splits are disabled by default in S2, S4, S5, S6, and S7; enable them with
+`--cross-tree-splits`. For S5/S6/S7 this also controls their subset-backbone DP.
 Normal S2 inference completes DISCO trees in bounded
 CPU-parallel batches, merges their candidates and local transitions, and drops
 their node graphs; only compact indexes for novel candidate exemplars remain.
@@ -190,6 +190,15 @@ The subset guides score only gene families induced on their selected taxa;
 their backbone DP takes candidates from those guides and weights from the
 induced original genes, as in S5. Native CPU colour states accelerate the
 triplet placement and NNI queries, with a Java fallback when unavailable.
+
+S7 combines S5's A-Pro quartet-greedy proposals with S2's DISCO-completed
+single-copy proposals and UPGMA guide (`--search-space S7`). It retains S1
+clusters, both rooted orientations of greedy-tree edges, and local transitions
+from completed trees. Normal inference streams completion in bounded batches;
+the completed node graphs are released after their candidates enter X and DP.
+Only the original rooted/tagged multicopy gene trees contribute triplet weights.
+S7 has its own `--s7-rounds N` and `--s7-seed N` settings. It runs one DP pass;
+cross-tree transitions are optional through `--cross-tree-splits`.
 
 The 1-lb, ten-replicate comparison can be reproduced with
 `python3 scripts/benchmark_s6_dupmean1.py`; it writes a resumable per-replicate

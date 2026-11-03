@@ -111,6 +111,7 @@ public class ClusterTable {
     private final UniqueTaxonSubtreeHashes uniqueTaxonHashes;
     /** Only S5's complete, single-copy greedy trees need both edge orientations. */
     private final int firstS5GreedyTreeIndex;
+    private final int lastS5GreedyTreeIndex;
     private int s5ComplementRecords;
 
     // Anchored-outgroup mode (DOCS/anchored-outgroup-search-space-design.md): when
@@ -131,7 +132,7 @@ public class ClusterTable {
 
     /** Full registration (both orientations) — backward-compatible entry point. */
     public ClusterTable(List<Tree> trees, PrefixHashArrays pref, int numTaxa) {
-        this(trees, pref, numTaxa, false, null, Integer.MAX_VALUE);
+        this(trees, pref, numTaxa, false, null, Integer.MAX_VALUE, Integer.MAX_VALUE);
     }
 
     /** STELAR-Pro entry point with duplicate-invariant subtree hashes. */
@@ -145,7 +146,15 @@ public class ClusterTable {
                         UniqueTaxonSubtreeHashes uniqueTaxonHashes,
                         int firstS5GreedyTreeIndex) {
         this(trees, pref, numTaxa, false, uniqueTaxonHashes,
-            firstS5GreedyTreeIndex);
+            firstS5GreedyTreeIndex, Integer.MAX_VALUE);
+    }
+
+    /** S7 limits opposite-edge registration to its greedy trees, not DISCO proposals. */
+    public ClusterTable(List<Tree> trees, PrefixHashArrays pref, int numTaxa,
+                        UniqueTaxonSubtreeHashes uniqueTaxonHashes,
+                        int firstS5GreedyTreeIndex, int lastS5GreedyTreeIndex) {
+        this(trees, pref, numTaxa, false, uniqueTaxonHashes,
+            firstS5GreedyTreeIndex, lastS5GreedyTreeIndex);
     }
 
     /**
@@ -154,16 +163,17 @@ public class ClusterTable {
      *                     with the anchored DP root.
      */
     public ClusterTable(List<Tree> trees, PrefixHashArrays pref, int numTaxa, boolean anchorFreeX) {
-        this(trees, pref, numTaxa, anchorFreeX, null, Integer.MAX_VALUE);
+        this(trees, pref, numTaxa, anchorFreeX, null, Integer.MAX_VALUE, Integer.MAX_VALUE);
     }
 
     private ClusterTable(List<Tree> trees, PrefixHashArrays pref, int numTaxa,
                          boolean anchorFreeX,
                          UniqueTaxonSubtreeHashes uniqueTaxonHashes,
-                         int firstS5GreedyTreeIndex) {
+                         int firstS5GreedyTreeIndex, int lastS5GreedyTreeIndex) {
         long t0 = System.nanoTime();
         this.uniqueTaxonHashes = uniqueTaxonHashes;
         this.firstS5GreedyTreeIndex = firstS5GreedyTreeIndex;
+        this.lastS5GreedyTreeIndex = lastS5GreedyTreeIndex;
         this.m = uniqueTaxonHashes == null
             ? pref.numSeeds() : uniqueTaxonHashes.numSeeds();
         if (anchorFreeX) {
@@ -206,7 +216,7 @@ public class ClusterTable {
         Logging.info("Cluster extraction: %d candidates -> %d unique clusters in %d ms%s",
             totalCandidates, table.size(), ms, anchorFreeX ? "  [anchor-free X]" : "");
         if (s5ComplementRecords > 0) {
-            Logging.info("S5 greedy rooting: %d opposite-edge cluster records registered",
+            Logging.info("A-Pro greedy rooting: %d opposite-edge cluster records registered",
                 s5ComplementRecords);
         }
         Logging.debug("  all-taxa cluster (DP root): %s", allTaxaHash);
@@ -257,7 +267,7 @@ public class ClusterTable {
         if (!node.isRoot()) {
             registerCluster(ti, lo, hi, false, hi - lo, L, pref, numTaxa, knownHash);
             count[0]++;
-            if (ti >= firstS5GreedyTreeIndex) {
+            if (ti >= firstS5GreedyTreeIndex && ti < lastS5GreedyTreeIndex) {
                 // A-Pro's greedy tree is unrooted. Its displayed root is only a
                 // placement anchor; the opposite side of every edge must also
                 // be available to STELAR's rooted triplet DP. These trees are

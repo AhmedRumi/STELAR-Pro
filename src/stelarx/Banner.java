@@ -199,6 +199,7 @@ public class Banner {
             case S4 -> "S4  (S2 candidates with rooted-triplet similarity)";
             case S5 -> "S5  (A-Pro greedy + native candidates + triplet DP)";
             case S6 -> "S6  (rooted-triplet greedy + native candidates + triplet DP)";
+            case S7 -> "S7  (A-Pro greedy + DISCO completion + UPGMA + triplet DP)";
         };
         out.println("    " + row("Search space",  c(WHT, searchSpace)));
         out.println("    " + row("Cross-tree splits", c(WHT,
@@ -216,6 +217,11 @@ public class Banner {
                     + " (seed " + cfg.getS6Seed() + ")")));
             out.println("    " + row("Max search passes", c(WHT,
                 Integer.toString(cfg.getMaxSearchPasses()))));
+        }
+        if (cfg.getSearchSpace() == Config.SearchSpace.S7) {
+            out.println("    " + row("S7 greedy searches", c(WHT,
+                cfg.getS7Rounds() + (cfg.getS7Rounds() == 1 ? " round" : " rounds")
+                    + " (seed " + cfg.getS7Seed() + ")")));
         }
         out.println("    " + row("Hash seeds",    c(WHT, String.valueOf(cfg.getNumHashSeeds()))));
 
