@@ -179,8 +179,8 @@ public class Main {
 
             // ── Phase 1b: Optional candidate-tree enrichment ─────────────────
             // S2-S4 decompose multicopy trees with DISCO, complete those
-            // single-copy trees, and add a UPGMA guide. S3/S4 later add greedy
-            // consensus candidates. S4 uses triplet similarity throughout.
+            // single-copy trees, and add a UPGMA guide. Only S3 adds greedy
+            // consensus candidates; S4 uses triplet similarity for its guide.
             // S5 adds A-Pro quartet-greedy trees; independent S6 adds rooted
             // STELAR-triplet-greedy trees. Both always retain the S1 candidates.
             //
@@ -190,16 +190,18 @@ public class Main {
             // artificial relationships never become scoring observations.
             List<Tree> originalTrees = trees; // always points to pre-completion trees
             // Verification modes that inspect completed node graphs keep the
-            // legacy materialized route; normal S2 inference streams them.
-            boolean streamS2 = cfg.getSearchSpace() == Config.SearchSpace.S2
+            // materialized route; normal S2/S4 inference streams proposals.
+            boolean streamDiscoCandidates =
+                (cfg.getSearchSpace() == Config.SearchSpace.S2
+                    || cfg.getSearchSpace() == Config.SearchSpace.S4)
                 && !cfg.isScoreOnly() && !cfg.isVerifyHash()
                 && !cfg.isVerifyClusters() && !cfg.isVerifyDPSpace()
                 && !cfg.isVerifyGreedyConsensus() && !cfg.isConsensusExperimental()
                 && !cfg.isResolveInputGeneTreePolytomies();
-            List<Tree> s2DiscoTrees = List.of();
+            List<Tree> streamedDiscoTrees = List.of();
             List<Tree> consensusSourceTrees = List.of(); // completed DISCO trees for S3
             SimilarityMatrix similarityMatrix = null; // visible to Phase 3.5 (Step A)
-            Tree upgmaGuideTree = null; // S2/S3 candidate and optional legacy guide
+            Tree upgmaGuideTree = null; // S2/S3/S4 candidate and optional guide
             boolean discoSearch = cfg.getSearchSpace() == Config.SearchSpace.S2
                 || cfg.getSearchSpace() == Config.SearchSpace.S3
                 || cfg.getSearchSpace() == Config.SearchSpace.S4;
@@ -267,8 +269,8 @@ public class Main {
                     disco.duplicationCuts(), disco.discardedSmallTrees());
 
                 if (!completedDiscoTrees.isEmpty()) {
-                    // S4 reuses one rooted-triplet matrix for completion, UPGMA,
-                    // and consensus; S2/S3 retain their quartet matrix. These
+                    // S4 reuses one rooted-triplet matrix for completion and
+                    // UPGMA; S2/S3 retain their quartet matrix. These
                     // guide matrices never contribute scoring evidence.
                     if (cfg.getSearchSpace() == Config.SearchSpace.S4) {
                         similarityMatrix = gpuSim
@@ -277,7 +279,7 @@ public class Main {
                             : SimilarityMatrixBuilder.buildTripletCPU(
                                 completedDiscoTrees, registry.size());
                         Logging.info("S4 similarity: one rooted-triplet matrix for "
-                            + "DISCO completion, UPGMA, and consensus");
+                            + "DISCO completion and UPGMA");
                     } else {
                         similarityMatrix = gpuSim
                             ? SimilarityMatrixBuilder.buildGPU(
@@ -285,10 +287,10 @@ public class Main {
                             : SimilarityMatrixBuilder.buildCPU(
                                 completedDiscoTrees, registry.size());
                     }
-                    if (streamS2) {
+                    if (streamDiscoCandidates) {
                         // Mutable references let each raw DISCO component be
                         // released immediately after its completion batch.
-                        s2DiscoTrees = new ArrayList<>(completedDiscoTrees);
+                        streamedDiscoTrees = new ArrayList<>(completedDiscoTrees);
                     } else {
                         completedDiscoTrees = TreeCompleter.completeAll(
                             completedDiscoTrees, similarityMatrix, registry.size());
@@ -300,7 +302,7 @@ public class Main {
                     upgmaGuideTree = UPGMAClusterer.build(
                         similarityMatrix, originalTrees.size() + completedDiscoTrees.size());
                     markSyntheticCandidateNodes(upgmaGuideTree.root);
-                    if (!streamS2 && cfg.getDumpCompletedTreesFile() != null) {
+                    if (!streamDiscoCandidates && cfg.getDumpCompletedTreesFile() != null) {
                         dumpCompletedTrees(completedDiscoTrees, registry,
                             cfg.getDumpCompletedTreesFile());
                     }
@@ -311,9 +313,9 @@ public class Main {
 
                 // Keep a stable view of the completed single-copy sources. Their
                 // global treeIndex values refer to the full candidate list below.
-                if (!streamS2) consensusSourceTrees = List.copyOf(completedDiscoTrees);
+                if (!streamDiscoCandidates) consensusSourceTrees = List.copyOf(completedDiscoTrees);
 
-                if (!streamS2) {
+                if (!streamDiscoCandidates) {
                     List<Tree> candidateTrees = new ArrayList<>(originalTrees.size()
                         + completedDiscoTrees.size() + (upgmaGuideTree == null ? 0 : 1));
                     candidateTrees.addAll(originalTrees);
@@ -324,8 +326,9 @@ public class Main {
                 Logging.info("%s candidate sources: %d original + %d completed DISCO + %d UPGMA tree",
                     cfg.getSearchSpace(), originalTrees.size(), completedDiscoTrees.size(),
                     upgmaGuideTree == null ? 0 : 1);
-                if (streamS2) {
-                    Logging.info("S2 candidate extraction will stream completed trees in bounded batches");
+                if (streamDiscoCandidates) {
+                    Logging.info("%s candidate extraction will stream completed trees in bounded batches",
+                        cfg.getSearchSpace());
                     // Only the mutable batch source should retain raw DISCO
                     // components; it clears each processed entry in Phase 5.
                     completedDiscoTrees = List.of();
@@ -470,7 +473,7 @@ public class Main {
                 return;
             }
 
-            if (!streamS2 && cfg.getDumpClustersFile() != null) {
+            if (!streamDiscoCandidates && cfg.getDumpClustersFile() != null) {
                 dumpClusters(clusterTable, trees, registry, cfg.getDumpClustersFile());
             }
 
@@ -497,8 +500,8 @@ public class Main {
                 PhaseLogger.end("Phase 3.6 Gene-tree polytomy enrichment", t36, false);
             }
 
-            // ── Phase 3.5: S3/S4 greedy consensus + polytomy resolution ──────
-            // Both build consensus only from completed single-copy DISCO trees.
+            // ── Phase 3.5: S3 greedy consensus + polytomy resolution ─────────
+            // S3 builds consensus only from completed single-copy DISCO trees.
             // Original multicopy trees remain the sole Phase 4/6 scoring data.
             // Exemplar list the WEIGHT phase uses for cluster position lookups.
             // Defaults to the completed/gene trees; the consensus bridge may append
@@ -507,7 +510,8 @@ public class Main {
             // so consensus trees are never mined for local transitions.
             List<Tree> weightClusterTrees = trees;
             boolean discoConsensus = cfg.getSearchSpace() == Config.SearchSpace.S3
-                || cfg.getSearchSpace() == Config.SearchSpace.S4;
+                || (cfg.getSearchSpace() == Config.SearchSpace.S4
+                    && cfg.isVerifyGreedyConsensus());
             if (discoConsensus || cfg.isVerifyGreedyConsensus()
                     || cfg.isConsensusExperimental()) {
                 List<Tree> geneTreesForGreedy = discoConsensus
@@ -555,11 +559,11 @@ public class Main {
             // the 100k-class overflow path: established one-shot runs receive no
             // extra full-GC pause. The JVM may ignore the hint when explicit GC
             // is disabled, without affecting correctness.
-            boolean reclaimStreamedSimilarity = !streamS2 && similarityMatrix != null
+            boolean reclaimStreamedSimilarity = !streamDiscoCandidates && similarityMatrix != null
                 && similarityMatrix.usedStreamedHostBatches();
-            // S2's bounded completion still needs this matrix in Phase 5;
+            // S2/S4 bounded completion still needs this matrix in Phase 5;
             // all other paths can end its lifetime after consensus.
-            if (!streamS2) similarityMatrix = null;
+            if (!streamDiscoCandidates) similarityMatrix = null;
             if (reclaimStreamedSimilarity) {
                 long heapBefore = Runtime.getRuntime().totalMemory()
                     - Runtime.getRuntime().freeMemory();
@@ -591,17 +595,17 @@ public class Main {
             // X, rooted partitions, and DP transitions now own every canonical
             // hash they need; discard the much larger per-node lookup indexes.
             candidateHashes.release();
-            if (streamS2) {
+            if (streamDiscoCandidates) {
                 // Preserve completion's per-tree CPU parallelism, but merge each
                 // bounded batch directly into X/DP before releasing node graphs.
                 int batchSize = Math.min(256, Math.max(64, cfg.getThreadCount()));
                 S2CandidateStreamer.Result streamed = S2CandidateStreamer.add(
-                    s2DiscoTrees, similarityMatrix, upgmaGuideTree, originalTrees,
+                    streamedDiscoTrees, similarityMatrix, upgmaGuideTree, originalTrees,
                     clusterTable, dpTable, hasher, registry, batchSize,
-                    cfg.getDumpCompletedTreesFile());
+                    cfg.getDumpCompletedTreesFile(), cfg.getSearchSpace().toString());
                 trees = streamed.exemplarTrees();
                 weightClusterTrees = trees;
-                s2DiscoTrees = List.of();
+                streamedDiscoTrees = List.of();
                 similarityMatrix = null;
                 if (cfg.getDumpClustersFile() != null) {
                     dumpClusters(clusterTable, trees, registry, cfg.getDumpClustersFile());
@@ -1321,7 +1325,7 @@ public class Main {
               --search-space S1|S2|S3|S4|S5|S6    S1 native search (default); S2 adds DISCO,
                                                  completion and UPGMA candidates;
                                                  S3 adds DISCO-tree greedy consensus;
-                                                 S4 uses one triplet similarity matrix throughout;
+                                                 S4 uses S2's streamed candidates with a triplet guide;
                                                  S5 adds A-Pro quartet-greedy candidates;
                                                  S6 adds rooted-triplet greedy candidates
               --s5-rounds N                  Greedy trees per S5 DP pass (default: 4;
@@ -1331,8 +1335,8 @@ public class Main {
               --s5-adaptive-passes N         Legacy S5 alias: N extra passes (0-5)
               --s6-rounds N                  Rooted-triplet greedy trees per S6 DP pass (default: 4)
               --s6-seed N                    S6 greedy-search random seed
-              --cross-tree-splits             Enable cross-tree DP splits for S2/S5/S6
-              --no-cross-tree-splits          Disable them (S2/S5/S6 default)
+              --cross-tree-splits             Enable cross-tree DP splits for S2/S4/S5/S6
+              --no-cross-tree-splits          Disable them (S2/S4/S5/S6 default)
               --search-mode local|full         Legacy alias for cross-tree control
               --large-n-score-type T            int128 (exact) | double
               --no-prune-search-space           Disable reachability pruning
@@ -1614,8 +1618,7 @@ public class Main {
     /** Keep preset-owned search-space combinations from being changed accidentally. */
     private static void validateCurrentProScope(Config cfg) {
         boolean fixedMode = cfg.getSearchSpace() == Config.SearchSpace.S1
-            || cfg.getSearchSpace() == Config.SearchSpace.S3
-            || cfg.getSearchSpace() == Config.SearchSpace.S4;
+            || cfg.getSearchSpace() == Config.SearchSpace.S3;
         Config.SearchMode expectedMode = cfg.getSearchSpace() == Config.SearchSpace.S1
             ? Config.SearchMode.LOCAL : Config.SearchMode.FULL;
         if ((fixedMode && cfg.getSearchMode() != expectedMode)

@@ -120,7 +120,8 @@ Three score types occur in this code. Keeping them separate is essential:
 1. **STELAR triplet split weight `W`** above: final DP evidence from original
    multicopy tagged gene trees, shared by S1–S6.
 2. **Taxon-pair similarity**: a guide matrix built from *single-copy DISCO*
-   trees in S2–S4. It guides completion, UPGMA, and S3/S4 consensus resolution;
+   trees in S2–S4. It guides completion and UPGMA; only S3 additionally
+   uses its guide during consensus resolution.
    it is never added to `W`.
 3. **Greedy-tree proposal objective**: ASTRAL-Pro's speciation-quartet score
    in S5, or STELAR's rooted-triplet tensor in S6. It selects proposal trees;
@@ -164,7 +165,7 @@ dist_T(a,b) = 1 − sim_T(a,b).
 
 This is a *pair affinity derived from rooted triplets*, not the full
 three-index STELAR objective. S4 constructs **one** such matrix and shares it
-among tree completion, UPGMA, and consensus Step A/Step B. It never builds
+between tree completion and UPGMA. It never builds
 the S2/S3 quartet matrix on the normal S4 route. However, the existing tree
 completion still uses a **four-point algebraic decision rule** on that triplet
 matrix. For three representatives `a,b,c` and missing taxon `x`, it compares,
@@ -250,14 +251,14 @@ from S1–S5. It is not a second final objective. See
 | Path | Candidate sources beyond original speciation-rooted S1 clusters | Guide/proposal score | DP mode |
 | --- | --- | --- | --- |
 | **S1** | None | None | Local |
-| **S2** | Completed single-copy DISCO trees; one UPGMA tree | Quartet pair similarity | Full |
+| **S2** | Completed single-copy DISCO trees; one UPGMA tree | Quartet pair similarity | Local; cross-tree opt-in |
 | **S3** | S2 sources plus greedy-consensus clades/refinements | Quartet pair similarity | Full |
-| **S4** | S3-style sources/refinements | Rooted-triplet pair similarity | Full |
-| **S5** | ASTRAL-Pro quartet-greedy proposal trees; accumulated adaptive proposals | A-Pro quartet-equivalence objective | Full |
-| **S6** | Rooted-triplet greedy proposal trees; accumulated adaptive proposals | STELAR triplet tensor `H` | Full |
+| **S4** | S2-style streamed DISCO completions; one UPGMA tree | Rooted-triplet pair similarity | Local; cross-tree opt-in |
+| **S5** | ASTRAL-Pro quartet-greedy proposal trees; accumulated adaptive proposals | A-Pro quartet-equivalence objective | Local; cross-tree opt-in |
+| **S6** | Rooted-triplet greedy proposal trees; accumulated adaptive proposals | STELAR triplet tensor `H` | Local; cross-tree opt-in |
 
 The presets are configured in [`CliPresets.java`](../src/stelarx/CliPresets.java).
-S2→S3→S4 are related DISCO/consensus variants. S5 and S6 are **independent
+S2–S4 are related DISCO variants; only S3 adds consensus. S5 and S6 are **independent
 paths**, not additions on top of S2–S4. Every path retains S1's input-derived
 candidates. These branches share common DP/weight code; that does not mean
 choosing S5 executes S2–S4 or incurs their matrix-building cost.
@@ -274,7 +275,7 @@ then run the rooted DP. S1 is the default and has no DISCO, guide matrix,
 UPGMA, consensus, or greedy-proposal stage. It is the narrowest search space;
 an otherwise well-scored true clade/transition may simply be unavailable.
 
-### S2: DISCO, completion, UPGMA, and cross-tree recombination
+### S2: DISCO, completion, UPGMA, and optional cross-tree recombination
 
 Start with **all S1 candidates**. Decompose each rooted/tagged multicopy gene
 family with DISCO by cutting at duplications, retaining single-copy components
@@ -290,12 +291,12 @@ still use the original rooted/tagged multicopy trees only. See
 [`TreeCompleter.java`](../src/stelarx/completion/TreeCompleter.java), and
 [`UPGMAClusterer.java`](../src/stelarx/completion/UPGMAClusterer.java).
 
-Normal S2 inference streams completion in bounded CPU-parallel batches. Each
+Normal S2 and S4 inference stream completion in bounded CPU-parallel batches. Each
 batch's clades and local splits are merged into the global candidate/DP tables;
 completed node graphs, raw DISCO components, and temporary hashes are then
 released. Only leaf-order and position indexes for trees that introduced a new
-candidate survive as weight/reconstruction exemplars. S3/S4 still materialize
-completed trees because their consensus Step B reads source-tree topology.
+candidate survive as weight/reconstruction exemplars. S3 still materializes
+completed trees because its consensus Step B reads source-tree topology.
 
 UPGMA repeatedly merges the active clusters of greatest pair similarity;
 the intercluster similarity is the size-weighted average of underlying pair
@@ -320,17 +321,16 @@ trees. See [`GreedyConsensus.java`](../src/stelarx/greedy/GreedyConsensus.java),
 [`PolytomyResolver.java`](../src/stelarx/greedy/PolytomyResolver.java), and
 [`EmissionBridge.java`](../src/stelarx/greedy/EmissionBridge.java).
 
-### S4: S3 construction with one triplet guide matrix
+### S4: S2-style streamed construction with one triplet guide matrix
 
-S4 keeps the same DISCO components, completion procedure, UPGMA guide,
-consensus thresholds/refinements, and `FULL` DP mechanism as S3. Its deliberate
-change is to replace `sim_Q` with `sim_T` **once** at matrix construction; the
-triplet matrix is reused by completion, UPGMA, and consensus. Original tagged
-genes still supply the final `W`. S4 therefore removes quartet *counting* from
-this guide path, but inherits the four-point insertion logic as explained
-above. It is not automatically faster than S3: both paths still do tree
-completion, UPGMA, consensus, candidate handling, and the same final DP;
-matrix construction is only one portion of runtime.
+S4 keeps S2's DISCO components, bounded completion/candidate streaming, and
+UPGMA guide, replacing `sim_Q` with `sim_T` **once** at matrix construction.
+The triplet matrix is reused by completion and UPGMA; both CPU tour data and
+GPU tour/flattened arrays are processed in bounded host batches. Its normal
+route has no consensus stage. Local transitions are the default, with
+`--cross-tree-splits` enabling cross-tree recombination. Original tagged genes
+still supply the final `W`. S4 removes quartet *similarity counting* but
+inherits the four-point completion insertion logic described above.
 
 ### S5: ASTRAL-Pro greedy proposals, STELAR triplet DP
 
@@ -396,9 +396,9 @@ all CUDA kernels. Phase boundaries and actual backend choices are logged.
 | Preprocess; duplicate-invariant subtree hashes; partition extraction | Host-side tree traversals and small-to-large merges | No corresponding end-to-end CUDA tree traversal |
 | S2/S3 quartet pair matrix | Reference scatter over source trees (the current `buildCPU` tree loop is sequential) | Euler/RMQ preparation on CPU workers; `(a,b)` pair-tiled similarity kernel, tree-data batching |
 | S4 triplet pair matrix | Per-tree tour/RMQ builds in parallel, then disjoint pair-row workers | Parallel host tour/flattening; pair-tiled triplet-LCA kernels, compact/wide RMQ and batching |
-| DISCO completion | Different source trees completed in parallel; S2 bounds the active batch and discards completed node graphs after candidate extraction; insertion within one tree remains ordered | No separate completion CUDA kernel |
+| DISCO completion | Different source trees completed in parallel; S2/S4 bound the active batch and discard completed node graphs after candidate extraction; insertion within one tree remains ordered | No separate completion CUDA kernel |
 | UPGMA | Parallel best-pair scans/reductions and row updates within a merge; merge sequence serial | No separate UPGMA CUDA kernel |
-| S3/S4 consensus | Frequency-sorted laminar pass; distinct polytomy-resolution tasks scheduled across workers | No separate consensus CUDA kernel; it may consume a GPU-built matrix |
+| S3 consensus | Frequency-sorted laminar pass; distinct polytomy-resolution tasks scheduled across workers | No separate consensus CUDA kernel; it may consume a GPU-built matrix |
 | Cross-tree DP-space construction | Parallel per-parent-cluster matching | CUDA complement/match builder; Java owns resulting transition table |
 | Common STELAR `W` weight calculation | Parallel per-candidate-split workers; duplicate-aware position-vector membership | Batched one-thread-per-split smaller-side kernel, CSR copy positions, binary search and reduction; multi-range consensus clusters supported |
 | Final rooted DP/reconstruction | Java memoized optimization and traceback | No CUDA kernel for the DP recurrence itself |

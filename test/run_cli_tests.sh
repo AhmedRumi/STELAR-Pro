@@ -20,10 +20,10 @@ VERSION_TEXT="$(NO_COLOR=1 "${ROOT}/stelar-pro" --version --no-build)"
 HELP_TEXT="$(NO_COLOR=1 "${ROOT}/stelar-pro" --help 2>&1)"
 [[ "$HELP_TEXT" == *"STELAR-Pro wrapper"* ]]
 [[ "$HELP_TEXT" == *"--search-space"* ]]
-[[ "$HELP_TEXT" == *"S2 (DISCO/completion/UPGMA/full search)"* ]]
+[[ "$HELP_TEXT" == *"S2 (DISCO/completion/UPGMA candidates)"* ]]
 [[ "$HELP_TEXT" == *"S3 (S2 + DISCO-tree greedy consensus)"* ]]
-[[ "$HELP_TEXT" == *"S4 (S3 with rooted-triplet similarity)"* ]]
-[[ "$HELP_TEXT" == *"S5 (A-Pro greedy trees + S1; rooted-triplet full DP)"* ]]
+[[ "$HELP_TEXT" == *"S4 (S2 candidates with rooted-triplet similarity)"* ]]
+[[ "$HELP_TEXT" == *"S5 (A-Pro greedy trees + S1; rooted-triplet DP)"* ]]
 [[ "$HELP_TEXT" != *"--intersection-method"* ]]
 [[ "$HELP_TEXT" != *"--weight-intersection-method"* ]]
 [[ "$HELP_TEXT" == *"--gpu-strict"* ]]
@@ -72,7 +72,17 @@ NO_COLOR=1 "${ROOT}/stelar-pro" --no-build --cpu \
   -o "$S4_TREE" --search-space S4 >"$S4_LOG" 2>&1
 [[ -s "$S4_TREE" ]]
 [[ "$(grep -Fc 'S4 similarity: one rooted-triplet matrix' "$S4_LOG")" -eq 1 ]]
+grep -Fq 'S4 streamed candidates:' "$S4_LOG"
+! grep -Fq 'Phase 3.5 Greedy consensus' "$S4_LOG"
+! grep -Fq 'Phase 5b Cross-tree transitions' "$S4_LOG"
 ! grep -Fq 'Building similarity matrix (CPU)' "$S4_LOG"
+S4_CROSS_LOG="${WORK}/s4-cross.log"
+NO_COLOR=1 "${ROOT}/stelar-pro" --no-build --cpu \
+  -i "${ROOT}/test/input/stelar_candidate_5taxa.tre" \
+  -o "${WORK}/s4-cross.tre" --search-space S4 --cross-tree-splits \
+  >"$S4_CROSS_LOG" 2>&1
+[[ -s "${WORK}/s4-cross.tre" ]]
+grep -Fq 'Phase 5b Cross-tree transitions' "$S4_CROSS_LOG"
 javac -cp "${ROOT}/build" -d "$WORK" \
   "${ROOT}/test/TripletSimilarityTest.java"
 java -cp "${ROOT}/build:${WORK}" TripletSimilarityTest >/dev/null 2>&1

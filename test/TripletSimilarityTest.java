@@ -25,6 +25,14 @@ public final class TripletSimilarityTest {
             check(dense, registry.getId("C"), registry.getId("D"), 1.0);
             check(dense, registry.getId("A"), registry.getId("D"), 0.0);
 
+            // Batching must preserve the raw per-tree counts before normalization.
+            System.setProperty("stelarpro.similarity.tripletHostBatchTrees", "1");
+            try {
+                compare(dense, SimilarityMatrixBuilder.buildTripletCPU(trees, 4));
+            } finally {
+                System.clearProperty("stelarpro.similarity.tripletHostBatchTrees");
+            }
+
             System.setProperty("stelarpro.similarity.forcePacked", "true");
             SimilarityMatrix packed;
             try {
@@ -43,6 +51,12 @@ public final class TripletSimilarityTest {
                 }
                 SimilarityMatrix gpu = SimilarityMatrixBuilder.buildTripletGPU(trees, 4);
                 compare(dense, gpu);
+                System.setProperty("stelarpro.similarity.tripletHostBatchTrees", "1");
+                try {
+                    compare(dense, SimilarityMatrixBuilder.buildTripletGPU(trees, 4));
+                } finally {
+                    System.clearProperty("stelarpro.similarity.tripletHostBatchTrees");
+                }
                 System.setProperty("stelarpro.similarity.forceWide", "true");
                 System.setProperty("stelarpro.similarity.forcePacked", "true");
                 try {

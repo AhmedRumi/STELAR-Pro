@@ -24,12 +24,12 @@ public final class CliPresetsTest {
             CliPresets.applySearchSpace("S" + level, cfg);
             check(cfg.getSearchSpace() == Config.SearchSpace.valueOf("S" + level),
                 "S" + level + " recognized");
-            assertPresetDefaults("S" + level, cfg, level == 3 || level == 4);
+            assertPresetDefaults("S" + level, cfg, level == 3);
 
             CliPresets.applySearchSpace(Integer.toString(level), cfg);
             check(cfg.getSearchSpace() == Config.SearchSpace.valueOf("S" + level),
                 level + " recognized");
-            assertPresetDefaults(Integer.toString(level), cfg, level == 3 || level == 4);
+            assertPresetDefaults(Integer.toString(level), cfg, level == 3);
         }
 
         cfg.setMaxSearchPasses(3);

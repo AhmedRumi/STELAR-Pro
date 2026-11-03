@@ -196,7 +196,7 @@ public class Banner {
             case S1 -> "S1  (default)";
             case S2 -> "S2  (DISCO + completion + UPGMA candidates)";
             case S3 -> "S3  (S2 + DISCO greedy consensus)";
-            case S4 -> "S4  (S3 with rooted-triplet similarity)";
+            case S4 -> "S4  (S2 candidates with rooted-triplet similarity)";
             case S5 -> "S5  (A-Pro greedy + native candidates + triplet DP)";
             case S6 -> "S6  (rooted-triplet greedy + native candidates + triplet DP)";
         };

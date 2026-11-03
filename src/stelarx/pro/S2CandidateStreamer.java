@@ -17,7 +17,7 @@ import java.io.PrintStream;
 import java.util.ArrayList;
 import java.util.List;
 
-/** Streams S2's completed DISCO proposals into X and the rooted DP space. */
+/** Streams S2/S4 completed DISCO proposals into X and the rooted DP space. */
 public final class S2CandidateStreamer {
     private S2CandidateStreamer() {}
 
@@ -34,8 +34,9 @@ public final class S2CandidateStreamer {
                              Tree upgma, List<Tree> originalTrees,
                              ClusterTable clusters, DPTable dp,
                              TaxonHasher hasher, TaxonRegistry registry,
-                             int batchSize, String completedTreesFile) throws IOException {
-        if (batchSize < 1) throw new IllegalArgumentException("S2 batch size must be positive");
+                             int batchSize, String completedTreesFile,
+                             String searchSpace) throws IOException {
+        if (batchSize < 1) throw new IllegalArgumentException("DISCO batch size must be positive");
         int n = registry.size();
         if (discoTrees.isEmpty() && upgma == null && completedTreesFile == null) {
             return new Result(originalTrees, 0, 0, 0, 0);
@@ -57,7 +58,7 @@ public final class S2CandidateStreamer {
                 List<Tree> completed = completer.completeBatch(discoTrees.subList(start, end));
                 for (Tree tree : completed) {
                     if (!tree.isComplete || tree.leafCount != n) {
-                        throw new IllegalStateException("S2 completion did not yield a complete "
+                        throw new IllegalStateException(searchSpace + " completion did not yield a complete "
                             + "single-copy tree " + tree.treeIndex);
                     }
                     if (dump != null) dump.println(tree.toNewick(registry));
@@ -66,7 +67,8 @@ public final class S2CandidateStreamer {
                     ClusterHash root = emit(tree.root, tree, index, leaves,
                         hasher.numSeeds(), clusters, dp, counts);
                     if (!root.equals(clusters.getAllTaxaHash())) {
-                        throw new IllegalStateException("S2 completed tree has an invalid root hash");
+                        throw new IllegalStateException(searchSpace
+                            + " completed tree has an invalid root hash");
                     }
                     newClusters += counts.newClusters;
                     transitions += counts.transitions;
@@ -82,10 +84,10 @@ public final class S2CandidateStreamer {
                 completed = null;
                 if (end == discoTrees.size() || (end / batchSize) % 100 == 0) {
                     // UPGMA is emitted after the DISCO batches, so this is not
-                    // the final S2 candidate total.
-                    Logging.info("S2 DISCO progress: %d/%d trees, +%d unique clusters "
+                    // the final candidate total.
+                    Logging.info("%s DISCO progress: %d/%d trees, +%d unique clusters "
                             + "(UPGMA pending)",
-                        end, discoTrees.size(), newClusters);
+                        searchSpace, end, discoTrees.size(), newClusters);
                 }
             }
         }
@@ -109,12 +111,12 @@ public final class S2CandidateStreamer {
                 completedTreesFile, discoTrees.size());
         }
         if (clusters.size() != initialClusters + newClusters) {
-            throw new IllegalStateException("S2 streamed candidate count disagrees with X");
+            throw new IllegalStateException(searchSpace + " streamed candidate count disagrees with X");
         }
-        Logging.info("S2 streamed candidates: %d DISCO + %d UPGMA proposal(s), "
+        Logging.info("%s streamed candidates: %d DISCO + %d UPGMA proposal(s), "
                 + "+%d unique clusters (%d DISCO, %d UPGMA; %d total in X), "
                 + "%d local transitions, %d compact exemplars retained",
-            discoTrees.size(), upgma == null ? 0 : 1,
+            searchSpace, discoTrees.size(), upgma == null ? 0 : 1,
             newClusters, discoNewClusters, upgmaNewClusters, clusters.size(),
             transitions, retained);
         return new Result(exemplars, newClusters, discoTrees.size(), retained, transitions);
@@ -146,7 +148,7 @@ public final class S2CandidateStreamer {
             hash = leaves[node.taxonId];
         } else {
             if (node.isPolytomous()) {
-                throw new IllegalStateException("Completed S2 proposal is not binary");
+                throw new IllegalStateException("Completed DISCO proposal is not binary");
             }
             ClusterHash left = emit(node.left, tree, exemplarIndex,
                 leaves, seeds, clusters, dp, counts);

@@ -72,11 +72,11 @@ Optional:
   --gpu-strict       Require CUDA; do not fall back to CPU
   --search-space     S1 (default) | S2 (DISCO/completion/UPGMA candidates) |
                      S3 (S2 + DISCO-tree greedy consensus) |
-                     S4 (S3 with rooted-triplet similarity) |
+                     S4 (S2 candidates with rooted-triplet similarity) |
                      S5 (A-Pro greedy trees + S1; rooted-triplet DP) |
                      S6 (rooted-triplet greedy trees + S1; triplet DP)
   --search-mode      local | full
-  --cross-tree-splits     Enable cross-tree splits for S2/S5/S6 (default: off)
+  --cross-tree-splits     Enable cross-tree splits for S2/S4/S5/S6 (default: off)
   --no-cross-tree-splits  Disable cross-tree splits
   --s5-rounds N      Number of independent S5 greedy searches (default: 4)
   --s5-seed N        S5 greedy-search random seed

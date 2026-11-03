@@ -32,15 +32,14 @@ final class CliPresets {
             }
             case "3", "s3" -> {
                 cfg.setSearchSpace(Config.SearchSpace.S3);
-                // S3 is S2 plus greedy-consensus candidates and therefore uses
-                // the same cross-tree recombination stage.
+                // S3 adds greedy-consensus candidates and enables cross-tree
+                // recombination so synthesized clades can receive DP splits.
                 cfg.setSearchMode(Config.SearchMode.FULL);
             }
             case "4", "s4" -> {
                 cfg.setSearchSpace(Config.SearchSpace.S4);
-                // S4 keeps S3's candidate pipeline, replacing its guide
-                // similarity for completion, UPGMA, and consensus with triplets.
-                cfg.setSearchMode(Config.SearchMode.FULL);
+                // S4 uses S2's local candidate pipeline with a triplet guide.
+                // Cross-tree transitions remain available by explicit flag.
             }
             case "5", "s5" -> {
                 cfg.setSearchSpace(Config.SearchSpace.S5);
