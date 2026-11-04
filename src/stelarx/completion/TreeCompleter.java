@@ -53,7 +53,7 @@ public class TreeCompleter {
         }
     }
 
-    /** Prepare the expensive sorted rows once before streaming S2 batches. */
+    /** Prepare nearest-neighbor rows once before global completion batches. */
     public static PreparedCompletion prepare(SimilarityMatrix sim, int numTaxa) {
         PolyMatrix matrix = sim.isPacked()
             ? new PackedPolyMatrix(sim, SortedRowsBuilder.buildPackedCPU(sim))
@@ -62,10 +62,10 @@ public class TreeCompleter {
     }
 
     /**
-     * Complete all incomplete trees in the list using the four-point algorithm.
+     * Complete all incomplete trees with root-preserving nearest-neighbor insertion.
      *
      * @param trees      gene trees (may mix complete and incomplete)
-     * @param sim        flat n×n similarity matrix (sim[a*n+b] ∈ [0,1]; used for four-point)
+     * @param sim        flat n×n similarity matrix (sim[a*n+b] ∈ [0,1])
      * @param dist       flat n×n distance matrix (dist = 1-sim; used for sortedRows)
      * @param n          total taxon count
      * @return new list where every tree is complete; already-complete trees pass through

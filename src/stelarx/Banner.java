@@ -194,14 +194,21 @@ public class Banner {
         // ── Search ─────────────────────────────────────────────────────────
         String searchSpace = switch (cfg.getSearchSpace()) {
             case S1 -> "S1  (default)";
-            case S2 -> "S2  (DISCO + completion + UPGMA candidates)";
-            case S3 -> "S3  (S2 + DISCO greedy consensus)";
-            case S4 -> "S4  (S2 candidates with rooted-triplet similarity)";
+            case S2 -> "S2  (lineage-scoped DISCO + UPGMA candidates)";
+            case S3 -> "S3  (global DISCO + S1 + greedy consensus)";
+            case S4 -> "S4  (lineage-scoped DISCO + triplet guide + UPGMA)";
             case S5 -> "S5  (A-Pro greedy + native candidates + triplet DP)";
             case S6 -> "S6  (rooted-triplet greedy + native candidates + triplet DP)";
             case S7 -> "S7  (A-Pro greedy + DISCO completion + UPGMA + triplet DP)";
         };
         out.println("    " + row("Search space",  c(WHT, searchSpace)));
+        if (cfg.getSearchSpace() == Config.SearchSpace.S2
+                || cfg.getSearchSpace() == Config.SearchSpace.S4) {
+            out.println("    " + row("DISCO candidate scope", c(WHT,
+                cfg.isFullDiscoCandidates()
+                    ? "all species + S1 candidates (--full-disco-candidates)"
+                    : "pre-cut lineage only; no S1 candidates")));
+        }
         out.println("    " + row("Cross-tree splits", c(WHT,
             cfg.getSearchMode() == Config.SearchMode.FULL ? "enabled" : "disabled")));
         if (cfg.getSearchSpace() == Config.SearchSpace.S5) {

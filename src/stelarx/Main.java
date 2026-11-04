@@ -28,6 +28,7 @@ import stelarx.pro.GeneTreeRooterTagger;
 import stelarx.pro.GeneTreePolytomyResolver;
 import stelarx.pro.UniqueTaxonSubtreeHashes;
 import stelarx.pro.S2CandidateStreamer;
+import stelarx.pro.ScopedTreeCompleter;
 import stelarx.weight.WeightTable;
 import stelarx.hash.PrefixHashArrays;
 import stelarx.hash.TaxonHasher;
@@ -96,6 +97,12 @@ public class Main {
         if (cfg.isExtractTaxa()) {
             runTaxaExtraction(cfg);
             return;
+        }
+        if (cfg.isFullDiscoCandidates()
+                && cfg.getSearchSpace() != Config.SearchSpace.S2
+                && cfg.getSearchSpace() != Config.SearchSpace.S4) {
+            throw new IllegalArgumentException(
+                "--full-disco-candidates applies only to S2 and S4");
         }
         resolveComputeMode(cfg);
         Banner.print(cfg);
@@ -183,13 +190,19 @@ public class Main {
             // consensus candidates; S4 uses triplet similarity for its guide.
             // S5 adds A-Pro quartet-greedy trees; S7 adds these plus S2's
             // completed DISCO and UPGMA proposals. S6 uses triplet-greedy trees.
-            // Every path retains the S1 candidates.
+            // S2/S4 now use only lineage-scoped DISCO and UPGMA proposals by
+            // default. --full-disco-candidates restores their older S1 plus
+            // globally completed DISCO search; S3/S7 retain their own paths.
             //
             // IMPORTANT: originalTrees is saved before enrichment and is used for
             // rooted-partition extraction (Phase 4) and weights (Phase 6). Candidate
             // trees may contain completed or guide-tree relationships, but those
             // artificial relationships never become scoring observations.
             List<Tree> originalTrees = trees; // always points to pre-completion trees
+            boolean strictLineageDisco =
+                (cfg.getSearchSpace() == Config.SearchSpace.S2
+                    || cfg.getSearchSpace() == Config.SearchSpace.S4)
+                && !cfg.isFullDiscoCandidates();
             int greedyProposalCount = 0;
             // Verification modes that inspect completed node graphs keep the
             // materialized route; normal S2/S4 inference streams proposals.
@@ -275,7 +288,8 @@ public class Main {
                 // untouched because Phase 4/6 must score the GDL triplet model
                 // against the rooted/tagged multicopy families themselves.
                 DiscoDecomposer.Result disco = DiscoDecomposer.decomposeAll(
-                    originalTrees, registry.size(), trees.size(), 4);
+                    originalTrees, registry.size(), trees.size(), 4,
+                    strictLineageDisco);
                 List<Tree> completedDiscoTrees = disco.trees();
                 Logging.info("%s DISCO: %d rooted/tagged family tree(s) -> %d retained "
                         + "single-copy tree(s); %d duplication cut(s), %d tree(s) below 4 leaves discarded",
@@ -306,8 +320,12 @@ public class Main {
                         // released immediately after its completion batch.
                         streamedDiscoTrees = new ArrayList<>(completedDiscoTrees);
                     } else {
-                        completedDiscoTrees = TreeCompleter.completeAll(
-                            completedDiscoTrees, similarityMatrix, registry.size());
+                        completedDiscoTrees = strictLineageDisco
+                            ? ScopedTreeCompleter.prepare(similarityMatrix,
+                                completedDiscoTrees, registry.size())
+                                .completeBatch(completedDiscoTrees)
+                            : TreeCompleter.completeAll(
+                                completedDiscoTrees, similarityMatrix, registry.size());
                         for (Tree candidateTree : completedDiscoTrees) {
                             markSyntheticCandidateNodes(candidateTree.root);
                         }
@@ -477,6 +495,14 @@ public class Main {
             // small-to-large set merging replaces arbitrary-range structures.
             UniqueTaxonSubtreeHashes candidateHashes =
                 new UniqueTaxonSubtreeHashes(trees, hasher);
+            // Original genes always supply the partition/weight evidence, but
+            // default S2/S4 do not mine them for X or local DP transitions.
+            List<Tree> candidateSourceTrees = strictLineageDisco
+                ? trees.subList(originalTrees.size(), trees.size()) : trees;
+            if (strictLineageDisco) {
+                Logging.info("%s search: S1 candidates excluded; DISCO completion "
+                    + "restricted to each pre-cut lineage", cfg.getSearchSpace());
+            }
             boolean aProGreedySearch = cfg.getSearchSpace() == Config.SearchSpace.S5
                 || cfg.getSearchSpace() == Config.SearchSpace.S7;
             int firstS5GreedyTreeIndex = aProGreedySearch
@@ -484,7 +510,7 @@ public class Main {
             int lastS5GreedyTreeIndex = aProGreedySearch
                 ? originalTrees.size() + greedyProposalCount : Integer.MAX_VALUE;
             ClusterTable clusterTable = new ClusterTable(
-                trees, pref, registry.size(), candidateHashes,
+                candidateSourceTrees, pref, registry.size(), candidateHashes,
                 firstS5GreedyTreeIndex, lastS5GreedyTreeIndex);
             PhaseLogger.end("Phase 3  Cluster extraction", t3, false);
 
@@ -611,7 +637,7 @@ public class Main {
             // ── Phase 5: Local DP transitions from candidate-source trees ────
             long t5 = PhaseLogger.begin("Phase 5  DP local transitions", false);
             DPTable dpTable = new DPTable(
-                trees, pref, clusterTable, candidateHashes,
+                candidateSourceTrees, pref, clusterTable, candidateHashes,
                 firstS5GreedyTreeIndex, lastS5GreedyTreeIndex);
             // X, rooted partitions, and DP transitions now own every canonical
             // hash they need; discard the much larger per-node lookup indexes.
@@ -621,9 +647,11 @@ public class Main {
                 // bounded batch directly into X/DP before releasing node graphs.
                 int batchSize = Math.min(256, Math.max(64, cfg.getThreadCount()));
                 S2CandidateStreamer.Result streamed = S2CandidateStreamer.add(
-                    streamedDiscoTrees, similarityMatrix, upgmaGuideTree, trees,
+                    streamedDiscoTrees, similarityMatrix, upgmaGuideTree,
+                    candidateSourceTrees,
                     clusterTable, dpTable, hasher, registry, batchSize,
-                    cfg.getDumpCompletedTreesFile(), cfg.getSearchSpace().toString());
+                    cfg.getDumpCompletedTreesFile(), cfg.getSearchSpace().toString(),
+                    strictLineageDisco);
                 trees = streamed.exemplarTrees();
                 weightClusterTrees = trees;
                 streamedDiscoTrees = List.of();
@@ -951,6 +979,8 @@ public class Main {
                     explicitSearchMode = Config.SearchMode.FULL;
                 case "--no-cross-tree-splits" ->
                     explicitSearchMode = Config.SearchMode.LOCAL;
+                case "--full-disco-candidates" ->
+                    cfg.setFullDiscoCandidates(true);
                 case "--search-mode"   -> {
                     if (++i >= args.length) return false;
                     if (args[i].equalsIgnoreCase("full"))
@@ -1351,10 +1381,10 @@ public class Main {
               -vv | -vvv                       Debug or trace logging
 
             Search and scoring:
-              --search-space S1|S2|S3|S4|S5|S6|S7    S1 native search (default); S2 adds DISCO,
-                                                 completion and UPGMA candidates;
-                                                 S3 adds DISCO-tree greedy consensus;
-                                                 S4 uses S2's streamed candidates with a triplet guide;
+              --search-space S1|S2|S3|S4|S5|S6|S7    S1 native search (default); S2 uses lineage-scoped
+                                                 DISCO completion and UPGMA, without S1 candidates;
+                                                 S3 retains global DISCO + S1 + greedy consensus;
+                                                 S4 uses S2's scoped candidates with a triplet guide;
                                                  S5 adds A-Pro quartet-greedy candidates;
                                                  S6 adds rooted-triplet greedy candidates;
                                                  S7 combines S5 greedy with S2 DISCO/UPGMA
@@ -1369,6 +1399,8 @@ public class Main {
               --s7-seed N                    S7 greedy-search random seed
               --cross-tree-splits             Enable cross-tree DP splits for S2/S4/S5/S6/S7
               --no-cross-tree-splits          Disable them (S2/S4/S5/S6/S7 default)
+              --full-disco-candidates         S2/S4: add S1 candidates and complete
+                                              DISCO trees to all species (old behavior)
               --search-mode local|full         Legacy alias for cross-tree control
               --large-n-score-type T            int128 (exact) | double
               --no-prune-search-space           Disable reachability pruning

@@ -23,6 +23,29 @@ import java.util.Set;
 public final class DiscoDecomposer {
     private DiscoDecomposer() {}
 
+    private static final long[] NO_MISSING_TAXA = new long[0];
+
+    /** A DISCO component plus taxa lost to cuts below its original root. */
+    public static final class ScopedTree extends Tree {
+        private final long[] missingWords;
+        private final int missingCount;
+
+        private ScopedTree(int index, TreeNode root, int[] leaves, int[] positions,
+                           int totalTaxa, long[] missingWords) {
+            super(index, root, leaves, positions, leaves.length, totalTaxa);
+            this.missingWords = missingWords;
+            int count = 0;
+            for (long word : missingWords) count += Long.bitCount(word);
+            this.missingCount = count;
+        }
+
+        public long[] missingWords() { return missingWords; }
+        public int missingCount() { return missingCount; }
+    }
+
+    private record CutPlan(IdentityHashMap<TreeNode, Boolean> detachLeft,
+                           IdentityHashMap<TreeNode, long[]> originalScopes) {}
+
     /** Summary of one decomposition pass. */
     public record Result(List<Tree> trees, int duplicationCuts,
                          int discardedSmallTrees) {}
@@ -34,6 +57,13 @@ public final class DiscoDecomposer {
      */
     public static Result decomposeAll(List<Tree> inputTrees, int totalTaxa,
                                       int firstTreeIndex, int minimumLeaves) {
+        return decomposeAll(inputTrees, totalTaxa, firstTreeIndex, minimumLeaves, false);
+    }
+
+    /** Scoped mode stores only pre-cut component scopes, not per-node taxon sets. */
+    public static Result decomposeAll(List<Tree> inputTrees, int totalTaxa,
+                                      int firstTreeIndex, int minimumLeaves,
+                                      boolean lineageScoped) {
         if (minimumLeaves < 1) {
             throw new IllegalArgumentException("DISCO minimum leaf count must be positive");
         }
@@ -52,8 +82,8 @@ public final class DiscoDecomposer {
 
             TreeNode root = copyTree(input.root, null);
             List<TreeNode> postorder = binaryPostorder(root);
-            IdentityHashMap<TreeNode, Boolean> detachLeft =
-                chooseDuplicationCuts(postorder);
+            CutPlan plan = chooseDuplicationCuts(postorder, totalTaxa, lineageScoped);
+            IdentityHashMap<TreeNode, Boolean> detachLeft = plan.detachLeft();
             List<TreeNode> componentRoots = new ArrayList<>(detachLeft.size() + 1);
 
             // Apply cuts in postorder, as in DISCO. The saved decisions use the
@@ -71,6 +101,12 @@ public final class DiscoDecomposer {
             componentRoots.add(root);
 
             for (TreeNode componentRoot : componentRoots) {
+                // Capture the pre-cut root before unary suppression replaces it.
+                long[] scope = lineageScoped
+                    ? plan.originalScopes().remove(componentRoot) : null;
+                if (lineageScoped && scope == null) {
+                    throw new IllegalStateException("Missing pre-cut DISCO component scope");
+                }
                 TreeNode simplified = suppressUnary(componentRoot, null);
                 int leafCount = countLeaves(simplified);
                 if (leafCount < minimumLeaves) {
@@ -78,7 +114,7 @@ public final class DiscoDecomposer {
                     continue;
                 }
                 output.add(buildSingleCopyTree(
-                    simplified, nextTreeIndex++, totalTaxa, leafCount));
+                    simplified, nextTreeIndex++, totalTaxa, leafCount, scope));
             }
         }
 
@@ -86,10 +122,12 @@ public final class DiscoDecomposer {
     }
 
     /** Record each DISCO cut while retaining only the live frontier taxon sets. */
-    private static IdentityHashMap<TreeNode, Boolean> chooseDuplicationCuts(
-            List<TreeNode> postorder) {
+    private static CutPlan chooseDuplicationCuts(
+            List<TreeNode> postorder, int totalTaxa, boolean lineageScoped) {
         IdentityHashMap<TreeNode, Set<Integer>> liveTaxa = new IdentityHashMap<>();
         IdentityHashMap<TreeNode, Boolean> detachLeft = new IdentityHashMap<>();
+        IdentityHashMap<TreeNode, long[]> scopes = lineageScoped
+            ? new IdentityHashMap<>() : null;
 
         for (TreeNode node : postorder) {
             if (node.isLeaf()) {
@@ -106,7 +144,13 @@ public final class DiscoDecomposer {
             }
             if (node.isDuplicationNode) {
                 // scripts/disco.py uses '<'; an equal-size tie therefore cuts right.
-                detachLeft.put(node, left.size() < right.size());
+                boolean cutLeft = left.size() < right.size();
+                detachLeft.put(node, cutLeft);
+                if (lineageScoped) {
+                    // One packed scope per detached component survives merging.
+                    scopes.put(cutLeft ? node.left : node.right,
+                        packTaxa(cutLeft ? left : right, totalTaxa));
+                }
             }
             if (left.size() < right.size()) {
                 Set<Integer> swap = left;
@@ -116,7 +160,17 @@ public final class DiscoDecomposer {
             left.addAll(right);
             liveTaxa.put(node, left);
         }
-        return detachLeft;
+        if (lineageScoped) {
+            TreeNode root = postorder.get(postorder.size() - 1);
+            scopes.put(root, packTaxa(liveTaxa.get(root), totalTaxa));
+        }
+        return new CutPlan(detachLeft, scopes);
+    }
+
+    private static long[] packTaxa(Set<Integer> taxa, int totalTaxa) {
+        long[] words = new long[(totalTaxa + 63) >>> 6];
+        for (int taxon : taxa) words[taxon >>> 6] |= 1L << taxon;
+        return words;
     }
 
     private static List<TreeNode> binaryPostorder(TreeNode root) {
@@ -160,7 +214,8 @@ public final class DiscoDecomposer {
     }
 
     private static Tree buildSingleCopyTree(TreeNode root, int treeIndex,
-                                             int totalTaxa, int leafCount) {
+                                             int totalTaxa, int leafCount,
+                                             long[] originalScope) {
         int[] postorderArray = new int[leafCount];
         int[] cursor = {0};
         assignRanges(root, postorderArray, cursor);
@@ -174,9 +229,19 @@ public final class DiscoDecomposer {
                     "DISCO component still contains duplicate taxon " + taxon);
             }
             positionMap[taxon] = position;
+            if (originalScope != null) originalScope[taxon >>> 6] &= ~(1L << taxon);
         }
-        return new Tree(treeIndex, root, postorderArray, positionMap,
-            leafCount, totalTaxa);
+        if (originalScope == null) {
+            return new Tree(treeIndex, root, postorderArray, positionMap,
+                leafCount, totalTaxa);
+        }
+        // Only taxa absent after cuts within this lineage need completion.
+        int used = originalScope.length;
+        while (used > 0 && originalScope[used - 1] == 0L) used--;
+        long[] missing = used == 0 ? NO_MISSING_TAXA
+            : Arrays.copyOf(originalScope, used);
+        return new ScopedTree(treeIndex, root, postorderArray, positionMap,
+            totalTaxa, missing);
     }
 
     private static void assignRanges(TreeNode node, int[] postorderArray,

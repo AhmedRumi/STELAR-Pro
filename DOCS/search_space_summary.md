@@ -166,19 +166,10 @@ dist_T(a,b) = 1 − sim_T(a,b).
 This is a *pair affinity derived from rooted triplets*, not the full
 three-index STELAR objective. S4 constructs **one** such matrix and shares it
 between tree completion and UPGMA. It never builds
-the S2/S3 quartet matrix on the normal S4 route. However, the existing tree
-completion still uses a **four-point algebraic decision rule** on that triplet
-matrix. For three representatives `a,b,c` and missing taxon `x`, it compares,
-for example,
-
-```text
-s_a = sim[x,a] + sim[b,c] − sim[x,b] − sim[a,c]
-s_b = sim[x,b] + sim[a,c] − sim[x,a] − sim[b,c]
-s_c = sim[x,c] + sim[a,b] − sim[x,b] − sim[a,c].
-```
-
-Therefore “S4 has no quartet **similarity-counting** kernel” is accurate;
-“S4 contains no four-point procedure” is not. See
+the S2/S3 quartet matrix on the normal S4 route. Active root-preserving
+completion attaches a missing taxon as the sibling of its most similar
+present taxon; it does **not** run the dormant four-point helper. Thus normal
+S4 search-space construction has no quartet calculation. See
 [`TreeCompleter.java`](../src/stelarx/completion/TreeCompleter.java).
 
 ### ASTRAL-Pro quartet score used for S5 proposals
@@ -248,19 +239,20 @@ from S1–S5. It is not a second final objective. See
 
 ## 3. What each search-space path builds
 
-| Path | Candidate sources beyond original speciation-rooted S1 clusters | Guide/proposal score | DP mode |
+| Path | Candidate sources (including S1 only where noted) | Guide/proposal score | DP mode |
 | --- | --- | --- | --- |
-| **S1** | None | None | Local |
-| **S2** | Completed single-copy DISCO trees; one UPGMA tree | Quartet pair similarity | Local; cross-tree opt-in |
-| **S3** | S2 sources plus greedy-consensus clades/refinements | Quartet pair similarity | Full |
-| **S4** | S2-style streamed DISCO completions; one UPGMA tree | Rooted-triplet pair similarity | Local; cross-tree opt-in |
-| **S5** | ASTRAL-Pro quartet-greedy proposal trees; accumulated adaptive proposals | A-Pro quartet-equivalence objective | Local; cross-tree opt-in |
-| **S6** | Rooted-triplet greedy proposal trees; accumulated adaptive proposals | STELAR triplet tensor `H` | Local; cross-tree opt-in |
+| **S1** | Original speciation-rooted gene-tree clusters | None | Local |
+| **S2** | Lineage-scoped DISCO trees; one UPGMA tree; no S1 by default | Quartet pair similarity | Local; cross-tree opt-in |
+| **S3** | S1, globally completed DISCO trees, UPGMA, greedy-consensus clades/refinements | Quartet pair similarity | Full |
+| **S4** | Lineage-scoped DISCO trees; one UPGMA tree; no S1 by default | Rooted-triplet pair similarity | Local; cross-tree opt-in |
+| **S5** | S1 plus ASTRAL-Pro quartet-greedy proposal trees; accumulated adaptive proposals | A-Pro quartet-equivalence objective | Local; cross-tree opt-in |
+| **S6** | S1 plus rooted-triplet greedy proposal trees; accumulated adaptive proposals | STELAR triplet tensor `H` | Local; cross-tree opt-in |
 
 The presets are configured in [`CliPresets.java`](../src/stelarx/CliPresets.java).
 S2–S4 are related DISCO variants; only S3 adds consensus. S5 and S6 are **independent
-paths**, not additions on top of S2–S4. Every path retains S1's input-derived
-candidates. These branches share common DP/weight code; that does not mean
+paths**, not additions on top of S2–S4. S2/S4 exclude S1's input-derived
+candidates by default; `--full-disco-candidates` restores them alongside
+global DISCO completion. These branches share common DP/weight code; that does not mean
 choosing S5 executes S2–S4 or incurs their matrix-building cost.
 
 ### S1: native speciation-rooted candidates
@@ -277,19 +269,26 @@ an otherwise well-scored true clade/transition may simply be unavailable.
 
 ### S2: DISCO, completion, UPGMA, and optional cross-tree recombination
 
-Start with **all S1 candidates**. Decompose each rooted/tagged multicopy gene
-family with DISCO by cutting at duplications, retaining single-copy components
-with at least four leaves. Build `sim_Q` from these components. Complete
-incomplete components by inserting missing taxa under the matrix-guided
-four-point procedure; completion preserves their supplied root and existing
-relationships. Add the resulting complete single-copy trees as candidate
-sources. Build one UPGMA guide from the *same* pair matrix (`dist=1−sim`) and
-add its clusters too. In `FULL` mode, build both local and compatible
+Do **not** add S1 candidates by default. Decompose each rooted/tagged
+multicopy gene family with DISCO, retaining single-copy components with at
+least four leaves. Each component stores a packed bitset of taxa present
+below its root **before** cuts but absent afterward. Build `sim_Q` from the
+retained components. Complete each component only with its within-lineage
+missing taxa, inserting each as the sibling of its most similar present
+taxon; the original rooted relationships remain. A partial component's root
+is itself a candidate cluster. Build one UPGMA guide from the *same* pair
+matrix (`dist=1−sim`) and add its clusters too. In `FULL` mode, build both local and compatible
 cross-tree DP transitions. Crucially, `PartitionTable` and `WeightTable`
 still use the original rooted/tagged multicopy trees only. See
 [`DiscoDecomposer.java`](../src/stelarx/pro/DiscoDecomposer.java),
+[`ScopedTreeCompleter.java`](../src/stelarx/pro/ScopedTreeCompleter.java),
 [`TreeCompleter.java`](../src/stelarx/completion/TreeCompleter.java), and
 [`UPGMAClusterer.java`](../src/stelarx/completion/UPGMAClusterer.java).
+
+`--full-disco-candidates` restores the prior S2/S4 combination: S1
+candidates plus every DISCO component completed to the full species set.
+It does not enable cross-tree transitions; `--cross-tree-splits` is separate
+and remains off by default.
 
 Normal S2 and S4 inference stream completion in bounded CPU-parallel batches. Each
 batch's clades and local splits are merged into the global candidate/DP tables;
@@ -303,9 +302,9 @@ the intercluster similarity is the size-weighted average of underlying pair
 similarities. Its branch/merge order proposes a hierarchy; that hierarchy is
 *not* interpreted as additional gene-tree evidence.
 
-### S3: S2 plus greedy consensus
+### S3: global DISCO completion plus greedy consensus
 
-S3 performs S2's decomposition, quartet-matrix completion, UPGMA, and full
+S3 retains its prior S1 plus global DISCO completion, UPGMA, and full
 cross-tree recombination. It additionally counts clades/bipartitions in the
 **completed DISCO trees**, sorts them by frequency, and greedily inserts
 compatible clades into a laminar consensus forest. A single frequency-sorted
@@ -323,14 +322,15 @@ trees. See [`GreedyConsensus.java`](../src/stelarx/greedy/GreedyConsensus.java),
 
 ### S4: S2-style streamed construction with one triplet guide matrix
 
-S4 keeps S2's DISCO components, bounded completion/candidate streaming, and
+S4 keeps S2's lineage-scoped DISCO components, bounded completion/candidate streaming, and
 UPGMA guide, replacing `sim_Q` with `sim_T` **once** at matrix construction.
 The triplet matrix is reused by completion and UPGMA; both CPU tour data and
 GPU tour/flattened arrays are processed in bounded host batches. Its normal
 route has no consensus stage. Local transitions are the default, with
 `--cross-tree-splits` enabling cross-tree recombination. Original tagged genes
-still supply the final `W`. S4 removes quartet *similarity counting* but
-inherits the four-point completion insertion logic described above.
+still supply the final `W`. S4 has no quartet similarity or four-point
+completion in its active route. Its `--full-disco-candidates` flag has the
+same effect as S2's: add S1 candidates and complete DISCO trees globally.
 
 ### S5: ASTRAL-Pro greedy proposals, STELAR triplet DP
 

@@ -35,7 +35,7 @@ public final class S2CandidateStreamer {
                              ClusterTable clusters, DPTable dp,
                              TaxonHasher hasher, TaxonRegistry registry,
                              int batchSize, String completedTreesFile,
-                             String searchSpace) throws IOException {
+                             String searchSpace, boolean lineageScoped) throws IOException {
         if (batchSize < 1) throw new IllegalArgumentException("DISCO batch size must be positive");
         int n = registry.size();
         if (discoTrees.isEmpty() && upgma == null && completedTreesFile == null) {
@@ -46,29 +46,51 @@ public final class S2CandidateStreamer {
         List<Tree> exemplars = new ArrayList<>(baseTrees.size() + discoTrees.size() + 1);
         exemplars.addAll(baseTrees);
         ClusterHash[] leaves = singletonHashes(hasher);
-        TreeCompleter.PreparedCompletion completer = discoTrees.isEmpty()
-            ? null : TreeCompleter.prepare(similarity, n);
+        TreeCompleter.PreparedCompletion globalCompleter =
+            discoTrees.isEmpty() || lineageScoped ? null : TreeCompleter.prepare(similarity, n);
+        ScopedTreeCompleter scopedCompleter =
+            discoTrees.isEmpty() || !lineageScoped ? null
+                : ScopedTreeCompleter.prepare(similarity, discoTrees, n);
         int initialClusters = clusters.size();
         int newClusters = 0;
         long transitions = 0;
         int retained = 0;
+        long missingWithinScope = 0;
+        long excludedOutsideScope = 0;
+        int alreadyScopedComplete = 0;
+        int partialRoots = 0;
 
         try (PrintStream dump = completedTreesFile == null ? null
                 : new PrintStream(new FileOutputStream(completedTreesFile))) {
             for (int start = 0; start < discoTrees.size(); start += batchSize) {
                 int end = Math.min(start + batchSize, discoTrees.size());
-                List<Tree> completed = completer.completeBatch(discoTrees.subList(start, end));
-                for (Tree tree : completed) {
-                    if (!tree.isComplete || tree.leafCount != n) {
-                        throw new IllegalStateException(searchSpace + " completion did not yield a complete "
-                            + "single-copy tree " + tree.treeIndex);
+                List<Tree> completed = lineageScoped
+                    ? scopedCompleter.completeBatch(discoTrees.subList(start, end))
+                    : globalCompleter.completeBatch(discoTrees.subList(start, end));
+                for (int j = 0; j < completed.size(); j++) {
+                    Tree tree = completed.get(j);
+                    if (lineageScoped) {
+                        DiscoDecomposer.ScopedTree source =
+                            (DiscoDecomposer.ScopedTree) discoTrees.get(start + j);
+                        missingWithinScope += source.missingCount();
+                        excludedOutsideScope += n - source.leafCount - source.missingCount();
+                        if (source.missingCount() == 0) alreadyScopedComplete++;
+                        if (tree.leafCount < n) partialRoots++;
+                        if (tree.leafCount != source.leafCount + source.missingCount()) {
+                            throw new IllegalStateException("DISCO proposal escaped its lineage scope");
+                        }
+                    } else if (!tree.isComplete || tree.leafCount != n) {
+                        throw new IllegalStateException(searchSpace
+                            + " completion did not yield a complete single-copy tree "
+                            + tree.treeIndex);
                     }
                     if (dump != null) dump.println(tree.toNewick(registry));
                     int index = exemplars.size();
                     Counts counts = new Counts();
                     ClusterHash root = emit(tree.root, tree, index, leaves,
                         hasher.numSeeds(), clusters, dp, counts);
-                    if (!root.equals(clusters.getAllTaxaHash())) {
+                    if (root.size != tree.leafCount ||
+                        (tree.isComplete && !root.equals(clusters.getAllTaxaHash()))) {
                         throw new IllegalStateException(searchSpace
                             + " completed tree has an invalid root hash");
                     }
@@ -114,6 +136,13 @@ public final class S2CandidateStreamer {
         }
         if (clusters.size() != initialClusters + newClusters) {
             throw new IllegalStateException(searchSpace + " streamed candidate count disagrees with X");
+        }
+        if (lineageScoped) {
+            Logging.info("%s lineage scopes: %d/%d components need no completion, "
+                    + "%d within-lineage leaves inserted, %d outside-lineage insertions avoided, "
+                    + "%d partial roots eligible as candidates",
+                searchSpace, alreadyScopedComplete, discoTrees.size(), missingWithinScope,
+                excludedOutsideScope, partialRoots);
         }
         Logging.info("%s streamed candidates: %d DISCO + %d UPGMA proposal(s), "
                 + "+%d unique clusters (%d DISCO, %d UPGMA; %d total in X), "
@@ -165,7 +194,9 @@ public final class S2CandidateStreamer {
             dp.addStreamedTransition(hash, left, right);
             counts.transitions++;
         }
-        if (!node.isRoot() && clusters.addStreamedCandidate(hash,
+        // A partial component root is a real species subset; a globally
+        // completed root is the DP's all-taxa cluster, not an extra candidate.
+        if ((!node.isRoot() || !tree.isComplete) && clusters.addStreamedCandidate(hash,
                 exemplarIndex, node.rangeStart, node.rangeEnd, tree.leafCount)) {
             counts.newClusters++;
         }

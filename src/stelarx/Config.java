@@ -107,6 +107,8 @@ public class Config {
     private boolean keepPolytomyDuringInference = false;
     private SearchSpace searchSpace = SearchSpace.S1;
     private SearchMode searchMode = SearchMode.LOCAL;
+    /** S2/S4 opt-in: restore S1 candidates and complete DISCO trees globally. */
+    private boolean fullDiscoCandidates = false;
     private final WeightIntersectionMethod weightIntersectionMethod =
         WeightIntersectionMethod.SMALLER_SIDE_TRAVERSAL;
     private LargeScoreType largeScoreType = LargeScoreType.INT128;
@@ -329,6 +331,8 @@ public class Config {
     public void setSearchSpace(SearchSpace s)  { this.searchSpace = s; }
     public SearchMode getSearchMode()          { return searchMode; }
     public void setSearchMode(SearchMode s)   { this.searchMode = s; }
+    public boolean isFullDiscoCandidates()     { return fullDiscoCandidates; }
+    public void setFullDiscoCandidates(boolean value) { this.fullDiscoCandidates = value; }
     public WeightIntersectionMethod getWeightIntersectionMethod()        { return weightIntersectionMethod; }
 
     public LargeScoreType getLargeScoreType()        { return largeScoreType; }

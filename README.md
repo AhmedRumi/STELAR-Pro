@@ -130,16 +130,21 @@ datasets and the outputs safety mirror untouched:
 ```
 
 STELAR-Pro uses S1 and its built-in smaller-side intersection path by default.
-S2 retains the original rooted/tagged multicopy trees for scoring, and enlarges
-the candidate search using completed DISCO single-copy trees and a UPGMA guide.
+S2 and S4 retain the original rooted/tagged multicopy trees for scoring, but
+their default candidate search uses only lineage-scoped completed DISCO
+single-copy trees and a UPGMA guide—not S1 candidates. A component is completed
+only with taxa present below its root before DISCO cuts. Use
+`--full-disco-candidates` with S2 or S4 to restore S1 candidates and completion
+of every DISCO tree to all observed species; this does not turn on cross-tree
+transitions.
 Cross-tree splits are disabled by default in S2, S4, S5, S6, and S7; enable them with
 `--cross-tree-splits`. For S5/S6/S7 this also controls their subset-backbone DP.
-Normal S2 inference completes DISCO trees in bounded
+Normal S2/S4 inference completes DISCO trees in bounded
 CPU-parallel batches, merges their candidates and local transitions, and drops
 their node graphs; only compact indexes for novel candidate exemplars remain.
-S3 keeps all S2 candidates and additionally builds
+S3 retains its existing global DISCO completion plus S1 candidates and builds
 greedy consensus trees from the completed DISCO trees, adding their clades and
-polytomy refinements. S4 instead uses S2's bounded candidate pipeline, but
+polytomy refinements. S4 uses S2's bounded candidate pipeline, but
 builds a rooted-triplet sister-frequency matrix for completion and UPGMA;
 the former S4 consensus stage is dormant.
 Its distance view is derived as `1 − similarity`. Select
