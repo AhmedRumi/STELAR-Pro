@@ -3,6 +3,15 @@
 
 The expected value is computed by direct rooted-triple enumeration.  This test
 does not reuse STELAR-Pro clusters, partitions, hashes, or weight formulas.
+
+What STELAR-Pro scores.  Every run first roots and tags the input gene trees
+with ASTRAL-Pro3 (``astral-pro3 -T``); the rooting given in the input file is
+not kept, and ASTRAL-Pro3 treats every polytomy as a duplication event.  A
+rooted triple then counts as an observation only when the gene-tree node that
+resolves it is a speciation node (not tagged ``D``).  The oracle therefore
+reads the same ``astral-pro3 -T`` output the scorer consumes and applies that
+rule; everything downstream of the rooting (the triple enumeration and the
+agreement test) stays independent of the Java implementation.
 """
 
 from __future__ import annotations
@@ -20,9 +29,11 @@ ROOT = pathlib.Path(__file__).resolve().parents[1]
 
 
 class Node:
-    def __init__(self, name: str | None = None, children: list["Node"] | None = None):
+    def __init__(self, name: str | None = None, children: list["Node"] | None = None,
+                 duplication: bool = False):
         self.name = name
         self.children = children or []
+        self.duplication = duplication
         self.taxa: frozenset[str] = frozenset()
 
 
@@ -46,15 +57,23 @@ def newick(node: Node, mirror: bool = False) -> str:
 
 
 def parse_newick(text: str) -> Node:
-    """Small independent parser for the generated, undecorated Newick subset."""
+    """Small independent parser.
+
+    Accepts the generated undecorated subset and ASTRAL-Pro3's tagged output:
+    branch lengths are ignored, bracket comments are ignored, and an internal
+    node label ``D`` marks a duplication node.
+    """
+    text = re.sub(r"\[[^\]]*\]", "", text).strip().rstrip(";")
     stack: list[Node | str] = []
     token = ""
-    for char in text.strip().rstrip(";"):
+    i = 0
+    while i < len(text):
+        char = text[i]
         if char == "(":
             stack.append(char)
         elif char in ",)":
             if token.strip():
-                stack.append(leaf(token.strip()))
+                stack.append(leaf(token.strip().split(":")[0]))
                 token = ""
             if char == ")":
                 children: list[Node] = []
@@ -66,11 +85,19 @@ def parse_newick(text: str) -> Node:
                 if not stack:
                     raise ValueError("unbalanced Newick")
                 stack.pop()
-                stack.append(Node(children=list(reversed(children))))
+                label = ""
+                j = i + 1
+                while j < len(text) and text[j] not in ",();":
+                    label += text[j]
+                    j += 1
+                i = j - 1
+                stack.append(Node(children=list(reversed(children)),
+                                  duplication=label.split(":")[0] == "D"))
         else:
             token += char
+        i += 1
     if token.strip():
-        stack.append(leaf(token.strip()))
+        stack.append(leaf(token.strip().split(":")[0]))
     if len(stack) != 1 or not isinstance(stack[0], Node):
         raise ValueError("malformed Newick")
     annotate(stack[0])
@@ -78,28 +105,63 @@ def parse_newick(text: str) -> Node:
 
 
 def resolved_pair(node: Node, triple: tuple[str, str, str]) -> tuple[str, str] | None:
+    """The pair of the triple that is together below the other, or None."""
     if node.name is not None:
         return None
     locations = [next(i for i, child in enumerate(node.children) if taxon in child.taxa)
                  for taxon in triple]
+    if locations[0] == locations[1] == locations[2]:
+        return resolved_pair(node.children[locations[0]], triple)
     if locations[0] == locations[1] != locations[2]:
         return tuple(sorted((triple[0], triple[1])))
     if locations[0] == locations[2] != locations[1]:
         return tuple(sorted((triple[0], triple[2])))
     if locations[1] == locations[2] != locations[0]:
         return tuple(sorted((triple[1], triple[2])))
-    if locations[0] == locations[1] == locations[2]:
-        return resolved_pair(node.children[locations[0]], triple)
     return None
+
+
+def observed_pair(node: Node, triple: tuple[str, str, str]) -> tuple[str, str] | None:
+    """Like resolved_pair, but a triple resolved at a duplication node is not an observation."""
+    if node.name is not None:
+        return None
+    locations = [next(i for i, child in enumerate(node.children) if taxon in child.taxa)
+                 for taxon in triple]
+    if locations[0] == locations[1] == locations[2]:
+        return observed_pair(node.children[locations[0]], triple)
+    if node.duplication:
+        return None
+    return resolved_pair(node, triple)
 
 
 def oracle_score(species: Node, genes: list[Node]) -> int:
     total = 0
     for gene in genes:
         for triple in itertools.combinations(sorted(species.taxa & gene.taxa), 3):
-            total += resolved_pair(species, triple) == resolved_pair(gene, triple) \
-                and resolved_pair(gene, triple) is not None
+            observed = observed_pair(gene, triple)
+            total += observed is not None and resolved_pair(species, triple) == observed
     return total
+
+
+def astral_pro_executable() -> pathlib.Path:
+    override = os.environ.get("STELAR_PRO_EXECUTABLE")
+    return pathlib.Path(override) if override else ROOT / "ASTER-Linux/bin/astral-pro3"
+
+
+def rooted_tagged_genes(genes_path: pathlib.Path, work: pathlib.Path) -> list[Node]:
+    """The gene trees exactly as the scorer sees them: ASTRAL-Pro3 -T output."""
+    tagged = work / (genes_path.name + ".tagged")
+    if not tagged.exists():
+        run = subprocess.run([str(astral_pro_executable()), "-T", "-o", str(tagged),
+                              str(genes_path)], text=True,
+                             stdout=subprocess.PIPE, stderr=subprocess.STDOUT)
+        if run.returncode or not tagged.exists():
+            raise AssertionError(f"astral-pro3 -T failed for {genes_path}:\n{run.stdout}")
+    return [parse_newick(line) for line in tagged.read_text().splitlines() if line.strip()]
+
+
+def read_genes(genes_path: pathlib.Path) -> list[Node]:
+    return [parse_newick(line) for line in genes_path.read_text().splitlines() if line.strip()]
 
 
 def random_subtree(names: list[str], rng: random.Random, poly_probability: float) -> Node:
@@ -137,7 +199,14 @@ class Case:
         self.name = name
         self.species = species
         self.genes = genes
-        self.expected = oracle_score(species, genes)
+        self.expected: int | None = None   # oracle on the rooted/tagged genes, set by prepare()
+
+    def prepare(self, work: pathlib.Path) -> None:
+        genes_path = work / f"{self.name}.genes.tre"
+        species_path = work / f"{self.name}.species.tre"
+        genes_path.write_text("".join(newick(gene) + ";\n" for gene in self.genes))
+        species_path.write_text(newick(self.species) + ";\n")
+        self.expected = oracle_score(self.species, rooted_tagged_genes(genes_path, work))
 
 
 def fixed_cases() -> list[Case]:
@@ -184,8 +253,12 @@ def generated_cases(count: int, seed: int) -> list[Case]:
             genes.extend((genes[0], genes[-1]))  # frequency/deduplication coverage
         cases.append(Case(f"random-{index:02d}-n{n}-g{len(genes)}", species, genes))
 
-    # Explicit metamorphic variants: line order and child order cannot alter a score;
-    # duplicating all observations must exactly double it.
+    # Metamorphic variants of the first random case.  They are scorer-vs-oracle
+    # cases only: ASTRAL-Pro3 roots each gene tree against a species tree it
+    # infers from the whole input, so reversing, mirroring or duplicating the
+    # input can legitimately change the chosen roots and hence the score.  Both
+    # the scorer and the oracle see the same rooted/tagged trees, so agreement
+    # is still exact.
     if cases:
         base = cases[0]
         cases.append(Case("metamorphic-reversed-lines", base.species, list(reversed(base.genes))))
@@ -193,7 +266,6 @@ def generated_cases(count: int, seed: int) -> list[Case]:
         mirrored_genes = [parse_newick(newick(gene, mirror=True) + ";") for gene in base.genes]
         cases.append(Case("metamorphic-mirrored-children", mirrored_species, mirrored_genes))
         cases.append(Case("metamorphic-doubled-genes", base.species, base.genes + base.genes))
-        assert cases[-1].expected == 2 * base.expected
     return cases
 
 
@@ -201,9 +273,8 @@ def run_score(case: Case, work: pathlib.Path, compute: str,
               numeric: str = "long", threads: int | None = None) -> int:
     genes_path = work / f"{case.name}.genes.tre"
     species_path = work / f"{case.name}.species.tre"
-    if not genes_path.exists():
-        genes_path.write_text("".join(newick(gene) + ";\n" for gene in case.genes))
-        species_path.write_text(newick(case.species) + ";\n")
+    if case.expected is None:
+        case.prepare(work)
 
     command = [
         "java", "-Djava.library.path=" + str(ROOT / "native"),
@@ -251,6 +322,7 @@ def main() -> int:
     with tempfile.TemporaryDirectory(prefix="stelar-pro-differential-") as directory:
         work = pathlib.Path(directory)
         for case in cases:
+            case.prepare(work)
             actual = run_score(case, work, compute)
             if actual != case.expected:
                 raise AssertionError(

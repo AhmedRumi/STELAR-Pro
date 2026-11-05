@@ -20,8 +20,8 @@ VERSION_TEXT="$(NO_COLOR=1 "${ROOT}/stelar-pro" --version --no-build)"
 HELP_TEXT="$(NO_COLOR=1 "${ROOT}/stelar-pro" --help 2>&1)"
 [[ "$HELP_TEXT" == *"STELAR-Pro wrapper"* ]]
 [[ "$HELP_TEXT" == *"--search-space"* ]]
-[[ "$HELP_TEXT" == *"S2 (DISCO/completion/UPGMA candidates)"* ]]
-[[ "$HELP_TEXT" == *"S3 (S2 + DISCO-tree greedy consensus)"* ]]
+[[ "$HELP_TEXT" == *"S2 (lineage-scoped DISCO/UPGMA candidates)"* ]]
+[[ "$HELP_TEXT" == *"S3 (global DISCO + S1 + greedy consensus)"* ]]
 [[ "$HELP_TEXT" == *"S4 (S2 candidates with rooted-triplet similarity)"* ]]
 [[ "$HELP_TEXT" == *"S5 (A-Pro greedy trees + S1; rooted-triplet DP)"* ]]
 [[ "$HELP_TEXT" != *"--intersection-method"* ]]

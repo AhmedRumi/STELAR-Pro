@@ -1,5 +1,12 @@
 #!/usr/bin/env python3
-"""End-to-end inference invariants with independent final-score validation."""
+"""End-to-end inference invariants with independent final-score validation.
+
+Inference scores its species tree against the gene trees as its own
+preprocessing leaves them: polytomies resolved deterministically, then rooted
+and tagged by ASTRAL-Pro3 (exactly what ``stelar-pro -T`` writes).  The oracle
+reads that output and enumerates rooted triples independently of the scorer
+(see test_stelar_pro_differential.py for the observation rule).
+"""
 
 from __future__ import annotations
 
@@ -16,9 +23,33 @@ ROOT = pathlib.Path(__file__).resolve().parents[1]
 INCOMPLETE = ROOT / "test/input/test_incomplete.tre"
 POLYTOMY = ROOT / "test/input/stelar_polytomy_incomplete_6taxa.tre"
 
+_PREPROCESSED: dict[pathlib.Path, list] = {}
 
-def read_trees(path: pathlib.Path):
-    return [parse_newick(line) for line in path.read_text().splitlines() if line.strip()]
+
+def preprocessed_trees(path: pathlib.Path):
+    """Gene trees after the product's own inference preprocessing.
+
+    Inference first resolves polytomies with scripts/arb_resolve_polytomies.py
+    (the same script Main runs) and then roots/tags with ASTRAL-Pro3, which is
+    what ``stelar-pro -T`` applies to its input.
+    """
+    if path not in _PREPROCESSED:
+        with tempfile.TemporaryDirectory(prefix="stelar-pro-preprocess-") as directory:
+            resolved = pathlib.Path(directory) / "resolved.tre"
+            tagged = pathlib.Path(directory) / "tagged.tre"
+            for command in (
+                [os.environ.get("STELAR_PRO_PYTHON", "python3"),
+                 str(ROOT / "scripts/arb_resolve_polytomies.py"), str(path), str(resolved)],
+                ["java", "-cp", str(ROOT / "build"), "stelarx.Main", "-T", "-q",
+                 "-i", str(resolved), "-o", str(tagged)],
+            ):
+                run = subprocess.run(command, cwd=ROOT, text=True,
+                                     stdout=subprocess.PIPE, stderr=subprocess.STDOUT)
+                if run.returncode:
+                    raise AssertionError(f"preprocessing failed for {path}:\n{run.stdout}")
+            _PREPROCESSED[path] = [parse_newick(line)
+                                   for line in tagged.read_text().splitlines() if line.strip()]
+    return _PREPROCESSED[path]
 
 
 def run_inference(genes_path: pathlib.Path, output_path: pathlib.Path,
@@ -49,7 +80,7 @@ def validate_run(genes_path: pathlib.Path, tree_text: str, reported: int) -> int
     annotate(species)
     if species.name is not None or len(species.children) != 2:
         raise AssertionError("inferred species tree does not retain an explicit binary root")
-    genes = read_trees(genes_path)
+    genes = preprocessed_trees(genes_path)
     universe = frozenset().union(*(gene.taxa for gene in genes))
     if species.taxa != universe:
         raise AssertionError(f"species taxa {species.taxa} != gene universe {universe}")

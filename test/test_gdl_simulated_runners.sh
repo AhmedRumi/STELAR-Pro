@@ -34,7 +34,7 @@ DEST="${OUTPUTS}/astral-pro3-outputs/${DATASET}/R1/threads_2"
 [[ "$(wc -l <"$GDL_CALLS")" == 1 ]]
 "${ROOT}/run-bulk-gdl-simulated.sh" "${COMMON[@]}" >"${WORK}/skip.log" 2>&1
 [[ "$(wc -l <"$GDL_CALLS")" == 1 ]]
-rg -q 'SKIPPING' "${WORK}/skip.log"
+grep -q 'SKIPPING' "${WORK}/skip.log"
 # A failed fresh run must not overwrite either successful original or mirror.
 if GDL_FAIL=1 "${ROOT}/run-bulk-gdl-simulated.sh" "${COMMON[@]}" --fresh >"${WORK}/fail.log" 2>&1; then exit 1; fi
 [[ -f "${RESULT}/.astral-pro3.success" && -f "${DEST}/.astral-pro3.success" ]]
@@ -50,7 +50,7 @@ COUNT="$(wc -l <"$GDL_CALLS")"
 # Collector includes only current successful settings, never rerun archives.
 "${ROOT}/collect-stats-simulated.sh" --gdl-data-dir "$DATA" --out "${WORK}/combined.csv" >"${WORK}/collect.log"
 [[ "$(wc -l <"${WORK}/combined.csv")" == 2 ]]
-rg -q 'replicate,dup,loss,pop' "${WORK}/combined.csv"
+grep -Eq 'replicate,dup,loss,pop' "${WORK}/combined.csv"
 "${ROOT}/sync-simulated-outputs.sh" --gdl-data-dir "$DATA" --quiet >"${WORK}/sync.log"
 source "${ROOT}/scripts/simulated-outputs-mirror.sh"
 [[ -z "$(stelar_pro_find_forbidden_files "$OUTPUTS")" ]]
@@ -60,7 +60,7 @@ printf '#!/usr/bin/env bash\nif [[ "${1:-}" == -c ]]; then exit 0; fi\necho --in
 chmod +x "${WORK}/python-hf"
 printf '# fixture\n' >"${WORK}/uploader.py"
 "${ROOT}/upload-bulk-simulated-outputs.sh" --outputs-dir "$OUTPUTS" --python "${WORK}/python-hf" --uploader "${WORK}/uploader.py" --dry-run >"${WORK}/upload.log"
-rg -q "${DATASET} / R1 / threads_2" "${WORK}/upload.log"
+grep -Eq "${DATASET} / R1 / threads_2" "${WORK}/upload.log"
 # Complete label normalization and counts are required, even when native opts fail.
 if "${ROOT}/run-bulk-gdl-simulated.sh" "${COMMON[@]}" --opts '--search-space S1' >"${WORK}/invalid.log" 2>&1; then exit 1; fi
 if GDL_EMPTY=1 "${ROOT}/run-bulk-gdl-simulated.sh" "${COMMON[@]}" --fresh >"${WORK}/empty.log" 2>&1; then exit 1; fi
@@ -72,12 +72,12 @@ chmod +x "${WORK}/fake-path/curl"
 PATH="${WORK}/fake-path:${PATH}" "${ROOT}/test-gdl-simulated.sh" --gdl-data-dir "$DATA" --dataset "$DATASET" \
   --method astral-pro3 --opts '--thread 3' --astral-pro3-bin "${WORK}/astral-pro3" --no-time-monitor >"${WORK}/notify.log" 2>&1
 [[ -s "$GDL_NOTIFICATION" && "$(wc -l <"$GDL_NOTIFICATION")" -gt 10 ]]
-rg -q '^Dataset: taxa3_gt2_dup1_loss0_pop50000000$' "$GDL_NOTIFICATION"
-rg -q '^Replicate: R1$' "$GDL_NOTIFICATION"
-rg -q '^Options: --thread 3$' "$GDL_NOTIFICATION"
-rg -q '^RF Rate: 0.0000000000 \(ok\)$' "$GDL_NOTIFICATION"
-rg -q '^Max GPU VRAM: NA MB$' "$GDL_NOTIFICATION"
-rg -q 'replicate,dup,loss,pop' "$GDL_NOTIFICATION"
+grep -Eq '^Dataset: taxa3_gt2_dup1_loss0_pop50000000$' "$GDL_NOTIFICATION"
+grep -Eq '^Replicate: R1$' "$GDL_NOTIFICATION"
+grep -Eq '^Options: --thread 3$' "$GDL_NOTIFICATION"
+grep -Eq '^RF Rate: 0.0000000000 \(ok\)$' "$GDL_NOTIFICATION"
+grep -Eq '^Max GPU VRAM: NA MB$' "$GDL_NOTIFICATION"
+grep -Eq 'replicate,dup,loss,pop' "$GDL_NOTIFICATION"
 # GDL combined input is explicitly forbidden even if placed in a result leaf.
 printf 'raw genes\n' >"${RESULT}/all_gt.trees"
 if stelar_pro_mirror_simulated_results "$DATA" "$OUTPUTS" "$RESULT" >"${WORK}/forbidden.log" 2>&1; then exit 1; fi

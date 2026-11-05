@@ -19,6 +19,7 @@ import argparse
 import math
 import os
 import random
+import re
 import subprocess
 import sys
 import tempfile
@@ -129,6 +130,80 @@ def brute_force_distance_matrix(trees_with_taxa, all_taxa):
 
 # ── Run STELAR-Pro and parse output ─────────────────────────────────────────────
 
+def parse_rooted_newick(text):
+    """
+    Parse one rooted binary Newick line (ASTRAL-Pro3 -T output: branch lengths
+    and internal labels are ignored) into the Node class above.
+    """
+    text = re.sub(r"\[[^\]]*\]", "", text).strip().rstrip(";")
+    stack = []
+    token = ""
+    i = 0
+    while i < len(text):
+        c = text[i]
+        if c == "(":
+            stack.append("(")
+        elif c in ",)":
+            if token.strip():
+                stack.append(Node(taxon=token.strip().split(":")[0]))
+                token = ""
+            if c == ")":
+                children = []
+                while stack and stack[-1] != "(":
+                    children.append(stack.pop())
+                stack.pop()
+                children.reverse()
+                if len(children) != 2:
+                    raise ValueError("rooted/tagged tree is not binary")
+                node = Node(left=children[0], right=children[1])
+                children[0].parent = node
+                children[1].parent = node
+                j = i + 1
+                while j < len(text) and text[j] not in ",();":
+                    j += 1          # skip the internal label / branch length
+                i = j - 1
+                stack.append(node)
+        else:
+            token += c
+        i += 1
+    if token.strip():
+        stack.append(Node(taxon=token.strip().split(":")[0]))
+    if len(stack) != 1:
+        raise ValueError("malformed Newick")
+    return stack[0]
+
+
+def preprocessed_trees(newick_lines, stelarx_root):
+    """
+    The gene trees as STELAR-Pro's distance matrix sees them: every run first
+    roots and tags its input with ASTRAL-Pro3 (stelar-pro -T), which replaces
+    the rooting given in the file.  Returns [(Node root, set of taxa)].
+    """
+    build_dir = os.path.join(stelarx_root, "build")
+    with tempfile.NamedTemporaryFile(mode="w", suffix=".tre", delete=False) as f:
+        f.write("\n".join(newick_lines) + "\n")
+        input_path = f.name
+    output_path = input_path + ".tagged"
+    try:
+        cmd = ["java", "-cp", build_dir, "stelarx.Main", "-T", "-q",
+               "-i", input_path, "-o", output_path]
+        result = subprocess.run(cmd, capture_output=True, text=True, timeout=60)
+        if result.returncode != 0:
+            raise RuntimeError(
+                f"STELAR-Pro -T exited {result.returncode}\nstderr:\n{result.stderr[:2000]}")
+        trees = []
+        with open(output_path) as f:
+            for line in f:
+                if line.strip():
+                    root = parse_rooted_newick(line)
+                    trees.append((root, set(leaf_depths(root).keys())))
+        return trees
+    finally:
+        os.unlink(input_path)
+        if os.path.exists(output_path):
+            os.unlink(output_path)
+
+
 def run_stelar_pro_distance_matrix(newick_lines, stelarx_root, mode):
     """
     Write trees to a temp file, invoke STELAR-Pro --verify-distance-matrix,
@@ -216,8 +291,11 @@ def run_test(seed, stelarx_root, mode, verbose=False):
         trees_with_taxa.append((root, set(present)))
         newick_lines.append(to_newick(root) + ";")
 
-    # Python brute-force answer
-    expected = brute_force_distance_matrix(trees_with_taxa, all_taxa)
+    # Python brute-force answer on the rooted/tagged trees STELAR-Pro actually
+    # measures (its preprocessing re-roots every input tree; a root on a
+    # different edge changes the number of edges between leaves).
+    expected = brute_force_distance_matrix(
+        preprocessed_trees(newick_lines, stelarx_root), all_taxa)
 
     # STELAR-Pro answer
     taxa_order, actual_raw = run_stelar_pro_distance_matrix(newick_lines, stelarx_root, mode)

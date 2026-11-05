@@ -39,9 +39,9 @@ PATH="${MOCK_BIN}:${PATH}" NTFY_CAPTURE="$SCORE_CAPTURE" NO_COLOR=1 \
   --score-species-tree "$CANDIDATE" --cpu -q --xms 64m --xmx 1g \
   > "${WORK}/score-only.log" 2>&1
 
-grep -q '^TRIPLET_SCORE: 21$' "${WORK}/score-only.log"
+grep -q '^TRIPLET_SCORE: 27$' "${WORK}/score-only.log"   # oracle value on the ASTRAL-Pro3-rooted fixture (test_stelar_pro_triplets.py)
 grep -q 'STELAR-Pro score-only completed' "$SCORE_CAPTURE"
-grep -q 'Triplet score: 21' "$SCORE_CAPTURE"
+grep -q 'Triplet score: 27' "$SCORE_CAPTURE"
 ! grep -qi 'quartet' "${WORK}/score-only.log" "$SCORE_CAPTURE"
 
 echo "Triplet score reporting and ntfy: PASS"
