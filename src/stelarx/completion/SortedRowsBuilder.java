@@ -2,86 +2,100 @@ package stelarx.completion;
 
 import stelarx.util.Threading;
 
-import java.util.Arrays;
-
 /**
- * Builds sorted-row index arrays from a flat n×n distance matrix.
+ * Builds {@link SortedRows} (nearest-neighbour order per taxon) from a distance
+ * source.
  *
- * Output: int[] sortedRows of size n*n, where
- *   sortedRows[x * n + rank] = taxon ID of x's rank-th nearest neighbor
- *   (rank 0 = x itself at distance 0; rank 1 = nearest other taxon).
- *
- * Used by TreeCompleter's four-point completion algorithm to find, for each
- * missing taxon x, the closest currently-present taxon (the "anchor").
+ * Ordering of row x: ascending distance D(x, j); ties broken by descending
+ * taxon ID, matching ASTRAL-MP's AbstractMatrix.sortColumn
+ * ({@code comp == 0 ? -o1.compareTo(o2) : comp}).  The key (distance, −ID) is
+ * unique per element, so the order is fully determined and independent of the
+ * sorting algorithm.  A primitive merge sort is used instead of sorting boxed
+ * Integers through a comparator: same order, no per-element allocation.
  *
  * Reference: mirrors AbstractMatrix.sortByDistance / assureOrderedTaxa in
  * astral-mp-legacy-codebase/AbstractMatrix.java.
- *
- * HINT for n-ary extension: no changes needed here — sortedRows is purely a
- * property of the distance matrix and has nothing to do with tree topology.
  */
 public class SortedRowsBuilder {
 
-    /**
-     * CPU path: sort every row of the distance matrix in parallel.
-     *
-     * Time:   O(n² log n)
-     * Memory: O(n²) for the output array + O(n) scratch per thread
-     *
-     * @param dist flat n×n distance matrix, row-major (dist[a*n+b] = D(a,b))
-     * @param n    number of taxa
-     * @return int[] of size n*n; sortedRows[x*n + rank] = taxon ID at that rank
-     */
-    public static int[] buildCPU(double[] dist, int n) {
-        int[] sortedRows = new int[n * n];
+    /** Per-thread scratch so a 100k-row build does not churn 3·n doubles per row. */
+    private static final class Scratch {
+        double[] key;
+        int[] idx;
+        int[] tmp;
 
-        // Each row is independent: safe to parallelise across rows.
-        Threading.processRangeParallel(n, x -> {
-            // Build an index array [0, 1, ..., n-1] for this row.
-            Integer[] indices = new Integer[n];
-            for (int j = 0; j < n; j++) indices[j] = j;
-
-            final int base = x * n;
-            // Sort ascending by distance (= descending similarity).
-            // Tie-break: descending taxon ID, matching ASTRAL-MP's AbstractMatrix.sortColumn
-            // which does: comp==0 ? -o1.compareTo(o2) : comp  (higher ID wins on tie).
-            Arrays.sort(indices, (a, b) -> {
-                int c = Double.compare(dist[base + a], dist[base + b]);
-                return c != 0 ? c : Integer.compare(b, a);  // descending ID on tie
-            });
-
-            // Write into flat output array.
-            for (int rank = 0; rank < n; rank++) {
-                sortedRows[base + rank] = indices[rank];
+        void ensure(int n) {
+            if (key == null || key.length != n) {
+                key = new double[n];
+                idx = new int[n];
+                tmp = new int[n];
             }
-        });
+        }
+    }
 
-        return sortedRows;
+    private static final ThreadLocal<Scratch> SCRATCH = ThreadLocal.withInitial(Scratch::new);
+
+    /** Rows ordered by {@code sim.getDist(x, j)}; the matrix is only read. */
+    public static SortedRows build(SimilarityMatrix sim) {
+        int n = sim.n;
+        SortedRows rows = new SortedRows(n);
+        Threading.processRangeParallel(n, x -> {
+            Scratch s = SCRATCH.get();
+            s.ensure(n);
+            for (int j = 0; j < n; j++) s.key[j] = sim.getDist(x, j);
+            sortRow(s.key, s.idx, s.tmp, n);
+            rows.setRow(x, s.idx);
+        });
+        return rows;
     }
 
     /**
-     * Exact segmented-row variant used when a flat n*n int array is impossible.
-     * Comparator and tie order are identical to {@link #buildCPU(double[], int)}.
+     * Rows ordered by a flat row-major n×n distance array
+     * ({@code dist[x*n + j] = D(x, j)}), e.g. {@link DistanceMatrix#dist}.
      */
-    public static int[][] buildPackedCPU(SimilarityMatrix sim) {
-        int n = sim.n;
-        int[][] sortedRows = new int[n][];
+    public static SortedRows buildFromDense(double[] dist, int n) {
+        if ((long)dist.length != (long)n * n) {
+            throw new IllegalArgumentException("distance array length " + dist.length
+                + " does not match n=" + n);
+        }
+        SortedRows rows = new SortedRows(n);
         Threading.processRangeParallel(n, x -> {
-            Integer[] indices = new Integer[n];
-            for (int j = 0; j < n; j++) indices[j] = j;
-            Arrays.sort(indices, (a, b) -> {
-                int c = Double.compare(sim.getDist(x, a), sim.getDist(x, b));
-                return c != 0 ? c : Integer.compare(b, a);
-            });
-            int[] row = new int[n];
-            for (int rank = 0; rank < n; rank++) row[rank] = indices[rank];
-            sortedRows[x] = row;
+            Scratch s = SCRATCH.get();
+            s.ensure(n);
+            System.arraycopy(dist, x * n, s.key, 0, n);
+            sortRow(s.key, s.idx, s.tmp, n);
+            rows.setRow(x, s.idx);
         });
-        return sortedRows;
+        return rows;
     }
 
-    // TODO (GPU path): implement buildGPU(double[] dist, int n) using batched
-    // Thrust argsort as described in the implementation plan Section 3.2.
-    // Signature: public static int[] buildGPU(double[] dist, int n)
-    // Native method: native void computeSortedRowsGPU(double[] dist, int n, int batchSize, int[] sortedRows)
+    /**
+     * Sorts the indices 0..n−1 into {@code idx} by (key ascending, index descending).
+     * Bottom-up merge sort; {@code tmp} is scratch of the same length.
+     */
+    static void sortRow(double[] key, int[] idx, int[] tmp, int n) {
+        for (int i = 0; i < n; i++) idx[i] = i;
+        int[] src = idx, dst = tmp;
+        for (int width = 1; width < n; width <<= 1) {
+            for (int lo = 0; lo < n; lo += width << 1) {
+                int mid = Math.min(lo + width, n);
+                int hi = Math.min(lo + (width << 1), n);
+                int i = lo, j = mid, k = lo;
+                while (i < mid && j < hi) {
+                    if (before(key, src[j], src[i])) dst[k++] = src[j++];
+                    else dst[k++] = src[i++];
+                }
+                while (i < mid) dst[k++] = src[i++];
+                while (j < hi) dst[k++] = src[j++];
+            }
+            int[] t = src; src = dst; dst = t;
+        }
+        if (src != idx) System.arraycopy(src, 0, idx, 0, n);
+    }
+
+    /** True when element a sorts strictly before element b. */
+    private static boolean before(double[] key, int a, int b) {
+        int c = Double.compare(key[a], key[b]);
+        return c != 0 ? c < 0 : a > b;   // descending ID on tie
+    }
 }

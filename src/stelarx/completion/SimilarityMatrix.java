@@ -11,115 +11,100 @@ package stelarx.completion;
  * The builder supplies the quartet or triplet numerator and denominator;
  * this container normalizes either measure in the same way.
  *
+ * Storage.  The matrix is symmetric, so every pair is stored exactly once in
+ * the upper triangle (a ≤ b), held in {@link SegmentedDoubleArray} segments so
+ * that no single Java array ever has to address n² cells.  During accumulation
+ * two triangles exist (numerator and denominator, 8·n(n+1)/2 bytes in total);
+ * {@link #normalize()} divides in place and releases the denominator, leaving
+ * one triangle (4·n(n+1)/2 ≈ 4·n² bytes) that holds the similarity.
+ *
  * After normalize():
  *   sim[a][b]  ∈ [0,1], diagonal = 1, symmetric
- *   dist[a][b] = 1 − sim[a][b]   (used by TreeCompleter)
+ *   dist[a][b] = 1 − sim[a][b]   (used to rank completion anchors)
  *
  * Pairs that never co-occur in any tree have sim = 0, dist = 1.
+ *
+ * Lifetime.  UPGMA needs a mutable copy of the triangle; when nothing reads the
+ * matrix afterwards, {@link UPGMAClusterer#build(SimilarityMatrix, int, boolean)}
+ * can consume the triangle in place instead of copying it.  A consumed matrix
+ * rejects every further read with {@link IllegalStateException}.
  */
 public class SimilarityMatrix {
-    private static final int MAX_JAVA_ARRAY_LENGTH = Integer.MAX_VALUE - 8;
 
     public final int n;
 
-    /** True when the exact symmetric matrix is held as segmented upper triangles. */
-    private final boolean packed;
+    /** Σ num_t(a,b) per pair while accumulating; the similarity after normalize(). */
+    private SegmentedDoubleArray num;
 
-    /** Accumulated numerator: Σ num_t(a,b). Flat n×n double. */
-    final double[] numSum;
+    /** Σ den_t(a,b) per pair; released by normalize(). */
+    private SegmentedDoubleArray den;
 
-    /** Accumulated denominator: Σ den_t(a,b). Flat n×n double. */
-    final double[] denSum;
-
-    /** Finalized similarity: numSum / denSum. Populated by normalize(). */
-    public final double[] sim;
-
-    /**
-     * Finalized distance: 1 − sim.
-     * Passed directly to TreeCompleter.completeAll() as the dist array.
-     */
-    public final double[] dist;
-
-    private SegmentedDoubleArray packedNum;
-    private SegmentedDoubleArray packedDen;
+    private boolean normalized;
     /** True only when similarity preprocessing crossed the wide Java-array boundary. */
     private boolean streamedHostBatches;
 
     public SimilarityMatrix(int n) {
-        long cellsLong = (long)n * n;
+        if (n < 0) throw new IllegalArgumentException("negative taxon count: " + n);
         this.n = n;
-        this.packed = Boolean.getBoolean("stelarpro.similarity.forcePacked")
-            || requiresPacked(n);
-        if (packed) {
-            long triangleCells = triangleCellCount(n);
-            this.numSum = null;
-            this.denSum = null;
-            this.sim = null;
-            this.dist = null;
-            this.packedNum = new SegmentedDoubleArray(triangleCells);
-            this.packedDen = new SegmentedDoubleArray(triangleCells);
-        } else {
-            int cells = (int)cellsLong;
-            this.numSum = new double[cells];
-            this.denSum = new double[cells];
-            this.sim = new double[cells];
-            this.dist = new double[cells];
-        }
+        long cells = triangleCellCount(n);
+        this.num = new SegmentedDoubleArray(cells);
+        this.den = new SegmentedDoubleArray(cells);
     }
 
     /**
-     * Finalize: compute sim[a][b] = numSum / denSum, then dist = 1 − sim.
-     * Pairs that never co-occur get sim = 0, dist = 1.
-     * Diagonal is set to sim = 1, dist = 0.
+     * Finalize: sim[a][b] = numSum / denSum in place, then release the denominator.
+     * Pairs that never co-occur get sim = 0 (dist = 1).  Diagonal is set to sim = 1.
      */
     public void normalize() {
-        if (packed) {
-            double[][] nums = packedNum.segments();
-            double[][] dens = packedDen.segments();
-            for (int s = 0; s < nums.length; s++) {
-                double[] num = nums[s];
-                double[] den = dens[s];
-                for (int i = 0; i < num.length; i++) {
-                    num[i] = den[i] > 0.0 ? num[i] / den[i] : 0.0;
-                }
+        requireLive();
+        if (normalized) throw new IllegalStateException("similarity matrix already normalized");
+        double[][] nums = num.segments();
+        double[][] dens = den.segments();
+        for (int s = 0; s < nums.length; s++) {
+            double[] numSeg = nums[s];
+            double[] denSeg = dens[s];
+            for (int i = 0; i < numSeg.length; i++) {
+                numSeg[i] = denSeg[i] > 0.0 ? numSeg[i] / denSeg[i] : 0.0;
             }
-            for (int a = 0; a < n; a++) packedNum.set(index(a, a), 1.0);
-            // Make the (potentially multi-GiB) denominator immediately collectible.
-            packedDen = null;
-            return;
         }
-        for (int i = 0; i < sim.length; i++) {
-            sim [i] = (denSum[i] > 0.0) ? numSum[i] / denSum[i] : 0.0;
-            dist[i] = 1.0 - sim[i];
-        }
-        // Diagonal: self-similarity = 1, self-distance = 0
-        for (int a = 0; a < n; a++) {
-            sim [a * n + a] = 1.0;
-            dist[a * n + a] = 0.0;
-        }
+        for (int a = 0; a < n; a++) num.set(index(a, a), 1.0);
+        // Make the (potentially multi-GiB) denominator immediately collectible.
+        den = null;
+        normalized = true;
     }
 
     /** Returns M[a][b]. Call after normalize(). */
-    public double getSim(int a, int b)  {
-        return packed ? packedNum.get(index(a, b)) : sim[a * n + b];
+    public double getSim(int a, int b) {
+        return similarity().get(index(a, b));
     }
 
     /** Returns (1 − M[a][b]). Call after normalize(). */
     public double getDist(int a, int b) {
-        return packed ? 1.0 - packedNum.get(index(a, b)) : dist[a * n + b];
+        return 1.0 - getSim(a, b);
     }
 
-    public boolean isPacked() { return packed; }
+    public boolean isNormalized() { return normalized; }
+
+    /** True once the similarity triangle has been handed to an in-place consumer. */
+    public boolean isConsumed() { return num == null; }
 
     void markStreamedHostBatches() { streamedHostBatches = true; }
     public boolean usedStreamedHostBatches() { return streamedHostBatches; }
+
+    // ── Storage arithmetic ───────────────────────────────────────────────────
 
     static long triangleCellCount(int n) {
         return (long)n * (n + 1L) / 2L;
     }
 
-    static boolean requiresPacked(int n) {
-        return (long)n * n > MAX_JAVA_ARRAY_LENGTH;
+    /** Heap bytes held by both accumulators during a build of an n-taxon matrix. */
+    public static long accumulatorBytes(int n) {
+        return 2L * triangleCellCount(n) * Double.BYTES;
+    }
+
+    /** Heap bytes held by the normalized similarity triangle. */
+    public static long similarityBytes(int n) {
+        return triangleCellCount(n) * Double.BYTES;
     }
 
     static long packedIndex(int n, int a, int b) {
@@ -131,28 +116,60 @@ public class SimilarityMatrix {
         return packedIndex(n, a, b);
     }
 
-    void addPackedNumerator(int a, int b, double value) {
-        packedNum.add(index(a, b), value);
+    // ── Accumulation (builder-only) ──────────────────────────────────────────
+
+    void addNumerator(int a, int b, double value) {
+        num.add(index(a, b), value);
     }
 
-    void addPackedDenominator(int a, int b, double value) {
-        packedDen.add(index(a, b), value);
+    void addDenominator(int a, int b, double value) {
+        den.add(index(a, b), value);
     }
 
-    double[][] packedNumeratorSegments() { return packedNum.segments(); }
-    double[][] packedDenominatorSegments() { return packedDen.segments(); }
-    int packedSegmentShift() { return SegmentedDoubleArray.SEGMENT_SHIFT; }
+    double[][] numeratorSegments() { requireAccumulating(); return num.segments(); }
+    double[][] denominatorSegments() { requireAccumulating(); return den.segments(); }
+    int segmentShift() { return num.segmentShift(); }
 
-    SegmentedDoubleArray copyPackedSimilarity() {
-        if (!packed || packedDen != null) {
-            throw new IllegalStateException("packed similarity is not normalized");
-        }
-        SegmentedDoubleArray copy = new SegmentedDoubleArray(packedNum.length());
-        double[][] src = packedNum.segments();
-        double[][] dst = copy.segments();
-        for (int s = 0; s < src.length; s++) {
-            System.arraycopy(src[s], 0, dst[s], 0, src[s].length);
+    // ── Triangle hand-over ───────────────────────────────────────────────────
+
+    /** Normalized triangle for read-only use. */
+    private SegmentedDoubleArray similarity() {
+        requireLive();
+        if (!normalized) throw new IllegalStateException("similarity matrix is not normalized");
+        return num;
+    }
+
+    /** Fresh mutable copy of the normalized triangle; this matrix stays readable. */
+    SegmentedDoubleArray copySimilarity() {
+        SegmentedDoubleArray src = similarity();
+        SegmentedDoubleArray copy = new SegmentedDoubleArray(src.length(), src.segmentShift());
+        double[][] from = src.segments();
+        double[][] to = copy.segments();
+        for (int s = 0; s < from.length; s++) {
+            System.arraycopy(from[s], 0, to[s], 0, from[s].length);
         }
         return copy;
+    }
+
+    /**
+     * Hands the normalized triangle to a caller that will mutate it.  No copy is
+     * made; this matrix becomes unreadable so a stale reference cannot observe
+     * the mutation silently.
+     */
+    SegmentedDoubleArray consumeSimilarity() {
+        SegmentedDoubleArray triangle = similarity();
+        num = null;
+        return triangle;
+    }
+
+    private void requireLive() {
+        if (num == null) {
+            throw new IllegalStateException("similarity matrix was consumed by its last reader");
+        }
+    }
+
+    private void requireAccumulating() {
+        requireLive();
+        if (normalized) throw new IllegalStateException("similarity matrix already normalized");
     }
 }

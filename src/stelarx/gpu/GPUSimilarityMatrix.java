@@ -80,10 +80,13 @@ public class GPUSimilarityMatrix {
      * @param treeVramCapMiB    maximum tree-batch data allocation in MiB
      * @param progressInterval  seconds between progress updates
      * @param progressMaxSteps  max progress prints (0 = time-interval mode)
-     * @param numSumOut         [n × n] accumulator — native adds numerator sums
-     * @param denSumOut         [n × n] accumulator — native adds denominator sums
-     * @param packedNumOut      segmented packed upper triangle, or null for dense mode
-     * @param packedDenOut      segmented packed upper triangle, or null for dense mode
+     * @param packedNumOut      numerator accumulator: the symmetric upper triangle
+     *                          (a ≤ b, n(n+1)/2 cells) in 2^packedSegmentShift-double
+     *                          segments; native adds per-tile sums row slice by row
+     *                          slice through Get/SetDoubleArrayRegion (no whole-array
+     *                          pin or copy)
+     * @param packedDenOut      denominator accumulator, same layout
+     * @param packedSegmentShift log2 of the segment length in doubles
      */
     public static native void computeSimilarityGPU(
         short[]  eulerDepths,
@@ -106,8 +109,6 @@ public class GPUSimilarityMatrix {
         int      treeVramCapMiB,
         double   progressInterval,
         int      progressMaxSteps,
-        double[] numSumOut,
-        double[] denSumOut,
         double[][] packedNumOut,
         double[][] packedDenOut,
         int packedSegmentShift
@@ -143,8 +144,6 @@ public class GPUSimilarityMatrix {
         int      treeVramCapMiB,
         double   progressInterval,
         int      progressMaxSteps,
-        double[] numSumOut,
-        double[] denSumOut,
         double[][] packedNumOut,
         double[][] packedDenOut,
         int packedSegmentShift

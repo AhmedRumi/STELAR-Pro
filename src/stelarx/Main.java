@@ -5,6 +5,8 @@ import stelarx.completion.DistanceMatrix;
 import stelarx.completion.DistanceMatrixBuilder;
 import stelarx.completion.SimilarityMatrix;
 import stelarx.completion.SimilarityMatrixBuilder;
+import stelarx.completion.SortedRows;
+import stelarx.completion.SortedRowsBuilder;
 import stelarx.completion.TreeCompleter;
 import stelarx.completion.UPGMAClusterer;
 import stelarx.gpu.GPUDistanceMatrix;
@@ -217,7 +219,23 @@ public class Main {
             List<Tree> streamedDiscoTrees = List.of();
             List<Tree> consensusSourceTrees = List.of(); // completed DISCO trees for S3
             SimilarityMatrix similarityMatrix = null; // visible to Phase 3.5 (Step A)
+            // Nearest-neighbour order for completion anchors. It is derived from
+            // the similarity matrix before UPGMA may consume that matrix in
+            // place, and is the only matrix-derived input completion needs.
+            SortedRows completionRows = null;
+            // Whether similarity preprocessing used the overflow-streamed host
+            // batches; recorded at build time because UPGMA may consume (and
+            // the pipeline then drops) the matrix object itself.
+            boolean similarityUsedStreamedHostBatches = false;
             Tree upgmaGuideTree = null; // DISCO-path candidate and optional guide
+            // S3 consensus (and the consensus verifiers/experiments) read similarity
+            // values after the UPGMA guide exists; every other path can let UPGMA
+            // consume the similarity triangle instead of copying it.
+            boolean discoConsensus = cfg.getSearchSpace() == Config.SearchSpace.S3
+                || (cfg.getSearchSpace() == Config.SearchSpace.S4
+                    && cfg.isVerifyGreedyConsensus());
+            boolean matrixNeededAfterUpgma = discoConsensus
+                || cfg.isVerifyGreedyConsensus() || cfg.isConsensusExperimental();
             boolean discoSearch = cfg.getSearchSpace() == Config.SearchSpace.S2
                 || cfg.getSearchSpace() == Config.SearchSpace.S3
                 || cfg.getSearchSpace() == Config.SearchSpace.S4
@@ -315,24 +333,40 @@ public class Main {
                             : SimilarityMatrixBuilder.buildCPU(
                                 completedDiscoTrees, registry.size());
                     }
+                    similarityUsedStreamedHostBatches = similarityMatrix.usedStreamedHostBatches();
+                    // Completion only needs each taxon's nearest-neighbour order.
+                    // Build it now (read-only pass over the matrix) so UPGMA can
+                    // take the similarity triangle over without copying it.
+                    boolean needsCompletion = strictLineageDisco
+                        ? ScopedTreeCompleter.anyMissing(completedDiscoTrees)
+                        : TreeCompleter.anyIncomplete(completedDiscoTrees);
+                    if (needsCompletion) {
+                        completionRows = SortedRowsBuilder.build(similarityMatrix);
+                        Logging.info("%s completion anchors: nearest-neighbour rows for %d taxa (%.2f GiB)",
+                            cfg.getSearchSpace(), registry.size(),
+                            completionRows.bytes() / (double)(1L << 30));
+                    }
                     if (streamDiscoCandidates) {
                         // Mutable references let each raw DISCO component be
                         // released immediately after its completion batch.
                         streamedDiscoTrees = new ArrayList<>(completedDiscoTrees);
                     } else {
                         completedDiscoTrees = strictLineageDisco
-                            ? ScopedTreeCompleter.prepare(similarityMatrix,
+                            ? ScopedTreeCompleter.prepare(completionRows,
                                 completedDiscoTrees, registry.size())
                                 .completeBatch(completedDiscoTrees)
                             : TreeCompleter.completeAll(
-                                completedDiscoTrees, similarityMatrix, registry.size());
+                                completedDiscoTrees, completionRows, registry.size());
                         for (Tree candidateTree : completedDiscoTrees) {
                             markSyntheticCandidateNodes(candidateTree.root);
                         }
+                        completionRows = null; // materialized path completed everything above
                     }
 
                     upgmaGuideTree = UPGMAClusterer.build(
-                        similarityMatrix, trees.size() + completedDiscoTrees.size());
+                        similarityMatrix, trees.size() + completedDiscoTrees.size(),
+                        /*consume=*/ !matrixNeededAfterUpgma);
+                    if (!matrixNeededAfterUpgma) similarityMatrix = null; // consumed by UPGMA
                     markSyntheticCandidateNodes(upgmaGuideTree.root);
                     if (!streamDiscoCandidates && cfg.getDumpCompletedTreesFile() != null) {
                         dumpCompletedTrees(completedDiscoTrees, registry,
@@ -414,27 +448,23 @@ public class Main {
                     ? SimilarityMatrixBuilder.buildGPU(trees, registry.size())
                     : SimilarityMatrixBuilder.buildCPU(trees, registry.size());
                 similarityMatrix = smForUpgma; // retained for Phase 3.5 (greedy consensus Step A)
+                similarityUsedStreamedHostBatches = smForUpgma.usedStreamedHostBatches();
 
                 if (incompleteCount > 0) {
-                    // The four-point algorithm always needs the similarity matrix for the
-                    // scoring formula (sim[x][a] + sim[b][c] - ...).  smForUpgma.sim is
-                    // already available regardless of completionMethod.
-                    // dist is used only to build sortedRows (nearest-neighbour order);
-                    // for SIMILARITY mode we reuse smForUpgma.dist (= 1 - sim).
+                    // Completion only needs the nearest-neighbour order of each taxon:
+                    // from the similarity matrix (dist = 1 - sim) or, for
+                    // --completion-method distance, from the topological distance matrix.
+                    SortedRows rows;
                     if (useSim) {
-                        trees = TreeCompleter.completeAll(trees, smForUpgma, registry.size());
+                        rows = SortedRowsBuilder.build(smForUpgma);
                     } else {
-                        if (smForUpgma.isPacked()) {
-                            throw new IllegalArgumentException("Large-N distance-guided completion "
-                                + "requires a segmented distance matrix; use the exact default "
-                                + "--completion-method similarity for this dataset");
-                        }
                         DistanceMatrix dm = gpuDist
                             ? DistanceMatrixBuilder.buildGPU(trees, registry.size())
                             : DistanceMatrixBuilder.buildCPU(trees, registry.size());
-                        trees = TreeCompleter.completeAll(trees, smForUpgma.sim, dm.dist,
-                            registry.size());
+                        rows = SortedRowsBuilder.buildFromDense(dm.dist, registry.size());
                     }
+                    trees = TreeCompleter.completeAll(trees, rows, registry.size());
+                    rows = null; // nothing after this reads the anchor order
                     Logging.info("Phase 1b: using original incomplete trees for weight scoring, completed trees for X");
 
                     if (cfg.getDumpCompletedTreesFile() != null) {
@@ -449,7 +479,9 @@ public class Main {
                 // It is NOT added to originalTrees, so tripartition scoring (Phase 4/6)
                 // is unaffected.
                 int nTaxa = registry.size();
-                upgmaGuideTree = UPGMAClusterer.build(smForUpgma, trees.size());
+                upgmaGuideTree = UPGMAClusterer.build(smForUpgma, trees.size(),
+                    /*consume=*/ !matrixNeededAfterUpgma);
+                if (!matrixNeededAfterUpgma) similarityMatrix = null; // consumed by UPGMA
                 trees = new ArrayList<>(trees);
                 trees.add(upgmaGuideTree);
                 Logging.info("Phase 1b: UPGMA guide tree (%d taxa) added to cluster search space", nTaxa);
@@ -555,9 +587,6 @@ public class Main {
             // (Phase 5) keeps using `trees` directly,
             // so consensus trees are never mined for local transitions.
             List<Tree> weightClusterTrees = trees;
-            boolean discoConsensus = cfg.getSearchSpace() == Config.SearchSpace.S3
-                || (cfg.getSearchSpace() == Config.SearchSpace.S4
-                    && cfg.isVerifyGreedyConsensus());
             if (discoConsensus || cfg.isVerifyGreedyConsensus()
                     || cfg.isConsensusExperimental()) {
                 List<Tree> geneTreesForGreedy = discoConsensus
@@ -605,8 +634,8 @@ public class Main {
             // the 100k-class overflow path: established one-shot runs receive no
             // extra full-GC pause. The JVM may ignore the hint when explicit GC
             // is disabled, without affecting correctness.
-            boolean reclaimStreamedSimilarity = !streamDiscoCandidates && similarityMatrix != null
-                && similarityMatrix.usedStreamedHostBatches();
+            boolean reclaimStreamedSimilarity = !streamDiscoCandidates
+                && similarityUsedStreamedHostBatches;
             // S2/S4/S7 bounded completion still needs this matrix in Phase 5;
             // all other paths can end its lifetime after consensus.
             if (!streamDiscoCandidates) similarityMatrix = null;
@@ -647,7 +676,7 @@ public class Main {
                 // bounded batch directly into X/DP before releasing node graphs.
                 int batchSize = Math.min(256, Math.max(64, cfg.getThreadCount()));
                 S2CandidateStreamer.Result streamed = S2CandidateStreamer.add(
-                    streamedDiscoTrees, similarityMatrix, upgmaGuideTree,
+                    streamedDiscoTrees, completionRows, upgmaGuideTree,
                     candidateSourceTrees,
                     clusterTable, dpTable, hasher, registry, batchSize,
                     cfg.getDumpCompletedTreesFile(), cfg.getSearchSpace().toString(),
@@ -655,6 +684,7 @@ public class Main {
                 trees = streamed.exemplarTrees();
                 weightClusterTrees = trees;
                 streamedDiscoTrees = List.of();
+                completionRows = null;
                 similarityMatrix = null;
                 if (cfg.getDumpClustersFile() != null) {
                     dumpClusters(clusterTable, trees, registry, cfg.getDumpClustersFile());

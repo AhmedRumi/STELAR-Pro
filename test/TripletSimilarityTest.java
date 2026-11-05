@@ -33,18 +33,15 @@ public final class TripletSimilarityTest {
                 System.clearProperty("stelarpro.similarity.tripletHostBatchTrees");
             }
 
-            System.setProperty("stelarpro.similarity.forcePacked", "true");
-            SimilarityMatrix packed;
+            // Two-double segments: every pair of a 4-taxon triangle crosses a boundary.
+            System.setProperty("stelarpro.similarity.segmentShift", "1");
+            SimilarityMatrix segmented;
             try {
-                packed = SimilarityMatrixBuilder.buildTripletCPU(trees, 4);
+                segmented = SimilarityMatrixBuilder.buildTripletCPU(trees, 4);
             } finally {
-                System.clearProperty("stelarpro.similarity.forcePacked");
+                System.clearProperty("stelarpro.similarity.segmentShift");
             }
-            for (int a = 0; a < 4; a++) {
-                for (int b = 0; b < 4; b++) {
-                    check(packed, a, b, dense.getSim(a, b));
-                }
-            }
+            compare(dense, segmented);
             if (args.length > 0 && args[0].equals("--gpu")) {
                 if (!GPUSimilarityMatrix.tryLoad()) {
                     throw new AssertionError("CUDA similarity backend did not load");
@@ -58,12 +55,12 @@ public final class TripletSimilarityTest {
                     System.clearProperty("stelarpro.similarity.tripletHostBatchTrees");
                 }
                 System.setProperty("stelarpro.similarity.forceWide", "true");
-                System.setProperty("stelarpro.similarity.forcePacked", "true");
+                System.setProperty("stelarpro.similarity.segmentShift", "1");
                 try {
                     compare(dense, SimilarityMatrixBuilder.buildTripletGPU(trees, 4));
                 } finally {
                     System.clearProperty("stelarpro.similarity.forceWide");
-                    System.clearProperty("stelarpro.similarity.forcePacked");
+                    System.clearProperty("stelarpro.similarity.segmentShift");
                 }
             }
         } finally {

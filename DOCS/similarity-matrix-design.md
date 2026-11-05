@@ -83,8 +83,8 @@ Same architecture as the distance matrix kernel:
   If the option was not set explicitly, the large-N packed path may raise this
   ceiling to 8 GiB (still clamped to free VRAM) to avoid repeating every taxon
   pair across many small tree batches; the established dense path is unchanged.
-- **Upper-triangle tiling**: only tiles with a0 ≤ b0 are processed; dense results
-  are mirrored, while large-N results are written once to packed symmetric storage.
+- **Upper-triangle tiling**: only tiles with a0 ≤ b0 are processed; each pair
+  is written once into the packed symmetric upper triangle.
 - **Bounded host flattening**: when the established wide blocked layout itself
   would exceed Java's single-array element limit, its trees are flattened and
   submitted in original-order host batches of at most 1 GiB. Each batch adds to
@@ -98,7 +98,8 @@ Same architecture as the distance matrix kernel:
 For each tile:
 1. Zero `numTile[B×B]` and `denTile[B×B]` on GPU
 2. For each tree batch of Δ trees: upload → launch kernel → (accumulate across Δ trees)
-3. Download tile → CPU merges into full n×n arrays
+3. Download tile → CPU folds each tile row slice into the packed triangle
+   (`Get/SetDoubleArrayRegion`; no whole-accumulator pin or copy)
 
 ---
 
@@ -246,49 +247,86 @@ Total GPU VRAM = **O(n·k + Δ·n·log n)** — no O(n²) term.
 
 ### CPU RAM
 
-The established path retains flat n×n arrays while one Java array can address
-all cells (through 46,340 taxa). Above that boundary, the exact large-N path
-stores only the symmetric upper triangle in 512-MiB Java segments and uses
-64-bit logical indices. For 50,000 taxa this is 1,250,025,000 doubles, or
-9.31 GiB per accumulator, rather than 2,500,000,000 cells per dense array.
-Precision remains `double`; no pair is sampled or omitted.
+The matrix is symmetric, so every pair is stored exactly once: the upper
+triangle (a ≤ b, n(n+1)/2 cells) in 512-MiB `double[]` segments addressed by
+64-bit logical indices (`SegmentedDoubleArray`), for every n. Precision remains
+`double`; no pair is sampled or omitted. For 50,000 taxa the triangle is
+1,250,025,000 doubles, or 9.31 GiB.
 
-Both representations remain O(n²) — unavoidable for this output. Preprocessing
-is O(k·n·log n) in total work. Its peak host storage is also O(k·n·log n) while
-the selected flattened arrays fit; beyond Java's single-array limit, bounded
-original-order wide streaming reduces the preprocessing peak to
+Host footprint over the matrix lifetime (bytes, n taxa):
+
+| Phase | Resident | Size |
+|---|---|---|
+| accumulation (CPU scatter or CUDA tile merge) | numerator + denominator triangles | 8·n(n+1)/2 ≈ 8 n² |
+| after `normalize()` | similarity triangle (denominator released) | ≈ 4 n² |
+| completion-anchor rows (`SortedRows`, only when some tree is incomplete) | one nearest-neighbour row per taxon | 2 n² (n ≤ 65,536) or 4 n² |
+| UPGMA | the similarity triangle itself, consumed in place | +0 |
+
+The nearest-neighbour rows are built before UPGMA runs, because they are the
+only matrix-derived input tree completion reads (similarity values are never
+read during insertion). When nothing reads the matrix after the guide tree is
+built — every path except S3 consensus and the consensus verifiers — UPGMA
+mutates the triangle in place instead of copying it, and the
+`SimilarityMatrix` object becomes unreadable (any later `getSim` throws).
+Otherwise UPGMA clusters a private copy (+4 n²).
+
+The CUDA host merge never pins or copies a whole accumulator: for each tile it
+reads and writes only the row slices the tile touches through
+`Get/SetDoubleArrayRegion` (O(B) scratch per call). HotSpot's
+`Get<Prim>ArrayElements` always copies the entire array into native memory, so
+the former whole-matrix acquisition cost a further 16 n² bytes per host batch.
+
+The matrix is O(n²) — unavoidable while UPGMA needs every pairwise value.
+Preprocessing is O(k·n·log n) in total work. Its peak host storage is also
+O(k·n·log n) while the selected flattened arrays fit; beyond Java's single-array
+limit, bounded original-order wide streaming reduces the preprocessing peak to
 O(Δ_host·n·log n) without changing the accumulated values.
+
+Previously (through 46,340 taxa) the matrix was held as four dense n×n
+`double[]` (numerator, denominator, similarity, distance; 32 n² bytes, never
+released before Phase 5), JNI copied numerator and denominator per host batch
+(+16 n²), UPGMA copied the triangle (+4 n²), and sorted rows were `int` (+4 n²):
+roughly 48 n² at the GPU peak and 36 n² in Phase 5, against ≈ 8 n² and
+≈ 2–4 n² now.
 
 ---
 
 ## 9. Normalization and Output
 
-After all tiles are processed:
+After all tiles are processed, normalization runs in place on the packed
+numerator triangle and releases the packed denominator:
 
 ```java
-sim[a*n+b] = (denSum[a*n+b] > 0) ? numSum[a*n+b] / denSum[a*n+b] : 0.0;
-sim[a*n+a] = 1.0;  // diagonal
-sim[b*n+a] = sim[a*n+b];  // symmetry
-dist[a*n+b] = 1.0 - sim[a*n+b];  // for TreeCompleter
+num[i] = (den[i] > 0) ? num[i] / den[i] : 0.0;   // every triangle cell
+num[index(a,a)] = 1.0;                           // diagonal
+dist(a,b) = 1.0 - sim(a,b)                       // evaluated on demand
 ```
 
-The large-N path performs the same normalization in place on its packed
-numerator, releases the packed denominator, and evaluates distance on demand as
-the identical expression `1.0 - sim(a,b)`. CUDA already computes only the upper
-triangle, so large-N host output writes each symmetric pair once. The dense path
-and its write order are unchanged.
+Symmetry is structural (one cell per unordered pair), and CUDA computes only
+the upper triangle, so each pair is written once. Per-tree contributions are
+integer-valued doubles, so the accumulated sums are exact whatever the tile,
+batch or thread order; the normalized values are bit-identical to the former
+dense n×n arrays (`PackedSimilarityParityTest` checks this against an in-test
+dense reference).
 
 ---
 
 ## 10. Integration with Tree Completion
 
-`TreeCompleter` dispatches to the original flat-array implementation or an exact
-segmented-row implementation. The latter preserves the same distance comparator,
-descending-taxon-ID tie break, insertion order, and four-point arithmetic.
+`TreeCompleter` (and the lineage-scoped `ScopedTreeCompleter`) read only
+`SortedRows`: for each taxon, every other taxon ordered by ascending distance
+with ASTRAL-MP's descending-taxon-ID tie break. The anchor of a missing taxon is
+the first present taxon in its row. `SortedRowsBuilder` produces the identical
+order with a primitive merge sort (the key (distance, −ID) is unique, so the
+order does not depend on the sorting algorithm) and stores rows as unsigned
+16-bit IDs whenever n ≤ 65,536.
 
-In `Main.java`, when `--autocomplete-incomplete-gene-trees` is active:
-1. Build `SimilarityMatrix` from the **original** (pre-completion) gene trees.
-2. Call `TreeCompleter.completeAll(trees, sm, n)`.
-3. Continue with completed trees for cluster extraction.
+In `Main.java` (S2/S4/S7 DISCO enrichment):
+1. Build `SimilarityMatrix` from the retained single-copy DISCO components.
+2. If any component needs completion, build `SortedRows` from the matrix.
+3. Build the UPGMA guide, consuming the matrix in place unless S3 consensus or
+   a consensus verifier still needs similarity values.
+4. Complete components (immediately, or batch-wise in Phase 5 for the streamed
+   S2/S4/S7 path) using the rows; release the rows afterwards.
 
 This matches ASTRAL-MP's default behavior (similarity-guided completion).

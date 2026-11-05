@@ -1,7 +1,6 @@
 package stelarx.pro;
 
-import stelarx.completion.SimilarityMatrix;
-import stelarx.completion.SortedRowsBuilder;
+import stelarx.completion.SortedRows;
 import stelarx.tree.Tree;
 import stelarx.tree.TreeNode;
 import stelarx.util.Threading;
@@ -12,31 +11,37 @@ import java.util.List;
 /** Completes DISCO components only within each original pre-cut lineage. */
 public final class ScopedTreeCompleter {
     private final int n;
-    private final int[] rows;
-    private final int[][] packedRows;
+    private final SortedRows rows;
 
-    private ScopedTreeCompleter(SimilarityMatrix similarity, int n,
-                                boolean anyMissing) {
+    private ScopedTreeCompleter(SortedRows rows, int n) {
         this.n = n;
-        this.rows = anyMissing && !similarity.isPacked()
-            ? SortedRowsBuilder.buildCPU(similarity.dist, n) : null;
-        this.packedRows = anyMissing && similarity.isPacked()
-            ? SortedRowsBuilder.buildPackedCPU(similarity) : null;
+        this.rows = rows;
     }
 
-    public static ScopedTreeCompleter prepare(SimilarityMatrix similarity,
-                                              List<Tree> trees, int n) {
-        boolean anyMissing = false;
+    /** True when some component lost at least one within-lineage taxon to a cut. */
+    public static boolean anyMissing(List<Tree> trees) {
         for (Tree tree : trees) {
             if (!(tree instanceof DiscoDecomposer.ScopedTree scoped)) {
                 throw new IllegalArgumentException("Expected scoped DISCO component");
             }
-            if (scoped.missingCount() > 0) {
-                anyMissing = true;
-                break;
-            }
+            if (scoped.missingCount() > 0) return true;
         }
-        return new ScopedTreeCompleter(similarity, n, anyMissing);
+        return false;
+    }
+
+    /**
+     * @param rows nearest-neighbour order per taxon; may be null only when no
+     *             component in {@code trees} needs completion
+     */
+    public static ScopedTreeCompleter prepare(SortedRows rows, List<Tree> trees, int n) {
+        if (anyMissing(trees) && rows == null) {
+            throw new IllegalArgumentException("completion rows are required for scoped completion");
+        }
+        if (rows != null && rows.n != n) {
+            throw new IllegalArgumentException("completion rows cover " + rows.n
+                + " taxa, expected " + n);
+        }
+        return new ScopedTreeCompleter(rows, n);
     }
 
     /** Complete independent components in parallel within the live batch. */
@@ -51,6 +56,9 @@ public final class ScopedTreeCompleter {
     }
 
     private Tree complete(DiscoDecomposer.ScopedTree source) {
+        if (rows == null) {
+            throw new IllegalStateException("scoped completion requested without completion rows");
+        }
         TreeNode root = source.root;
         TreeNode[] taxonNode = new TreeNode[n];
         indexLeaves(root, taxonNode);
@@ -104,16 +112,9 @@ public final class ScopedTreeCompleter {
     }
 
     private int findAnchor(int taxon, TreeNode[] present) {
-        if (packedRows != null) {
-            for (int candidate : packedRows[taxon]) {
-                if (present[candidate] != null) return candidate;
-            }
-        } else {
-            int offset = taxon * n;
-            for (int rank = 0; rank < n; rank++) {
-                int candidate = rows[offset + rank];
-                if (present[candidate] != null) return candidate;
-            }
+        for (int rank = 0; rank < n; rank++) {
+            int candidate = rows.get(taxon, rank);
+            if (present[candidate] != null) return candidate;
         }
         throw new IllegalStateException("No anchor in DISCO component");
     }

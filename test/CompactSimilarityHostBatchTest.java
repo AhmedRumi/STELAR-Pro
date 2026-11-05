@@ -41,14 +41,16 @@ public final class CompactSimilarityHostBatchTest {
             compare(oneBatch, batched);
             compare(SimilarityMatrixBuilder.buildCPU(repeated, registry.size()), batched);
 
-            System.setProperty("stelarpro.similarity.forcePacked", "true");
+            // Tiny matrix segments: the native per-tile merge must split row
+            // slices across segment boundaries exactly.
+            System.setProperty("stelarpro.similarity.segmentShift", "3");
             System.setProperty("stelarpro.similarity.compactHostBatchMiB", "1");
-            SimilarityMatrix packed = SimilarityMatrixBuilder.buildGPU(repeated, registry.size());
-            compare(oneBatch, packed);
-            System.out.println("Compact GPU similarity host batching: PASS (dense and packed)");
+            SimilarityMatrix segmented = SimilarityMatrixBuilder.buildGPU(repeated, registry.size());
+            compare(oneBatch, segmented);
+            System.out.println("Compact GPU similarity host batching: PASS (default and 8-double segments)");
         } finally {
             System.clearProperty("stelarpro.similarity.compactHostBatchMiB");
-            System.clearProperty("stelarpro.similarity.forcePacked");
+            System.clearProperty("stelarpro.similarity.segmentShift");
             Threading.shutdown();
         }
     }

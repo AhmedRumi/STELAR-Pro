@@ -67,7 +67,7 @@ public class SimilarityMatrixBuilder {
     // ── Public entry points ───────────────────────────────────────────────────
 
     public static SimilarityMatrix buildCPU(List<Tree> trees, int n) {
-        preflightPackedHeap(n);
+        preflightHeap(n);
         SimilarityMatrix sm = new SimilarityMatrix(n);
 
         ProgressBar bar = new ProgressBar("Building similarity matrix (CPU)", trees.size());
@@ -91,7 +91,7 @@ public class SimilarityMatrixBuilder {
      * write disjoint matrix cells and need no locks or thread-local matrices.
      */
     public static SimilarityMatrix buildTripletCPU(List<Tree> trees, int n) {
-        preflightPackedHeap(n);
+        preflightHeap(n);
         SimilarityMatrix sm = new SimilarityMatrix(n);
         int eMax = maximumTourLength(trees);
         boolean wide = eMax > COMPACT_MAX_TOUR;
@@ -143,7 +143,7 @@ public class SimilarityMatrixBuilder {
 
     /** GPU equivalent of {@link #buildTripletCPU}; uses the existing tiling and batching policy. */
     public static SimilarityMatrix buildTripletGPU(List<Tree> trees, int n) {
-        preflightPackedHeap(n);
+        preflightHeap(n);
         int eMax = maximumTourLength(trees);
         boolean compactOverflow = eMax > COMPACT_MAX_TOUR;
         boolean forceWide = Boolean.getBoolean("stelarpro.similarity.forceWide");
@@ -204,17 +204,8 @@ public class SimilarityMatrixBuilder {
     private static void storePair(SimilarityMatrix sm, int a, int b,
                                   double numerator, double denominator) {
         if (denominator == 0.0) return;
-        if (sm.isPacked()) {
-            sm.addPackedNumerator(a, b, numerator);
-            sm.addPackedDenominator(a, b, denominator);
-        } else {
-            int ab = a * sm.n + b;
-            int ba = b * sm.n + a;
-            sm.numSum[ab] += numerator;
-            sm.numSum[ba] += numerator;
-            sm.denSum[ab] += denominator;
-            sm.denSum[ba] += denominator;
-        }
+        sm.addNumerator(a, b, numerator);
+        sm.addDenominator(a, b, denominator);
     }
 
     private static SimilarityMatrix buildTripletGPUCompact(List<Tree> trees, int n) {
@@ -299,12 +290,11 @@ public class SimilarityMatrixBuilder {
             null, null, null, null, null,
             argmin, firstOcc, eulerLen, leafCount,
             k, n, eMax, logMax,
-            cfg.getGpuDistTileSizeB(), effectiveTreeCapMiB(sm, cfg),
+            cfg.getGpuDistTileSizeB(), effectiveTreeCapMiB(n, cfg),
             cfg.getGpuDpProgressInterval(), cfg.getGpuDpProgressMaxSteps(),
-            sm.numSum, sm.denSum,
-            sm.isPacked() ? sm.packedNumeratorSegments() : null,
-            sm.isPacked() ? sm.packedDenominatorSegments() : null,
-            sm.packedSegmentShift());
+            sm.numeratorSegments(),
+            sm.denominatorSegments(),
+            sm.segmentShift());
     }
 
     private static int tripletHostBatchSize(List<Tree> trees, int n, boolean flatten) {
@@ -417,25 +407,17 @@ public class SimilarityMatrixBuilder {
             null, null, null, null, null,
             micro, macro, firstOcc, eulerLen, leafCount,
             k, n, eMax, microLog, blockSize, blockMax, macroLog,
-            cfg.getGpuDistTileSizeB(), effectiveTreeCapMiB(sm, cfg),
+            cfg.getGpuDistTileSizeB(), effectiveTreeCapMiB(n, cfg),
             cfg.getGpuDpProgressInterval(), cfg.getGpuDpProgressMaxSteps(),
-            sm.numSum, sm.denSum,
-            sm.isPacked() ? sm.packedNumeratorSegments() : null,
-            sm.isPacked() ? sm.packedDenominatorSegments() : null,
-            sm.packedSegmentShift());
+            sm.numeratorSegments(),
+            sm.denominatorSegments(),
+            sm.segmentShift());
         return sm;
     }
 
     public static SimilarityMatrix buildGPU(List<Tree> trees, int n) {
         int k = trees.size();
-        preflightPackedHeap(n);
-        if (SimilarityMatrix.requiresPacked(n)
-                || Boolean.getBoolean("stelarpro.similarity.forcePacked")) {
-            long triangle = SimilarityMatrix.triangleCellCount(n);
-            Logging.info("Similarity output: exact segmented upper triangle "
-                + "(%d cells, %.2f GiB per accumulator; dense n×n arrays are disabled)",
-                triangle, triangle * Double.BYTES / (double)(1L << 30));
-        }
+        preflightHeap(n);
         int eMaxRaw = 0;
         int logMax = 1;
         for (int i = 0; i < k; i++) {
@@ -627,7 +609,7 @@ public class SimilarityMatrixBuilder {
         double progressInterval = cfg.getGpuDpProgressInterval();
         int    progressMaxSteps = cfg.getGpuDpProgressMaxSteps();
 
-        int treeCapMiB = effectiveTreeCapMiB(sm, cfg);
+        int treeCapMiB = effectiveTreeCapMiB(n, cfg);
         GPUSimilarityMatrix.computeSimilarityGPU(
             eulerDepths,
             null, false,
@@ -639,10 +621,9 @@ public class SimilarityMatrixBuilder {
             k, n, E_max, LOG_max,
             tileSizeB, treeCapMiB,
             progressInterval, progressMaxSteps,
-            sm.numSum, sm.denSum,
-            sm.isPacked() ? sm.packedNumeratorSegments() : null,
-            sm.isPacked() ? sm.packedDenominatorSegments() : null,
-            sm.packedSegmentShift()
+            sm.numeratorSegments(),
+            sm.denominatorSegments(),
+            sm.segmentShift()
         );
 
     }
@@ -756,7 +737,7 @@ public class SimilarityMatrixBuilder {
 
         Config cfg = Config.getInstance();
         if (sm == null) sm = new SimilarityMatrix(n);
-        int treeCapMiB = effectiveTreeCapMiB(sm, cfg);
+        int treeCapMiB = effectiveTreeCapMiB(n, cfg);
         GPUSimilarityMatrix.computeSimilarityGPUWide(
             eulerDepths, null, false, eulerF,
             eulerLeftChildS, eulerLeftChildF,
@@ -766,16 +747,23 @@ public class SimilarityMatrixBuilder {
             k, n, E_max, microLog, blockSize, blockMax, macroLog,
             cfg.getGpuDistTileSizeB(), treeCapMiB,
             cfg.getGpuDpProgressInterval(), cfg.getGpuDpProgressMaxSteps(),
-            sm.numSum, sm.denSum,
-            sm.isPacked() ? sm.packedNumeratorSegments() : null,
-            sm.isPacked() ? sm.packedDenominatorSegments() : null,
-            sm.packedSegmentShift());
+            sm.numeratorSegments(),
+            sm.denominatorSegments(),
+            sm.segmentShift());
         return sm;
     }
 
-    static int effectiveTreeCapMiB(SimilarityMatrix sm, Config cfg) {
+    /**
+     * Taxon counts above this used to require the segmented representation and
+     * received a larger default GPU tree-data batching ceiling.  The storage is
+     * now segmented for every n; the batching policy keeps its original
+     * boundary so GPU batch counts for established inputs are unchanged.
+     */
+    static final int LARGE_N_TAXA = 46_340;
+
+    static int effectiveTreeCapMiB(int n, Config cfg) {
         int configured = cfg.getGpuSimilarityVramCapMiB();
-        if (!sm.isPacked() || cfg.isGpuSimilarityVramCapExplicit()
+        if (n <= LARGE_N_TAXA || cfg.isGpuSimilarityVramCapExplicit()
                 || configured >= LARGE_PACKED_GPU_TREE_CAP_MIB) return configured;
         Logging.info("Large-N similarity path: raising the tree-data batching ceiling "
             + "from %d MiB to %d MiB (still clamped to currently free VRAM)",
@@ -783,14 +771,13 @@ public class SimilarityMatrixBuilder {
         return LARGE_PACKED_GPU_TREE_CAP_MIB;
     }
 
-    private static void preflightPackedHeap(int n) {
-        if (!SimilarityMatrix.requiresPacked(n)
-                && !Boolean.getBoolean("stelarpro.similarity.forcePacked")) return;
+    /** Fail before allocating when the two upper-triangle accumulators cannot fit. */
+    private static void preflightHeap(int n) {
         long triangle = SimilarityMatrix.triangleCellCount(n);
         if (triangle > Long.MAX_VALUE / (2L * Double.BYTES)) {
             throw new IllegalArgumentException("Similarity matrix size overflows byte accounting");
         }
-        long accumulatorBytes = triangle * 2L * Double.BYTES;
+        long accumulatorBytes = SimilarityMatrix.accumulatorBytes(n);
         Runtime rt = Runtime.getRuntime();
         long used = rt.totalMemory() - rt.freeMemory();
         long available = Math.max(0L, rt.maxMemory() - used);
@@ -803,6 +790,10 @@ public class SimilarityMatrixBuilder {
                 + String.format(java.util.Locale.ROOT, "%.2f", available / (double)(1L << 30))
                 + " GiB. Increase --xmx or reduce the dataset size.");
         }
+        Logging.debug("Similarity matrix storage: %d taxa, %d upper-triangle cells, "
+                + "%.2f GiB for both accumulators during the build, %.2f GiB after normalization",
+            n, triangle, accumulatorBytes / (double)(1L << 30),
+            SimilarityMatrix.similarityBytes(n) / (double)(1L << 30));
     }
 
     private static IllegalStateException treeBuildFailure(int index, Tree tree,
@@ -918,33 +909,19 @@ public class SimilarityMatrixBuilder {
         }
 
         long denPerPair = EulerTourBuilder.c2(kt - 2);
-        int n = sm.n;
         int[] postArr = tree.postorderArray;
 
         // ── Numerator: scatter across all internal nodes ─────────────────────
-        if (sm.isPacked()) scatterAtNodePacked(tree.root, tree, kt, sm);
-        else               scatterAtNodeDense(tree.root, tree, kt, sm);
+        scatterAtNode(tree.root, tree, kt, sm);
 
         // ── Denominator: every pair (a, b) co-occurring in T gets += C2(kt-2) ─
         // ASTRAL-MP accumulates 2·C2(kt-2) in dn[l][r] (doubled by the
         // mirror-write pattern), then normalizes by dn/2. Equivalent to a
         // single sum here; the constant factor 2 cancels.
-        if (sm.isPacked()) {
-            for (int i = 0; i < kt; i++) {
-                int a = postArr[i];
-                for (int j = i + 1; j < kt; j++) {
-                    sm.addPackedDenominator(a, postArr[j], denPerPair);
-                }
-            }
-        } else {
-            for (int i = 0; i < kt; i++) {
-                int a = postArr[i];
-                long rowOff = (long) a * n;
-                for (int j = 0; j < kt; j++) {
-                    if (i == j) continue;
-                    int b = postArr[j];
-                    sm.denSum[(int)(rowOff + b)] += denPerPair;
-                }
+        for (int i = 0; i < kt; i++) {
+            int a = postArr[i];
+            for (int j = i + 1; j < kt; j++) {
+                sm.addDenominator(a, postArr[j], denPerPair);
             }
         }
     }
@@ -960,58 +937,13 @@ public class SimilarityMatrixBuilder {
      *
      * For each ordered component-pair, scatter
      *   sim = totalPairs − C2(|X|) − C2(|Y|)
-     * to every (l ∈ X, r ∈ Y) leaf pair, symmetrically.
+     * to every (l ∈ X, r ∈ Y) leaf pair (stored once per unordered pair).
      */
-    private static void scatterAtNodeDense(TreeNode node, Tree tree, int kt,
-                                           SimilarityMatrix sm) {
+    private static void scatterAtNode(TreeNode node, Tree tree, int kt,
+                                      SimilarityMatrix sm) {
         if (node.isLeaf()) return;
-        scatterAtNodeDense(node.left,  tree, kt, sm);
-        scatterAtNodeDense(node.right, tree, kt, sm);
-
-        int subL = node.left.rangeEnd  - node.left.rangeStart;
-        int subR = node.right.rangeEnd - node.right.rangeStart;
-        int subU = node.rangeEnd       - node.rangeStart;
-        int subO = kt - subU;                                 // "others" size
-
-        long cL = EulerTourBuilder.c2(subL);
-        long cR = EulerTourBuilder.c2(subR);
-        long cO = EulerTourBuilder.c2(subO);
-        long totalPairs = cL + cR + cO;                       // only positive comps survive
-
-        int n = sm.n;
-        int[] postArr = tree.postorderArray;
-
-        // ── (left × right): always present ───────────────────────────────────
-        long simLR = totalPairs - cL - cR;
-        if (simLR != 0) {
-            scatterRangeRange(postArr,
-                node.left.rangeStart, node.left.rangeEnd,
-                node.right.rangeStart, node.right.rangeEnd,
-                simLR, sm.numSum, n);
-        }
-
-        // ── (left × others) and (right × others): only when u is non-root ────
-        if (subO > 0) {
-            long simLO = totalPairs - cL - cO;
-            if (simLO != 0) {
-                scatterRangeOthers(postArr, kt,
-                    node.left.rangeStart, node.left.rangeEnd,
-                    node.rangeStart, node.rangeEnd, simLO, sm.numSum, n);
-            }
-            long simRO = totalPairs - cR - cO;
-            if (simRO != 0) {
-                scatterRangeOthers(postArr, kt,
-                    node.right.rangeStart, node.right.rangeEnd,
-                    node.rangeStart, node.rangeEnd, simRO, sm.numSum, n);
-            }
-        }
-    }
-
-    private static void scatterAtNodePacked(TreeNode node, Tree tree, int kt,
-                                            SimilarityMatrix sm) {
-        if (node.isLeaf()) return;
-        scatterAtNodePacked(node.left, tree, kt, sm);
-        scatterAtNodePacked(node.right, tree, kt, sm);
+        scatterAtNode(node.left, tree, kt, sm);
+        scatterAtNode(node.right, tree, kt, sm);
 
         int subL = node.left.rangeEnd - node.left.rangeStart;
         int subR = node.right.rangeEnd - node.right.rangeStart;
@@ -1025,52 +957,36 @@ public class SimilarityMatrixBuilder {
 
         long simLR = totalPairs - cL - cR;
         if (simLR != 0) {
-            scatterRangeRangePacked(postArr,
+            scatterRangeRange(postArr,
                 node.left.rangeStart, node.left.rangeEnd,
                 node.right.rangeStart, node.right.rangeEnd, simLR, sm);
         }
         if (subO > 0) {
             long simLO = totalPairs - cL - cO;
             if (simLO != 0) {
-                scatterRangeOthersPacked(postArr, kt,
+                scatterRangeOthers(postArr, kt,
                     node.left.rangeStart, node.left.rangeEnd,
                     node.rangeStart, node.rangeEnd, simLO, sm);
             }
             long simRO = totalPairs - cR - cO;
             if (simRO != 0) {
-                scatterRangeOthersPacked(postArr, kt,
+                scatterRangeOthers(postArr, kt,
                     node.right.rangeStart, node.right.rangeEnd,
                     node.rangeStart, node.rangeEnd, simRO, sm);
             }
         }
     }
 
-    /** Scatter `sim` to every (a ∈ [aLo,aHi)) × (b ∈ [bLo,bHi)) leaf-pair, both directions. */
+    /** Scatter `sim` to every (a ∈ [aLo,aHi)) × (b ∈ [bLo,bHi)) leaf-pair. */
     private static void scatterRangeRange(int[] postArr,
                                            int aLo, int aHi,
                                            int bLo, int bHi,
-                                           long sim, double[] numSum, int n) {
-        double sd = (double) sim;
-        for (int pi = aLo; pi < aHi; pi++) {
-            int a = postArr[pi];
-            long rowA = (long) a * n;
-            for (int pj = bLo; pj < bHi; pj++) {
-                int b = postArr[pj];
-                numSum[(int)(rowA + b)] += sd;
-                numSum[b * n + a]       += sd;
-            }
-        }
-    }
-
-    private static void scatterRangeRangePacked(int[] postArr,
-                                                 int aLo, int aHi,
-                                                 int bLo, int bHi,
-                                                 long sim, SimilarityMatrix sm) {
+                                           long sim, SimilarityMatrix sm) {
         double sd = (double)sim;
         for (int pi = aLo; pi < aHi; pi++) {
             int a = postArr[pi];
             for (int pj = bLo; pj < bHi; pj++) {
-                sm.addPackedNumerator(a, postArr[pj], sd);
+                sm.addNumerator(a, postArr[pj], sd);
             }
         }
     }
@@ -1082,36 +998,15 @@ public class SimilarityMatrixBuilder {
     private static void scatterRangeOthers(int[] postArr, int kt,
                                             int aLo, int aHi,
                                             int subLo, int subHi,
-                                            long sim, double[] numSum, int n) {
-        double sd = (double) sim;
-        for (int pi = aLo; pi < aHi; pi++) {
-            int a = postArr[pi];
-            long rowA = (long) a * n;
-            for (int pj = 0; pj < subLo; pj++) {
-                int b = postArr[pj];
-                numSum[(int)(rowA + b)] += sd;
-                numSum[b * n + a]       += sd;
-            }
-            for (int pj = subHi; pj < kt; pj++) {
-                int b = postArr[pj];
-                numSum[(int)(rowA + b)] += sd;
-                numSum[b * n + a]       += sd;
-            }
-        }
-    }
-
-    private static void scatterRangeOthersPacked(int[] postArr, int kt,
-                                                  int aLo, int aHi,
-                                                  int subLo, int subHi,
-                                                  long sim, SimilarityMatrix sm) {
+                                            long sim, SimilarityMatrix sm) {
         double sd = (double)sim;
         for (int pi = aLo; pi < aHi; pi++) {
             int a = postArr[pi];
             for (int pj = 0; pj < subLo; pj++) {
-                sm.addPackedNumerator(a, postArr[pj], sd);
+                sm.addNumerator(a, postArr[pj], sd);
             }
             for (int pj = subHi; pj < kt; pj++) {
-                sm.addPackedNumerator(a, postArr[pj], sd);
+                sm.addNumerator(a, postArr[pj], sd);
             }
         }
     }
