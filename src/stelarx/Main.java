@@ -98,11 +98,11 @@ public class Main {
             runTaxaExtraction(cfg);
             return;
         }
-        if (cfg.isFullDiscoCandidates()
+        if (cfg.isExhaustiveDiscoCandidates()
                 && cfg.getSearchSpace() != Config.SearchSpace.S2
                 && cfg.getSearchSpace() != Config.SearchSpace.S4) {
             throw new IllegalArgumentException(
-                "--full-disco-candidates applies only to S2 and S4");
+                "--exhaustive applies only to S2 and S4");
         }
         resolveComputeMode(cfg);
         Banner.print(cfg);
@@ -191,7 +191,7 @@ public class Main {
             // S5 adds A-Pro quartet-greedy trees; S7 adds these plus S2's
             // completed DISCO and UPGMA proposals. S6 uses triplet-greedy trees.
             // S2/S4 now use only lineage-scoped DISCO and UPGMA proposals by
-            // default. --full-disco-candidates restores their older S1 plus
+            // default. --exhaustive restores their older S1 plus
             // globally completed DISCO search; S3/S7 retain their own paths.
             //
             // IMPORTANT: originalTrees is saved before enrichment and is used for
@@ -202,7 +202,7 @@ public class Main {
             boolean strictLineageDisco =
                 (cfg.getSearchSpace() == Config.SearchSpace.S2
                     || cfg.getSearchSpace() == Config.SearchSpace.S4)
-                && !cfg.isFullDiscoCandidates();
+                && !cfg.isExhaustiveDiscoCandidates();
             int greedyProposalCount = 0;
             // Verification modes that inspect completed node graphs keep the
             // materialized route; normal S2/S4 inference streams proposals.
@@ -979,8 +979,8 @@ public class Main {
                     explicitSearchMode = Config.SearchMode.FULL;
                 case "--no-cross-tree-splits" ->
                     explicitSearchMode = Config.SearchMode.LOCAL;
-                case "--full-disco-candidates" ->
-                    cfg.setFullDiscoCandidates(true);
+                case "--exhaustive" ->
+                    cfg.setExhaustiveDiscoCandidates(true);
                 case "--search-mode"   -> {
                     if (++i >= args.length) return false;
                     if (args[i].equalsIgnoreCase("full"))
@@ -1399,7 +1399,7 @@ public class Main {
               --s7-seed N                    S7 greedy-search random seed
               --cross-tree-splits             Enable cross-tree DP splits for S2/S4/S5/S6/S7
               --no-cross-tree-splits          Disable them (S2/S4/S5/S6/S7 default)
-              --full-disco-candidates         S2/S4: add S1 candidates and complete
+              --exhaustive                    S2/S4: add S1 candidates and complete
                                               DISCO trees to all species (old behavior)
               --search-mode local|full         Legacy alias for cross-tree control
               --large-n-score-type T            int128 (exact) | double

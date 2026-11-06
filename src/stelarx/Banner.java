@@ -205,8 +205,8 @@ public class Banner {
         if (cfg.getSearchSpace() == Config.SearchSpace.S2
                 || cfg.getSearchSpace() == Config.SearchSpace.S4) {
             out.println("    " + row("DISCO candidate scope", c(WHT,
-                cfg.isFullDiscoCandidates()
-                    ? "all species + S1 candidates (--full-disco-candidates)"
+                cfg.isExhaustiveDiscoCandidates()
+                    ? "all species + S1 candidates (--exhaustive)"
                     : "pre-cut lineage only; no S1 candidates")));
         }
         out.println("    " + row("Cross-tree splits", c(WHT,

@@ -20,10 +20,12 @@ VERSION_TEXT="$(NO_COLOR=1 "${ROOT}/stelar-pro" --version --no-build)"
 HELP_TEXT="$(NO_COLOR=1 "${ROOT}/stelar-pro" --help 2>&1)"
 [[ "$HELP_TEXT" == *"STELAR-Pro wrapper"* ]]
 [[ "$HELP_TEXT" == *"--search-space"* ]]
-[[ "$HELP_TEXT" == *"S2 (DISCO/completion/UPGMA candidates)"* ]]
-[[ "$HELP_TEXT" == *"S3 (S2 + DISCO-tree greedy consensus)"* ]]
+[[ "$HELP_TEXT" == *"S2 (lineage-scoped DISCO/UPGMA candidates)"* ]]
+[[ "$HELP_TEXT" == *"S3 (global DISCO + S1 + greedy consensus)"* ]]
 [[ "$HELP_TEXT" == *"S4 (S2 candidates with rooted-triplet similarity)"* ]]
 [[ "$HELP_TEXT" == *"S5 (A-Pro greedy trees + S1; rooted-triplet DP)"* ]]
+[[ "$HELP_TEXT" == *"--exhaustive"* ]]
+[[ "$HELP_TEXT" != *"--full-disco-candidates"* ]]
 [[ "$HELP_TEXT" != *"--intersection-method"* ]]
 [[ "$HELP_TEXT" != *"--weight-intersection-method"* ]]
 [[ "$HELP_TEXT" == *"--gpu-strict"* ]]
@@ -56,10 +58,12 @@ expect_launcher_failure() {
 }
 
 S2_TREE="${WORK}/s2-species-tree.tre"
-NO_COLOR=1 "${ROOT}/stelar-pro" --no-build --cpu -q \
+S2_LOG="${WORK}/s2.log"
+NO_COLOR=1 "${ROOT}/stelar-pro" --no-build --cpu \
   -i "${ROOT}/test/input/stelar_candidate_5taxa.tre" \
-  -o "$S2_TREE" --search-space S2 >/dev/null 2>&1
+  -o "$S2_TREE" --search-space S2 >"$S2_LOG" 2>&1
 [[ -s "$S2_TREE" ]]
+grep -Fq 'S2 search: S1 candidates excluded' "$S2_LOG"
 S3_TREE="${WORK}/s3-species-tree.tre"
 NO_COLOR=1 "${ROOT}/stelar-pro" --no-build --cpu -q \
   -i "${ROOT}/test/input/stelar_candidate_5taxa.tre" \
@@ -73,9 +77,26 @@ NO_COLOR=1 "${ROOT}/stelar-pro" --no-build --cpu \
 [[ -s "$S4_TREE" ]]
 [[ "$(grep -Fc 'S4 similarity: one rooted-triplet matrix' "$S4_LOG")" -eq 1 ]]
 grep -Fq 'S4 streamed candidates:' "$S4_LOG"
+grep -Fq 'S4 search: S1 candidates excluded' "$S4_LOG"
 ! grep -Fq 'Phase 3.5 Greedy consensus' "$S4_LOG"
 ! grep -Fq 'Phase 5b Cross-tree transitions' "$S4_LOG"
 ! grep -Fq 'Building similarity matrix (CPU)' "$S4_LOG"
+for mode in S2 S4; do
+  exhaustive_log="${WORK}/${mode}-exhaustive.log"
+  exhaustive_tree="${WORK}/${mode}-exhaustive.tre"
+  NO_COLOR=1 "${ROOT}/stelar-pro" --no-build --cpu \
+    -i "${ROOT}/test/input/stelar_candidate_5taxa.tre" \
+    -o "$exhaustive_tree" --search-space "$mode" --exhaustive \
+    >"$exhaustive_log" 2>&1
+  [[ -s "$exhaustive_tree" ]]
+  grep -Fq 'all species + S1 candidates (--exhaustive)' "$exhaustive_log"
+  ! grep -Fq 'S1 candidates excluded' "$exhaustive_log"
+  ! grep -Fq 'Phase 5b Cross-tree transitions' "$exhaustive_log"
+done
+expect_launcher_failure exhaustive-s1 '--exhaustive applies only to S2 and S4' \
+  --exhaustive
+expect_launcher_failure removed-full-disco 'Unknown option' \
+  --full-disco-candidates
 S4_CROSS_LOG="${WORK}/s4-cross.log"
 NO_COLOR=1 "${ROOT}/stelar-pro" --no-build --cpu \
   -i "${ROOT}/test/input/stelar_candidate_5taxa.tre" \

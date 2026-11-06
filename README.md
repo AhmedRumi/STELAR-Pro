@@ -134,7 +134,7 @@ S2 and S4 retain the original rooted/tagged multicopy trees for scoring, but
 their default candidate search uses only lineage-scoped completed DISCO
 single-copy trees and a UPGMA guide—not S1 candidates. A component is completed
 only with taxa present below its root before DISCO cuts. Use
-`--full-disco-candidates` with S2 or S4 to restore S1 candidates and completion
+`--exhaustive` with S2 or S4 to restore S1 candidates and completion
 of every DISCO tree to all observed species; this does not turn on cross-tree
 transitions.
 Cross-tree splits are disabled by default in S2, S4, S5, S6, and S7; enable them with

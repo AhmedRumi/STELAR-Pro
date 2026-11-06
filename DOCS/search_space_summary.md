@@ -251,7 +251,7 @@ from S1–S5. It is not a second final objective. See
 The presets are configured in [`CliPresets.java`](../src/stelarx/CliPresets.java).
 S2–S4 are related DISCO variants; only S3 adds consensus. S5 and S6 are **independent
 paths**, not additions on top of S2–S4. S2/S4 exclude S1's input-derived
-candidates by default; `--full-disco-candidates` restores them alongside
+candidates by default; `--exhaustive` restores them alongside
 global DISCO completion. These branches share common DP/weight code; that does not mean
 choosing S5 executes S2–S4 or incurs their matrix-building cost.
 
@@ -285,7 +285,7 @@ still use the original rooted/tagged multicopy trees only. See
 [`TreeCompleter.java`](../src/stelarx/completion/TreeCompleter.java), and
 [`UPGMAClusterer.java`](../src/stelarx/completion/UPGMAClusterer.java).
 
-`--full-disco-candidates` restores the prior S2/S4 combination: S1
+`--exhaustive` restores the prior S2/S4 combination: S1
 candidates plus every DISCO component completed to the full species set.
 It does not enable cross-tree transitions; `--cross-tree-splits` is separate
 and remains off by default.
@@ -329,7 +329,7 @@ GPU tour/flattened arrays are processed in bounded host batches. Its normal
 route has no consensus stage. Local transitions are the default, with
 `--cross-tree-splits` enabling cross-tree recombination. Original tagged genes
 still supply the final `W`. S4 has no quartet similarity or four-point
-completion in its active route. Its `--full-disco-candidates` flag has the
+completion in its active route. Its `--exhaustive` flag has the
 same effect as S2's: add S1 candidates and complete DISCO trees globally.
 
 ### S5: ASTRAL-Pro greedy proposals, STELAR triplet DP
