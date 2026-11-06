@@ -54,7 +54,7 @@ for option in --intersection-method --im --weight-intersection-method; do
   expect_failure "$label" \
     "${JAVA[@]}" --cpu -q \
       -i "${ROOT}/test/input/test_incomplete.tre" "$option" I1
-  grep -qF "$option was removed" "${WORK}/${label}.log"
+  grep -qF -- "$option was removed" "${WORK}/${label}.log"
 done
 
 NO_COLOR=1 "${ROOT}/stelar-pro" --no-build --version >"${WORK}/version.log" 2>&1

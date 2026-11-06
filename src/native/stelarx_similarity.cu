@@ -42,96 +42,135 @@
 #include "stelarx_platform.h"
 
 // ── Exact host output layout ─────────────────────────────────────────────────
-
+//
+// Java owns the symmetric upper triangle (a ≤ b, n(n+1)/2 cells) as
+// 2^shift-double segments (SegmentedDoubleArray), one pair of segment arrays
+// for the numerator and the denominator.  Row a of the triangle is contiguous:
+//   index(a, b) = a·n − a(a+1)/2 + b          for a ≤ b.
+//
+// The host merge never pins or copies a whole segment.  HotSpot's
+// Get<Prim>ArrayElements copies the entire array into native memory (another
+// 8 bytes per cell per accumulator for every JNI call), so instead each tile is
+// folded in row slice by row slice with Get/SetDoubleArrayRegion: a memcpy of
+// at most one tile row, with O(B) native scratch.  A row slice that straddles a
+// segment boundary is split exactly at that boundary.
 struct SimHostOutput {
     JNIEnv* env = nullptr;
-    bool packed = false;
+    int n = 0;
     int segment_shift = 0;
     long long segment_mask = 0;
-    jdoubleArray dense_num_ref = nullptr;
-    jdoubleArray dense_den_ref = nullptr;
-    jdouble* dense_num = nullptr;
-    jdouble* dense_den = nullptr;
     std::vector<jdoubleArray> num_refs;
     std::vector<jdoubleArray> den_refs;
-    std::vector<jdouble*> num_segments;
-    std::vector<jdouble*> den_segments;
+    std::vector<double> scratch_num;
+    std::vector<double> scratch_den;
 
     ~SimHostOutput() { release(); }
 
-    bool acquire(JNIEnv* e, jdoubleArray j_dense_num, jdoubleArray j_dense_den,
-                 jobjectArray j_packed_num, jobjectArray j_packed_den, int shift) {
-        env = e;
-        packed = j_packed_num != nullptr;
-        if (!packed) {
-            dense_num_ref = j_dense_num;
-            dense_den_ref = j_dense_den;
-            jboolean is_copy;
-            dense_num = env->GetDoubleArrayElements(j_dense_num, &is_copy);
-            dense_den = env->GetDoubleArrayElements(j_dense_den, &is_copy);
-            return dense_num != nullptr && dense_den != nullptr;
-        }
+    bool fail(const char* message) {
+        jclass ex = env->FindClass("java/lang/IllegalArgumentException");
+        if (ex != nullptr) env->ThrowNew(ex, message);
+        return false;
+    }
 
-        if (j_packed_den == nullptr || shift <= 0 || shift >= 62) {
-            jclass ex = env->FindClass("java/lang/IllegalArgumentException");
-            if (ex != nullptr) env->ThrowNew(ex, "invalid packed similarity output layout");
-            return false;
+    bool acquire(JNIEnv* e, int taxa, jobjectArray j_packed_num,
+                 jobjectArray j_packed_den, int shift) {
+        env = e;
+        n = taxa;
+        if (j_packed_num == nullptr || j_packed_den == nullptr || shift <= 0 || shift >= 31) {
+            return fail("invalid packed similarity output layout");
         }
         segment_shift = shift;
         segment_mask = (1LL << shift) - 1LL;
+        long long cells = (long long)n * (n + 1LL) / 2LL;
+        long long expected = (cells + segment_mask) >> shift;
         jsize count = env->GetArrayLength(j_packed_num);
-        if (env->GetArrayLength(j_packed_den) != count) {
-            jclass ex = env->FindClass("java/lang/IllegalArgumentException");
-            if (ex != nullptr) env->ThrowNew(ex, "packed similarity segment counts differ");
-            return false;
+        if (count != expected || env->GetArrayLength(j_packed_den) != count) {
+            return fail("packed similarity segment count does not match the taxon count");
+        }
+        if (env->EnsureLocalCapacity(2 * count + 16) != JNI_OK) {
+            return fail("cannot reserve JNI local references for similarity segments");
         }
         num_refs.reserve(count); den_refs.reserve(count);
-        num_segments.reserve(count); den_segments.reserve(count);
         for (jsize s = 0; s < count; s++) {
             jdoubleArray nr = (jdoubleArray)env->GetObjectArrayElement(j_packed_num, s);
             jdoubleArray dr = (jdoubleArray)env->GetObjectArrayElement(j_packed_den, s);
-            jboolean is_copy;
-            jdouble* np = env->GetDoubleArrayElements(nr, &is_copy);
-            jdouble* dp = env->GetDoubleArrayElements(dr, &is_copy);
-            if (np == nullptr || dp == nullptr) {
-                if (np != nullptr) env->ReleaseDoubleArrayElements(nr, np, 0);
-                if (dp != nullptr) env->ReleaseDoubleArrayElements(dr, dp, 0);
+            if (nr == nullptr || dr == nullptr) {
                 if (nr != nullptr) env->DeleteLocalRef(nr);
                 if (dr != nullptr) env->DeleteLocalRef(dr);
-                return false;
+                return fail("packed similarity segment is null");
             }
-            num_refs.push_back(nr); den_refs.push_back(dr);
-            num_segments.push_back(np); den_segments.push_back(dp);
+            long long remaining = cells - ((long long)s << shift);
+            jsize len = (jsize)((remaining < (1LL << shift)) ? remaining : (1LL << shift));
+            if (env->GetArrayLength(nr) != len || env->GetArrayLength(dr) != len) {
+                env->DeleteLocalRef(nr);
+                env->DeleteLocalRef(dr);
+                return fail("packed similarity segment length is wrong");
+            }
+            num_refs.push_back(nr);
+            den_refs.push_back(dr);
         }
         return true;
     }
 
-    __host__ inline void addPacked(int a, int b, int n, double nv, double dv) {
-        int i = a, j = b;
-        if (i > j) { int t = i; i = j; j = t; }
-        long long index = (long long)i * n - (long long)i * (i + 1LL) / 2LL + j;
-        int segment = (int)(index >> segment_shift);
-        long long offset = index & segment_mask;
-        num_segments[segment][offset] += nv;
-        den_segments[segment][offset] += dv;
+    /** Scratch must cover one tile row; call once the tile side B is known. */
+    void reserve(int tile_b) {
+        scratch_num.assign((size_t)tile_b, 0.0);
+        scratch_den.assign((size_t)tile_b, 0.0);
+    }
+
+    /**
+     * Fold one tile (rows a0..a0+bA, columns b0..b0+bB, row-major with stride
+     * bB) into the triangle.  Only cells with a < b and a nonzero denominator
+     * contribute, exactly as the former dense merge.  On a JNI failure a Java
+     * exception is pending and false is returned.
+     */
+    bool addTile(int a0, int b0, int bA, int bB,
+                 const double* tile_num, const double* tile_den) {
+        for (int da = 0; da < bA; da++) {
+            int a = a0 + da;
+            int b_start = (b0 > a + 1) ? b0 : a + 1;
+            int b_end = b0 + bB;
+            if (b_start >= b_end) continue;
+            long long index = (long long)a * n - (long long)a * (a + 1LL) / 2LL + b_start;
+            const double* nv = tile_num + (long long)da * bB + (b_start - b0);
+            const double* dv = tile_den + (long long)da * bB + (b_start - b0);
+            int len = b_end - b_start;
+            while (len > 0) {
+                int segment = (int)(index >> segment_shift);
+                jsize offset = (jsize)(index & segment_mask);
+                long long room = (1LL << segment_shift) - offset;
+                int chunk = (len < room) ? len : (int)room;
+                jdoubleArray nr = num_refs[segment];
+                jdoubleArray dr = den_refs[segment];
+                env->GetDoubleArrayRegion(nr, offset, chunk, scratch_num.data());
+                env->GetDoubleArrayRegion(dr, offset, chunk, scratch_den.data());
+                if (env->ExceptionCheck()) return false;
+                for (int i = 0; i < chunk; i++) {
+                    if (dv[i] == 0.0) continue;
+                    scratch_num[i] += nv[i];
+                    scratch_den[i] += dv[i];
+                }
+                env->SetDoubleArrayRegion(nr, offset, chunk, scratch_num.data());
+                env->SetDoubleArrayRegion(dr, offset, chunk, scratch_den.data());
+                if (env->ExceptionCheck()) return false;
+                index += chunk;
+                nv += chunk;
+                dv += chunk;
+                len -= chunk;
+            }
+        }
+        return true;
     }
 
     void release() {
         if (!env) return;
-        if (!packed) {
-            if (dense_num) env->ReleaseDoubleArrayElements(dense_num_ref, dense_num, 0);
-            if (dense_den) env->ReleaseDoubleArrayElements(dense_den_ref, dense_den, 0);
-            dense_num = dense_den = nullptr;
-            return;
-        }
-        for (size_t s = 0; s < num_segments.size(); s++) {
-            env->ReleaseDoubleArrayElements(num_refs[s], num_segments[s], 0);
-            env->ReleaseDoubleArrayElements(den_refs[s], den_segments[s], 0);
+        for (size_t s = 0; s < num_refs.size(); s++) {
             env->DeleteLocalRef(num_refs[s]);
             env->DeleteLocalRef(den_refs[s]);
         }
-        num_segments.clear(); den_segments.clear();
-        num_refs.clear(); den_refs.clear();
+        num_refs.clear();
+        den_refs.clear();
+        env = nullptr;
     }
 };
 
@@ -573,8 +612,6 @@ Java_stelarx_gpu_GPUSimilarityMatrix_computeSimilarityGPU(
     jint     treeVramCapMiB,
     jdouble  progressInterval,
     jint     progressMaxSteps,
-    jdoubleArray j_num_sum_out,
-    jdoubleArray j_den_sum_out,
     jobjectArray j_packed_num_out,
     jobjectArray j_packed_den_out,
     jint packed_segment_shift
@@ -600,8 +637,8 @@ Java_stelarx_gpu_GPUSimilarityMatrix_computeSimilarityGPU(
     jint*    h_elen    = env->GetIntArrayElements   (j_euler_len,            &isCopy);
     jint*    h_lcount  = env->GetIntArrayElements   (j_leaf_count,           &isCopy);
     SimHostOutput output;
-    if (!output.acquire(env, j_num_sum_out, j_den_sum_out,
-                        j_packed_num_out, j_packed_den_out, packed_segment_shift)) return;
+    if (!output.acquire(env, n, j_packed_num_out, j_packed_den_out,
+                        packed_segment_shift)) return;
 
     size_t free_vram = 0, total_vram = 0;
     cudaMemGetInfo(&free_vram, &total_vram);
@@ -613,6 +650,7 @@ Java_stelarx_gpu_GPUSimilarityMatrix_computeSimilarityGPU(
     }
     while (B > 1 && 2LL * B * B * (long long)sizeof(double) > (long long)(free_vram * 0.40)) B /= 2;
     if (B < 1) B = 1;
+    output.reserve(B);
 
     size_t tile_vram = 2ULL * B * B * sizeof(double);
     size_t headroom = 64ULL * 1024 * 1024;
@@ -772,36 +810,8 @@ Java_stelarx_gpu_GPUSimilarityMatrix_computeSimilarityGPU(
                 SIM_CUDA_CHECK(cudaMemcpy(h_tile_den, d_tile_den,
                     (long long)bA * bB_tile * sizeof(double), cudaMemcpyDeviceToHost));
 
-                if (!output.packed) {
-                    for (int da = 0; da < bA; da++) {
-                        int a = a0 + da;
-                        for (int db = 0; db < bB_tile; db++) {
-                            int b = b0 + db;
-                            if (a >= b) continue;
-                            long tidx = (long)da * bB_tile + db;
-                            double nv = h_tile_num[tidx];
-                            double dv = h_tile_den[tidx];
-                            if (dv == 0.0) continue;
-                            output.dense_num[a * n + b] += nv;
-                            output.dense_num[b * n + a] += nv;
-                            output.dense_den[a * n + b] += dv;
-                            output.dense_den[b * n + a] += dv;
-                        }
-                    }
-                } else {
-                    for (int da = 0; da < bA; da++) {
-                        int a = a0 + da;
-                        for (int db = 0; db < bB_tile; db++) {
-                            int b = b0 + db;
-                            if (a >= b) continue;
-                            long tidx = (long)da * bB_tile + db;
-                            double nv = h_tile_num[tidx];
-                            double dv = h_tile_den[tidx];
-                            if (dv == 0.0) continue;
-                            output.addPacked(a, b, n, nv, dv);
-                        }
-                    }
-                }
+                // A pending Java exception ends the sweep like a CUDA error does.
+                if (!output.addTile(a0, b0, bA, bB_tile, h_tile_num, h_tile_den)) return;
 
                 work_done++;
                 double now = sim_now_sec();
@@ -872,8 +882,6 @@ Java_stelarx_gpu_GPUSimilarityMatrix_computeSimilarityGPUWide(
     jint treeVramCapMiB,
     jdouble progressInterval,
     jint progressMaxSteps,
-    jdoubleArray j_num_sum_out,
-    jdoubleArray j_den_sum_out,
     jobjectArray j_packed_num_out,
     jobjectArray j_packed_den_out,
     jint packed_segment_shift
@@ -900,8 +908,8 @@ Java_stelarx_gpu_GPUSimilarityMatrix_computeSimilarityGPUWide(
     jint*    h_elen   = env->GetIntArrayElements   (j_euler_len,            &isCopy);
     jint*    h_lcount = env->GetIntArrayElements   (j_leaf_count,           &isCopy);
     SimHostOutput output;
-    if (!output.acquire(env, j_num_sum_out, j_den_sum_out,
-                        j_packed_num_out, j_packed_den_out, packed_segment_shift)) return;
+    if (!output.acquire(env, n, j_packed_num_out, j_packed_den_out,
+                        packed_segment_shift)) return;
 
     size_t free_vram = 0, total_vram = 0;
     SIM_CUDA_CHECK(cudaMemGetInfo(&free_vram, &total_vram));
@@ -914,6 +922,7 @@ Java_stelarx_gpu_GPUSimilarityMatrix_computeSimilarityGPUWide(
     while (B > 1 && 2LL * B * B * (long long)sizeof(double)
             > (long long)(free_vram * 0.40)) B /= 2;
     if (B < 1) B = 1;
+    output.reserve(B);
 
     size_t tile_vram = 2ULL * B * B * sizeof(double);
     size_t headroom = 64ULL * 1024 * 1024;
@@ -1061,36 +1070,8 @@ Java_stelarx_gpu_GPUSimilarityMatrix_computeSimilarityGPUWide(
                 SIM_CUDA_CHECK(cudaMemcpy(h_tile_den, d_tile_den,
                     (long long)bA * bB_tile * sizeof(double), cudaMemcpyDeviceToHost));
 
-                if (!output.packed) {
-                    for (int da = 0; da < bA; da++) {
-                        int a = a0 + da;
-                        for (int db = 0; db < bB_tile; db++) {
-                            int b = b0 + db;
-                            if (a >= b) continue;
-                            long tidx = (long)da * bB_tile + db;
-                            double nv = h_tile_num[tidx];
-                            double dv = h_tile_den[tidx];
-                            if (dv == 0.0) continue;
-                            output.dense_num[a * n + b] += nv;
-                            output.dense_num[b * n + a] += nv;
-                            output.dense_den[a * n + b] += dv;
-                            output.dense_den[b * n + a] += dv;
-                        }
-                    }
-                } else {
-                    for (int da = 0; da < bA; da++) {
-                        int a = a0 + da;
-                        for (int db = 0; db < bB_tile; db++) {
-                            int b = b0 + db;
-                            if (a >= b) continue;
-                            long tidx = (long)da * bB_tile + db;
-                            double nv = h_tile_num[tidx];
-                            double dv = h_tile_den[tidx];
-                            if (dv == 0.0) continue;
-                            output.addPacked(a, b, n, nv, dv);
-                        }
-                    }
-                }
+                // A pending Java exception ends the sweep like a CUDA error does.
+                if (!output.addTile(a0, b0, bA, bB_tile, h_tile_num, h_tile_den)) return;
 
                 work_done++;
                 double now = sim_now_sec();

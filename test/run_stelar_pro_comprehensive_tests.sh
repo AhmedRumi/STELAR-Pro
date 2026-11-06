@@ -40,7 +40,9 @@ javac -cp "${ROOT}/build" -d "$TEST_CLASSES" \
   "${ROOT}/test/stelarx/FatalReporterTest.java" \
   "${ROOT}/test/stelarx/cluster/ResidualLookupTest.java" \
   "${ROOT}/test/stelarx/completion/PackedMatrixBoundaryTest.java" \
+  "${ROOT}/test/stelarx/completion/SortedRowsTest.java" \
   "${ROOT}/test/stelarx/completion/RootedPolytomyLifecycleTest.java" \
+  "${ROOT}/test/stelarx/completion/TreeCompleterPolytomyTest.java" \
   "${ROOT}/test/stelarx/pro/GeneTreeRooterTaggerTest.java" \
   "${ROOT}/test/stelarx/pro/GeneTreePolytomyResolverTest.java" \
   "${ROOT}/test/stelarx/pro/DiscoDecomposerTest.java" \
@@ -57,6 +59,7 @@ java -cp "$CP" stelarx.weight.WeightModeBoundaryTest
 STELAR_PRO_WEIGHT_FORCE_DOUBLE=1 java -cp "$CP" stelarx.weight.WeightModeBoundaryTest double
 STELAR_PRO_WEIGHT_FORCE_LONG=1 java -cp "$CP" stelarx.weight.WeightModeBoundaryTest long
 java -cp "$CP" stelarx.completion.PackedMatrixBoundaryTest
+java -cp "$CP" stelarx.completion.SortedRowsTest
 java -cp "$CP" stelarx.FatalReporterTest "${WORK}/fatal-reporter"
 java -cp "$CP" stelarx.cluster.ResidualLookupTest \
   "${ROOT}/test/input/test_incomplete.tre"
@@ -74,6 +77,8 @@ fi
 echo "Running rooted parser/polytomy/completion lifecycle tests..."
 java -cp "$CP" stelarx.completion.RootedPolytomyLifecycleTest \
   "${ROOT}/test/input/stelar_polytomy_incomplete_6taxa.tre"
+java -cp "$CP" stelarx.completion.TreeCompleterPolytomyTest \
+  "${ROOT}/test/input/completion/incomplete_polytomy_7taxa.tre"
 java -cp "$CP" PackedSimilarityParityTest "${ROOT}/test/input/test_incomplete.tre"
 java -cp "$CP" TripletSimilarityTest
 java -cp "$CP" SimilarityArgminTest \
@@ -125,15 +130,23 @@ printf '((A,B),(C,X));\n' >"${WORK}/species-unknown.tre"
 printf '((A,B),(C,D));\n((A,C),(B,D));\n' >"${WORK}/species-multiple.tre"
 printf '(A,B,C,D);\n' >"${WORK}/species-root-polytomy.tre"
 
-for invalid in root-polytomy root-unary duplicate malformed empty; do
+for invalid in root-unary malformed empty; do
   expect_failure "$invalid" "${JAVA[@]}" --cpu -q -i "${WORK}/${invalid}.tre"
+done
+# Unrooted (star) and multicopy inputs are legitimate: preprocessing resolves,
+# roots and tags them before parsing.
+for accepted in root-polytomy duplicate; do
+  "${JAVA[@]}" --cpu -q -i "${WORK}/${accepted}.tre" >"${WORK}/accepted-${accepted}.log" 2>&1
+  grep -Fq "Triplet score" "${WORK}/accepted-${accepted}.log"
 done
 for invalid in species-missing species-unknown species-multiple species-root-polytomy; do
   expect_failure "$invalid" "${JAVA[@]}" --cpu -q -i "${WORK}/valid-genes.tre" \
     --score-species-tree "${WORK}/${invalid}.tre"
 done
-expect_failure unrooted-mode "${JAVA[@]}" --cpu -q --unrooted -i "${WORK}/valid-genes.tre"
-expect_failure bad-preset "${JAVA[@]}" --cpu -q -i "${WORK}/valid-genes.tre" --search-space S5
+# --rooted/--unrooted are documented compatibility flags: accepted, no effect.
+"${JAVA[@]}" --cpu -q --unrooted -i "${WORK}/valid-genes.tre" >"${WORK}/accepted-unrooted.log" 2>&1
+grep -Fq "Triplet score" "${WORK}/accepted-unrooted.log"
+expect_failure bad-preset "${JAVA[@]}" --cpu -q -i "${WORK}/valid-genes.tre" --search-space S9
 grep -q "unknown search space" "${WORK}/reject-bad-preset.log"
 "${JAVA[@]}" --cpu -q -i "${WORK}/valid-genes.tre" --search-space S2 \
   >"${WORK}/accepted-S2.log" 2>&1
@@ -178,13 +191,14 @@ printf '((A:3.0,B:4.0)77:1.0,(C:2.0,D:8.0)66:1.5);\n' \
   >"${WORK}/decorated-species.tre"
 decorated_output="$("${JAVA[@]}" --cpu -q -i "${WORK}/decorated-genes.tre" \
   --score-species-tree "${WORK}/decorated-species.tre" 2>&1)"
-[[ "$(sed -n 's/^TRIPLET_SCORE: //p' <<<"$decorated_output" | tail -1)" == 4 ]]
+# 2 = independent oracle on the ASTRAL-Pro3-rooted gene trees (test_stelar_pro_differential.py).
+[[ "$(sed -n 's/^TRIPLET_SCORE: //p' <<<"$decorated_output" | tail -1)" == 2 ]]
 
 NO_COLOR=1 "${ROOT}/stelar-pro" --no-build --version >"${WORK}/version.log" 2>&1
 grep -q "STELAR-Pro  v" "${WORK}/version.log"
 NO_COLOR=1 "${ROOT}/stelar-pro" --no-build --help >"${WORK}/help.log" 2>&1
 grep -q -- "--search-space" "${WORK}/help.log"
-grep -q -- "S2 adds DISCO" "${WORK}/help.log"
+grep -q -- "S2 (lineage-scoped DISCO/UPGMA candidates)" "${WORK}/help.log"
 if grep -q -- "--intersection-method\|--weight-intersection-method" "${WORK}/help.log"; then
   echo "Removed intersection options are still advertised in help" >&2
   exit 1

@@ -40,25 +40,24 @@ public final class RootedPolytomyLifecycleTest {
         Threading.start(Math.min(4, Runtime.getRuntime().availableProcessors()));
         try {
             int n = keptSerial.registry.size();
-            System.clearProperty("stelarpro.similarity.forcePacked");
-            SimilarityMatrix denseMatrix = SimilarityMatrixBuilder.buildCPU(keptSerial.trees, n);
-            List<Tree> dense = TreeCompleter.completeAll(keptSerial.trees, denseMatrix, n);
+            System.clearProperty("stelarpro.similarity.segmentShift");
+            SimilarityMatrix matrix = SimilarityMatrixBuilder.buildCPU(keptSerial.trees, n);
+            List<Tree> completed = TreeCompleter.completeAll(keptSerial.trees, matrix, n);
 
-            System.setProperty("stelarpro.similarity.forcePacked", "true");
-            SimilarityMatrix packedMatrix = SimilarityMatrixBuilder.buildCPU(keptSerial.trees, n);
-            check(packedMatrix.isPacked(), "forced packed matrix was not selected");
-            List<Tree> packed = TreeCompleter.completeAll(keptSerial.trees, packedMatrix, n);
+            System.setProperty("stelarpro.similarity.segmentShift", "2");
+            SimilarityMatrix segmentedMatrix = SimilarityMatrixBuilder.buildCPU(keptSerial.trees, n);
+            List<Tree> segmented = TreeCompleter.completeAll(keptSerial.trees, segmentedMatrix, n);
 
             long triplesChecked = 0;
             for (int i = 0; i < keptSerial.trees.size(); i++) {
                 Tree before = keptSerial.trees.get(i);
-                Tree after = dense.get(i);
-                Tree packedAfter = packed.get(i);
+                Tree after = completed.get(i);
+                Tree segmentedAfter = segmented.get(i);
                 validateComplete(after, n);
-                validateComplete(packedAfter, n);
+                validateComplete(segmentedAfter, n);
                 check(after.toNewick(keptSerial.registry).equals(
-                        packedAfter.toNewick(keptSerial.registry)),
-                    "dense/packed completion mismatch at tree " + i);
+                        segmentedAfter.toNewick(keptSerial.registry)),
+                    "default/segmented completion mismatch at tree " + i);
                 for (int a = 0; a < n; a++) {
                     if (before.positionMap[a] < 0) continue;
                     for (int b = a + 1; b < n; b++) {
@@ -77,7 +76,7 @@ public final class RootedPolytomyLifecycleTest {
             System.out.println("Rooted polytomy lifecycle: PASS (" + keptSerial.trees.size()
                 + " trees, " + triplesChecked + " preserved triples)");
         } finally {
-            System.clearProperty("stelarpro.similarity.forcePacked");
+            System.clearProperty("stelarpro.similarity.segmentShift");
             Threading.shutdown();
         }
     }

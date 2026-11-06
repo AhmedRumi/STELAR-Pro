@@ -3,7 +3,7 @@ package stelarx.pro;
 import stelarx.Logging;
 import stelarx.cluster.ClusterHash;
 import stelarx.cluster.ClusterTable;
-import stelarx.completion.SimilarityMatrix;
+import stelarx.completion.SortedRows;
 import stelarx.completion.TreeCompleter;
 import stelarx.dp.DPTable;
 import stelarx.hash.TaxonHasher;
@@ -29,8 +29,13 @@ public final class S2CandidateStreamer {
      * same postorder single-copy hash/transition walk previously performed in
      * Phases 3 and 5; only leaf indexes of trees that introduce new clusters
      * survive for later CPU/CUDA membership lookups.
+     *
+     * @param completionRows nearest-neighbour order per taxon, built from the
+     *                       guide similarity matrix before that matrix was
+     *                       released; may be null when no DISCO tree needs
+     *                       completion
      */
-    public static Result add(List<Tree> discoTrees, SimilarityMatrix similarity,
+    public static Result add(List<Tree> discoTrees, SortedRows completionRows,
                              Tree upgma, List<Tree> baseTrees,
                              ClusterTable clusters, DPTable dp,
                              TaxonHasher hasher, TaxonRegistry registry,
@@ -46,11 +51,15 @@ public final class S2CandidateStreamer {
         List<Tree> exemplars = new ArrayList<>(baseTrees.size() + discoTrees.size() + 1);
         exemplars.addAll(baseTrees);
         ClusterHash[] leaves = singletonHashes(hasher);
-        TreeCompleter.PreparedCompletion globalCompleter =
-            discoTrees.isEmpty() || lineageScoped ? null : TreeCompleter.prepare(similarity, n);
-        ScopedTreeCompleter scopedCompleter =
-            discoTrees.isEmpty() || !lineageScoped ? null
-                : ScopedTreeCompleter.prepare(similarity, discoTrees, n);
+        TreeCompleter.PreparedCompletion globalCompleter = null;
+        ScopedTreeCompleter scopedCompleter = null;
+        if (!discoTrees.isEmpty()) {
+            if (lineageScoped) {
+                scopedCompleter = ScopedTreeCompleter.prepare(completionRows, discoTrees, n);
+            } else if (TreeCompleter.anyIncomplete(discoTrees)) {
+                globalCompleter = TreeCompleter.prepare(completionRows, n);
+            }
+        }
         int initialClusters = clusters.size();
         int newClusters = 0;
         long transitions = 0;
@@ -64,9 +73,11 @@ public final class S2CandidateStreamer {
                 : new PrintStream(new FileOutputStream(completedTreesFile))) {
             for (int start = 0; start < discoTrees.size(); start += batchSize) {
                 int end = Math.min(start + batchSize, discoTrees.size());
+                List<Tree> batch = discoTrees.subList(start, end);
                 List<Tree> completed = lineageScoped
-                    ? scopedCompleter.completeBatch(discoTrees.subList(start, end))
-                    : globalCompleter.completeBatch(discoTrees.subList(start, end));
+                    ? scopedCompleter.completeBatch(batch)
+                    : globalCompleter != null ? globalCompleter.completeBatch(batch)
+                    : new ArrayList<>(batch);
                 for (int j = 0; j < completed.size(); j++) {
                     Tree tree = completed.get(j);
                     if (lineageScoped) {

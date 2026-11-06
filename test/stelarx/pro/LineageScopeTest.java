@@ -1,6 +1,7 @@
 package stelarx.pro;
 
 import stelarx.completion.SimilarityMatrix;
+import stelarx.completion.SortedRowsBuilder;
 import stelarx.tree.Tree;
 import stelarx.tree.TreeNode;
 import stelarx.util.Threading;
@@ -91,7 +92,7 @@ public final class LineageScopeTest {
             SimilarityMatrix guide = new SimilarityMatrix(6);
             guide.normalize();
             List<Tree> completed = ScopedTreeCompleter.prepare(
-                guide, second.trees(), 6).completeBatch(second.trees());
+                SortedRowsBuilder.build(guide), second.trees(), 6).completeBatch(second.trees());
             check(completed.get(second.trees().indexOf(retained)).leafCount == 6,
                 "retained lineage completion failed");
             check(completed.get(second.trees().indexOf(detached)).leafCount == 2,

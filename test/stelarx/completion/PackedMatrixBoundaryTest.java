@@ -5,14 +5,6 @@ import stelarx.Config;
 /** Arithmetic-only checks at and beyond the Java dense-array boundary. */
 public final class PackedMatrixBoundaryTest {
     public static void main(String[] args) {
-        if (SimilarityMatrix.requiresPacked(46_340)) {
-            throw new AssertionError("46,340 should retain the established dense path");
-        }
-        if (!SimilarityMatrix.requiresPacked(46_341)
-                || !SimilarityMatrix.requiresPacked(50_000)) {
-            throw new AssertionError("large-N packed dispatch boundary is wrong");
-        }
-
         int n = 50_000;
         long cells = SimilarityMatrix.triangleCellCount(n);
         if (cells != 1_250_025_000L) throw new AssertionError("triangle size=" + cells);
@@ -47,19 +39,24 @@ public final class PackedMatrixBoundaryTest {
             }
         }
 
-        System.setProperty("stelarpro.similarity.forcePacked", "true");
-        SimilarityMatrix tinyPacked;
-        try {
-            tinyPacked = new SimilarityMatrix(3);
-        } finally {
-            System.clearProperty("stelarpro.similarity.forcePacked");
+        // Storage accounting: two triangles while accumulating, one afterwards.
+        if (SimilarityMatrix.accumulatorBytes(n) != 2L * cells * Double.BYTES
+                || SimilarityMatrix.similarityBytes(n) != cells * Double.BYTES) {
+            throw new AssertionError("similarity byte accounting is wrong");
         }
+
+        // GPU tree-data batching ceiling keeps its historical large-N boundary.
         Config cfg = Config.getInstance();
-        if (SimilarityMatrixBuilder.effectiveTreeCapMiB(tinyPacked, cfg) != 8192) {
+        if (SimilarityMatrixBuilder.effectiveTreeCapMiB(SimilarityMatrixBuilder.LARGE_N_TAXA, cfg)
+                != cfg.getGpuSimilarityVramCapMiB()) {
+            throw new AssertionError("46,340 taxa should keep the default GPU batching ceiling");
+        }
+        if (SimilarityMatrixBuilder.effectiveTreeCapMiB(SimilarityMatrixBuilder.LARGE_N_TAXA + 1, cfg)
+                != 8192 || SimilarityMatrixBuilder.effectiveTreeCapMiB(n, cfg) != 8192) {
             throw new AssertionError("large-N automatic GPU batching ceiling was not raised");
         }
         cfg.setGpuSimilarityVramCapMiB(256);
-        if (SimilarityMatrixBuilder.effectiveTreeCapMiB(tinyPacked, cfg) != 256) {
+        if (SimilarityMatrixBuilder.effectiveTreeCapMiB(n, cfg) != 256) {
             throw new AssertionError("explicit GPU batching ceiling was not respected");
         }
 

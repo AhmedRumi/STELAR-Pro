@@ -10,11 +10,17 @@ import java.util.List;
 
 /** Regression coverage for completion of incomplete, natively polytomous trees. */
 public final class TreeCompleterPolytomyTest {
+    /**
+     * Root-preserving nearest-neighbour completion of the fixture (the input
+     * root and every existing relationship are kept; each missing taxon joins
+     * its most similar present taxon).  Regenerated 2026-11-05 when the fixture
+     * was given explicitly binary roots, which the parser now requires.
+     */
     private static final String[] EXPECTED = {
-        "(F,((E,D),(A,G,(B,C))));",
-        "(F,(G,(E,(A,(C,D,B)))));",
-        "(G,(F,(D,(B,(C,E,A)))));",
-        "(A,(C,(D,(F,(E,G,B)))));"
+        "((A,B,C),((D,E),(F,G)));",
+        "(A,((B,C,D),((F,E),G)));",
+        "((A,C,E),(B,(D,(G,F))));",
+        "(((A,C),D),((B,E,G),F));"
     };
 
     public static void main(String[] args) throws Exception {
@@ -29,34 +35,34 @@ public final class TreeCompleterPolytomyTest {
             }
 
             int n = registry.size();
-            System.clearProperty("stelarpro.similarity.forcePacked");
-            SimilarityMatrix denseMatrix = SimilarityMatrixBuilder.buildCPU(trees, n);
-            List<Tree> dense = TreeCompleter.completeAll(trees, denseMatrix, n);
+            System.clearProperty("stelarpro.similarity.segmentShift");
+            SimilarityMatrix matrix = SimilarityMatrixBuilder.buildCPU(trees, n);
+            List<Tree> completed = TreeCompleter.completeAll(trees, matrix, n);
 
-            System.setProperty("stelarpro.similarity.forcePacked", "true");
-            SimilarityMatrix packedMatrix;
+            // Tiny segments must not change anchors.
+            System.setProperty("stelarpro.similarity.segmentShift", "2");
+            SimilarityMatrix segmentedMatrix;
             try {
-                packedMatrix = SimilarityMatrixBuilder.buildCPU(trees, n);
+                segmentedMatrix = SimilarityMatrixBuilder.buildCPU(trees, n);
             } finally {
-                System.clearProperty("stelarpro.similarity.forcePacked");
+                System.clearProperty("stelarpro.similarity.segmentShift");
             }
-            check(packedMatrix.isPacked(), "packed completion path was not selected");
-            List<Tree> packed = TreeCompleter.completeAll(trees, packedMatrix, n);
+            List<Tree> segmented = TreeCompleter.completeAll(trees, segmentedMatrix, n);
 
             for (int i = 0; i < trees.size(); i++) {
-                validateCompleted(dense.get(i), n);
-                validateCompleted(packed.get(i), n);
-                String denseNewick = dense.get(i).toNewick(registry);
-                String packedNewick = packed.get(i).toNewick(registry);
-                check(denseNewick.equals(packedNewick),
-                    "dense/packed completion mismatch for tree " + i);
-                check(EXPECTED[i].equals(denseNewick),
-                    "completion topology changed for tree " + i + ": " + denseNewick);
+                validateCompleted(completed.get(i), n);
+                validateCompleted(segmented.get(i), n);
+                String newick = completed.get(i).toNewick(registry);
+                String segmentedNewick = segmented.get(i).toNewick(registry);
+                check(newick.equals(segmentedNewick),
+                    "default/segmented completion mismatch for tree " + i);
+                check(EXPECTED[i].equals(newick),
+                    "completion topology changed for tree " + i + ": " + newick);
             }
             System.out.println("Incomplete polytomy completion: PASS");
         } finally {
             Threading.shutdown();
-            System.clearProperty("stelarpro.similarity.forcePacked");
+            System.clearProperty("stelarpro.similarity.segmentShift");
         }
     }
 

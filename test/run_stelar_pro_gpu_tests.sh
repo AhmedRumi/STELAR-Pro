@@ -30,25 +30,28 @@ score_gpu() {
   [[ "$(sed -n 's/^TRIPLET_SCORE: //p' "$log" | tail -1)" == "$expected" ]]
 }
 
+# Expected scores are the independent oracle's values (test_stelar_pro_triplets.py
+# / test_stelar_pro_differential.py) on the ASTRAL-Pro3-rooted/tagged fixtures,
+# which is what every run scores.
 score_gpu "${ROOT}/test/input/test_5taxa.tre" \
-  "${ROOT}/test/input/stelar_candidate_5taxa.tre" 21 "${WORK}/small.log"
+  "${ROOT}/test/input/stelar_candidate_5taxa.tre" 27 "${WORK}/small.log"
 score_gpu "${ROOT}/test/input/stelar_polytomy_5taxa.tre" \
-  "${ROOT}/test/input/stelar_candidate_5taxa.tre" 11 "${WORK}/polytomy.log"
+  "${ROOT}/test/input/stelar_candidate_5taxa.tre" 8 "${WORK}/polytomy.log"
 score_gpu "${ROOT}/test/input/stelar_polytomy_incomplete_6taxa.tre" \
-  "${ROOT}/test/input/stelar_candidate_6taxa.tre" 22 \
+  "${ROOT}/test/input/stelar_candidate_6taxa.tre" 25 \
   "${WORK}/incomplete-polytomy.log"
 score_gpu "${ROOT}/all_gt_bs_rooted_37.tre" "${ROOT}/true_37.tre" \
-  1390544 "${WORK}/large.log"
+  866020 "${WORK}/large.log"
 
 # The built-in scorer must retain exact results under all batching controls.
 score_gpu "${ROOT}/test/input/stelar_polytomy_incomplete_6taxa.tre" \
-  "${ROOT}/test/input/stelar_candidate_6taxa.tre" 22 \
+  "${ROOT}/test/input/stelar_candidate_6taxa.tre" 25 \
   "${WORK}/batch-size.log" --gpu-batch-size 1
 score_gpu "${ROOT}/test/input/stelar_polytomy_incomplete_6taxa.tre" \
-  "${ROOT}/test/input/stelar_candidate_6taxa.tre" 22 \
+  "${ROOT}/test/input/stelar_candidate_6taxa.tre" 25 \
   "${WORK}/batch-count.log" --gpu-batches 2
 score_gpu "${ROOT}/test/input/stelar_polytomy_incomplete_6taxa.tre" \
-  "${ROOT}/test/input/stelar_candidate_6taxa.tre" 22 \
+  "${ROOT}/test/input/stelar_candidate_6taxa.tre" 25 \
   "${WORK}/batch-off.log" --no-gpu-batch
 
 # Default-S1 end-to-end inference must be byte-identical on CPU and strict GPU.
@@ -62,7 +65,7 @@ cpu_score="$(sed -n 's/.*Triplet score[[:space:]]*\([0-9][0-9]*\).*/\1/p' \
   "${WORK}/default-cpu.log" | tail -1)"
 gpu_score="$(sed -n 's/.*Triplet score[[:space:]]*\([0-9][0-9]*\).*/\1/p' \
   "${WORK}/default-gpu.log" | tail -1)"
-[[ "$cpu_score" == 122 ]]
+[[ "$cpu_score" == 69 ]]
 [[ "$gpu_score" == "$cpu_score" ]]
 
 # Seeded independent oracles exercise many additional binary, incomplete, and
