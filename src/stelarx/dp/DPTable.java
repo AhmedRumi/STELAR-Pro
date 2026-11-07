@@ -232,8 +232,15 @@ public class DPTable {
         transitions.computeIfAbsent(parent, k -> new LinkedHashSet<>()).add(split);
     }
 
-    /** Merge one completed S2 tree's rooted local transition into the existing DP space. */
-    public void addStreamedTransition(ClusterHash parent, ClusterHash left, ClusterHash right) {
+    /**
+     * Merge one completed S2 tree's rooted local transition into the existing DP space.
+     *
+     * @return true when this split was not already registered for {@code parent}, so
+     *         callers can attribute post-dedup split contributions to the source tree.
+     *         A candidate tree whose every split is already present adds nothing to
+     *         the DP, which is only observable through this return value.
+     */
+    public boolean addStreamedTransition(ClusterHash parent, ClusterHash left, ClusterHash right) {
         if (left.size + right.size != parent.size) {
             throw new IllegalArgumentException("Overlapping streamed S2 transition");
         }
@@ -241,7 +248,9 @@ public class DPTable {
         if (transitions.computeIfAbsent(parent, k -> new LinkedHashSet<>())
                 .add(new BipartitionSplit(left, right))) {
             uniqueSplits++;
+            return true;
         }
+        return false;
     }
 
     /**

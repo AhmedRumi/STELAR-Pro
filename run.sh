@@ -79,6 +79,10 @@ Optional:
   --cross-tree-splits     Enable cross-tree splits for S2/S4/S5/S6/S7 (default: off)
   --no-cross-tree-splits  Disable cross-tree splits
   --full-disco-candidates  S2/S4: restore S1 candidates and global DISCO completion
+  --extra-guide-trees L    S2/S4/S7: extra distance guide trees beside UPGMA, comma
+                           separated. Base nj | bionj, optional transform suffix
+                           -linear | -sqrt | -corrected | -inv (bare = -log sim)
+  --dump-guide-trees F     Write each guide tree as name<TAB>newick
   --s5-rounds N      Number of independent S5 greedy searches (default: 4)
   --s5-seed N        S5 greedy-search random seed
   --max-search-passes N   Max S5/S6 search/DP passes, including first (default: 1)
@@ -193,7 +197,7 @@ while [[ $# -gt 0 ]]; do
       PROGRAM_ARGS+=("$1" "$2")
       shift 2
       ;;
-    --search-space|--search-mode|--max-search-passes|--s5-rounds|--s5-seed|--s5-adaptive-passes|--s6-rounds|--s6-seed|-t|--threads|--num-threads|-m|--seeds|--large-n-score-type|--large-score-type|--anchor-taxon|--gpu-batch-size|--gpu-batches|--gpu-vram-control-factor|--gpu-vram-occupancy-factor|--gpu-treewalk-vram-cap-mb|--gpu-progress-interval|--gpu-dp-state-space-construction-output-cap|--gpu-dp-state-space-progress-time-interval|--gpu-dp-state-space-progress-max-steps|--gpu-dist-tile-size|--gpu-sim-vram-cap-mb|--dump-clusters|--dump-completed-gene-trees|--completion-method|--stepb-restriction|--taxa-file|--species-list|--species-list-file|--taxa-set|--taxa-operation|--gene-species-map)
+    --search-space|--search-mode|--max-search-passes|--s5-rounds|--s5-seed|--s5-adaptive-passes|--s6-rounds|--s6-seed|-t|--threads|--num-threads|-m|--seeds|--large-n-score-type|--large-score-type|--anchor-taxon|--gpu-batch-size|--gpu-batches|--gpu-vram-control-factor|--gpu-vram-occupancy-factor|--gpu-treewalk-vram-cap-mb|--gpu-progress-interval|--gpu-dp-state-space-construction-output-cap|--gpu-dp-state-space-progress-time-interval|--gpu-dp-state-space-progress-max-steps|--gpu-dist-tile-size|--gpu-sim-vram-cap-mb|--dump-clusters|--dump-completed-gene-trees|--extra-guide-trees|--dump-guide-trees|--completion-method|--stepb-restriction|--taxa-file|--species-list|--species-list-file|--taxa-set|--taxa-operation|--gene-species-map)
       PROGRAM_ARGS+=("$1" "$2")
       shift 2
       ;;

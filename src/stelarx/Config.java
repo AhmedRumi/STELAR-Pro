@@ -109,6 +109,16 @@ public class Config {
     private SearchMode searchMode = SearchMode.LOCAL;
     /** S2/S4 opt-in: restore S1 candidates and complete DISCO trees globally. */
     private boolean fullDiscoCandidates = false;
+    /**
+     * Extra distance-based guide trees added to the candidate set beside UPGMA.
+     * A spec is a base method - {@code nj}, {@code bionj} or {@code fastme} - with an
+     * optional transform suffix: bare means {@code -log sim} (the additive transform
+     * NJ's consistency proof requires), {@code -linear} means {@code 1-sim} (the
+     * UPGMA path's implicit choice, kept as a control), {@code -sqrt}, {@code -corrected}
+     * ({@code -log((3s-1)/2)}, correcting for the 1/3 random-quartet floor) and
+     * {@code -inv} ({@code (1-s)/s}). Empty by default.
+     */
+    private java.util.List<String> extraGuideTrees = java.util.List.of();
     private final WeightIntersectionMethod weightIntersectionMethod =
         WeightIntersectionMethod.SMALLER_SIDE_TRAVERSAL;
     private LargeScoreType largeScoreType = LargeScoreType.INT128;
@@ -333,6 +343,10 @@ public class Config {
     public void setSearchMode(SearchMode s)   { this.searchMode = s; }
     public boolean isFullDiscoCandidates()     { return fullDiscoCandidates; }
     public void setFullDiscoCandidates(boolean value) { this.fullDiscoCandidates = value; }
+    public java.util.List<String> getExtraGuideTrees()  { return extraGuideTrees; }
+    public void setExtraGuideTrees(java.util.List<String> specs) {
+        this.extraGuideTrees = java.util.List.copyOf(specs);
+    }
     public WeightIntersectionMethod getWeightIntersectionMethod()        { return weightIntersectionMethod; }
 
     public LargeScoreType getLargeScoreType()        { return largeScoreType; }
@@ -550,6 +564,10 @@ public class Config {
     private String dumpClustersFile = null;
     public String getDumpClustersFile()       { return dumpClustersFile; }
     public void setDumpClustersFile(String f) { this.dumpClustersFile = f; }
+
+    private String dumpGuideTreesFile = null;
+    public String getDumpGuideTreesFile()       { return dumpGuideTreesFile; }
+    public void setDumpGuideTreesFile(String f) { this.dumpGuideTreesFile = f; }
 
     private String dumpCompletedTreesFile = null;
     public String getDumpCompletedTreesFile()       { return dumpCompletedTreesFile; }

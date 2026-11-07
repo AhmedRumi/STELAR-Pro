@@ -218,6 +218,8 @@ public class Main {
             List<Tree> consensusSourceTrees = List.of(); // completed DISCO trees for S3
             SimilarityMatrix similarityMatrix = null; // visible to Phase 3.5 (Step A)
             Tree upgmaGuideTree = null; // DISCO-path candidate and optional guide
+            // UPGMA stays first so extra methods report marginal contribution.
+            List<stelarx.pro.S2CandidateStreamer.Guide> guideTrees = new ArrayList<>();
             boolean discoSearch = cfg.getSearchSpace() == Config.SearchSpace.S2
                 || cfg.getSearchSpace() == Config.SearchSpace.S3
                 || cfg.getSearchSpace() == Config.SearchSpace.S4
@@ -334,6 +336,19 @@ public class Main {
                     upgmaGuideTree = UPGMAClusterer.build(
                         similarityMatrix, trees.size() + completedDiscoTrees.size());
                     markSyntheticCandidateNodes(upgmaGuideTree.root);
+                    guideTrees.add(new stelarx.pro.S2CandidateStreamer.Guide(
+                        "UPGMA", upgmaGuideTree));
+                    int guideIndex = trees.size() + completedDiscoTrees.size() + 1;
+                    for (String spec : cfg.getExtraGuideTrees()) {
+                        Tree extra = buildExtraGuideTree(spec, similarityMatrix, guideIndex);
+                        if (extra == null) continue;
+                        markSyntheticCandidateNodes(extra.root);
+                        guideTrees.add(new stelarx.pro.S2CandidateStreamer.Guide(spec, extra));
+                        guideIndex++;
+                    }
+                    if (cfg.getDumpGuideTreesFile() != null) {
+                        dumpGuideTrees(guideTrees, registry, cfg.getDumpGuideTreesFile());
+                    }
                     if (!streamDiscoCandidates && cfg.getDumpCompletedTreesFile() != null) {
                         dumpCompletedTrees(completedDiscoTrees, registry,
                             cfg.getDumpCompletedTreesFile());
@@ -349,16 +364,20 @@ public class Main {
 
                 if (!streamDiscoCandidates) {
                     List<Tree> candidateTrees = new ArrayList<>(trees.size()
-                        + completedDiscoTrees.size() + (upgmaGuideTree == null ? 0 : 1));
+                        + completedDiscoTrees.size() + guideTrees.size());
                     candidateTrees.addAll(trees);
                     candidateTrees.addAll(completedDiscoTrees);
-                    if (upgmaGuideTree != null) candidateTrees.add(upgmaGuideTree);
+                    for (stelarx.pro.S2CandidateStreamer.Guide g : guideTrees) {
+                        candidateTrees.add(g.tree());
+                    }
                     trees = candidateTrees;
                 }
-                Logging.info("%s candidate sources: %d original + %d greedy + %d completed DISCO + %d UPGMA tree",
+                Logging.info("%s candidate sources: %d original + %d greedy + %d completed DISCO + %d guide tree(s)%s",
                     cfg.getSearchSpace(), originalTrees.size(), greedyProposalCount,
-                    completedDiscoTrees.size(),
-                    upgmaGuideTree == null ? 0 : 1);
+                    completedDiscoTrees.size(), guideTrees.size(),
+                    guideTrees.isEmpty() ? "" : " [" + String.join(", ",
+                        guideTrees.stream().map(
+                            stelarx.pro.S2CandidateStreamer.Guide::name).toList()) + "]");
                 if (streamDiscoCandidates) {
                     Logging.info("%s candidate extraction will stream completed trees in bounded batches",
                         cfg.getSearchSpace());
@@ -647,7 +666,7 @@ public class Main {
                 // bounded batch directly into X/DP before releasing node graphs.
                 int batchSize = Math.min(256, Math.max(64, cfg.getThreadCount()));
                 S2CandidateStreamer.Result streamed = S2CandidateStreamer.add(
-                    streamedDiscoTrees, similarityMatrix, upgmaGuideTree,
+                    streamedDiscoTrees, similarityMatrix, guideTrees,
                     candidateSourceTrees,
                     clusterTable, dpTable, hasher, registry, batchSize,
                     cfg.getDumpCompletedTreesFile(), cfg.getSearchSpace().toString(),
@@ -981,6 +1000,23 @@ public class Main {
                     explicitSearchMode = Config.SearchMode.LOCAL;
                 case "--full-disco-candidates" ->
                     cfg.setFullDiscoCandidates(true);
+                case "--extra-guide-trees" -> {
+                    if (++i >= args.length) return false;
+                    List<String> specs = new ArrayList<>();
+                    for (String s : args[i].split(",")) {
+                        String spec = s.trim().toLowerCase();
+                        if (spec.isEmpty()) continue;
+                        if (!spec.matches("(nj|bionj|fastme)(-linear|-sqrt|-corrected|-inv)?")) {
+                            Logging.error("Unknown --extra-guide-trees spec '%s' (expected "
+                                + "nj, bionj or fastme, optionally suffixed -linear, -sqrt, "
+                                + "-corrected or -inv; bare name means the -log transform)",
+                                spec);
+                            return false;
+                        }
+                        specs.add(spec);
+                    }
+                    cfg.setExtraGuideTrees(specs);
+                }
                 case "--search-mode"   -> {
                     if (++i >= args.length) return false;
                     if (args[i].equalsIgnoreCase("full"))
@@ -1083,6 +1119,7 @@ public class Main {
                     }
                 }
                 case "--dump-clusters"         -> { if (++i>=args.length) return false; cfg.setDumpClustersFile(args[i]); }
+                case "--dump-guide-trees"      -> { if (++i>=args.length) return false; cfg.setDumpGuideTreesFile(args[i]); }
                 case "--dump-completed-gene-trees" -> { if (++i>=args.length) return false; cfg.setDumpCompletedTreesFile(args[i]); }
                 case "--gpu-dist-tile-size" -> { if (++i>=args.length) return false; cfg.setGpuDistTileSizeB(Integer.parseInt(args[i])); }
                 case "--gpu-sim-vram-cap-mb" -> { if (++i>=args.length) return false; cfg.setGpuSimilarityVramCapMiB(Integer.parseInt(args[i])); }
@@ -1252,6 +1289,33 @@ public class Main {
     }
 
     /** Admit every internal node of an auxiliary S2 tree as a candidate proposal. */
+    /**
+     * Build one extra distance-based guide tree. Returns null when the method cannot
+     * run (packed matrix), so the caller simply skips it.
+     */
+    private static Tree buildExtraGuideTree(String spec, SimilarityMatrix similarity,
+                                            int treeIndex) {
+        var variant = spec.startsWith("bionj")
+            ? stelarx.completion.NeighborJoiningClusterer.Variant.BIONJ
+            : stelarx.completion.NeighborJoiningClusterer.Variant.NJ;
+        var transform = switch (spec.replaceFirst("^bionj|^fastme|^nj", "")) {
+            case "-linear"    -> stelarx.completion.NeighborJoiningClusterer.Transform.ONE_MINUS_SIM;
+            case "-sqrt"      -> stelarx.completion.NeighborJoiningClusterer.Transform.SQRT_ONE_MINUS_SIM;
+            case "-corrected" -> stelarx.completion.NeighborJoiningClusterer.Transform.NEG_LOG_CORRECTED;
+            case "-inv"       -> stelarx.completion.NeighborJoiningClusterer.Transform.INVERSE;
+            default           -> stelarx.completion.NeighborJoiningClusterer.Transform.NEG_LOG_SIM;
+        };
+        if (spec.startsWith("fastme")) {
+            return stelarx.completion.BalancedMEOptimizer.build(
+                similarity, treeIndex, transform, BME_MAX_NNI_PASSES);
+        }
+        return stelarx.completion.NeighborJoiningClusterer.build(
+            similarity, treeIndex, variant, transform);
+    }
+
+    /** Cap on BME NNI passes; each pass is O(n^3), and search converges well before. */
+    private static final int BME_MAX_NNI_PASSES = 60;
+
     private static void markSyntheticCandidateNodes(stelarx.tree.TreeNode node) {
         if (node == null || node.isLeaf()) return;
         node.isDuplicationNode = false;
@@ -1301,6 +1365,23 @@ public class Main {
      * Dump completed gene trees to a file, one Newick per line.
      * Ordering matches the original input gene tree order.
      */
+    /**
+     * Dump each guide tree as "name<TAB>newick", one per line, so the clade sets of
+     * different construction methods can be compared directly. Guide contributions
+     * reported in the log are marginal and order dependent; this dump is what makes
+     * per-method overlap measurable.
+     */
+    static void dumpGuideTrees(List<stelarx.pro.S2CandidateStreamer.Guide> guides,
+                               TaxonRegistry registry, String outFile) throws IOException {
+        try (PrintStream out = new PrintStream(new FileOutputStream(outFile))) {
+            for (stelarx.pro.S2CandidateStreamer.Guide g : guides) {
+                if (g.tree() == null) continue;
+                out.println(g.name() + "\t" + g.tree().toNewick(registry));
+            }
+        }
+        Logging.info("Guide trees written to %s (%d trees)", outFile, guides.size());
+    }
+
     static void dumpCompletedTrees(List<Tree> trees, TaxonRegistry registry,
                                     String outFile) throws IOException {
         try (PrintStream out = new PrintStream(new FileOutputStream(outFile))) {
@@ -1401,6 +1482,12 @@ public class Main {
               --no-cross-tree-splits          Disable them (S2/S4/S5/S6/S7 default)
               --full-disco-candidates         S2/S4: add S1 candidates and complete
                                               DISCO trees to all species (old behavior)
+              --dump-guide-trees F             Write each guide tree as name<TAB>newick
+              --extra-guide-trees L            S2/S4/S7: extra distance guide trees beside
+                                              UPGMA, comma separated. Base: nj | bionj.
+                                              Optional transform suffix: -linear (1-sim),
+                                              -sqrt, -corrected (1/3 random baseline),
+                                              -inv; bare name means -log(sim).
               --search-mode local|full         Legacy alias for cross-tree control
               --large-n-score-type T            int128 (exact) | double
               --no-prune-search-space           Disable reachability pruning

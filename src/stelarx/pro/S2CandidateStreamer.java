@@ -22,7 +22,18 @@ public final class S2CandidateStreamer {
     private S2CandidateStreamer() {}
 
     public record Result(List<Tree> exemplarTrees, int newClusters,
-                         int completedTrees, int retainedExemplars, long transitions) {}
+                         int completedTrees, int retainedExemplars, long transitions,
+                         long newTransitions) {}
+
+    /**
+     * A guide tree offered as an extra candidate source, with a label for logging.
+     *
+     * <p>Guides are emitted in list order and each reports its <em>marginal</em>
+     * contribution: a cluster already added by an earlier guide is not credited
+     * again. Keep UPGMA first so new methods are measured as additions to the
+     * existing search space rather than against an empty one.
+     */
+    public record Guide(String name, Tree tree) {}
 
     /**
      * Completion remains parallel within each bounded batch. Extraction is the
@@ -31,15 +42,15 @@ public final class S2CandidateStreamer {
      * survive for later CPU/CUDA membership lookups.
      */
     public static Result add(List<Tree> discoTrees, SimilarityMatrix similarity,
-                             Tree upgma, List<Tree> baseTrees,
+                             List<Guide> guides, List<Tree> baseTrees,
                              ClusterTable clusters, DPTable dp,
                              TaxonHasher hasher, TaxonRegistry registry,
                              int batchSize, String completedTreesFile,
                              String searchSpace, boolean lineageScoped) throws IOException {
         if (batchSize < 1) throw new IllegalArgumentException("DISCO batch size must be positive");
         int n = registry.size();
-        if (discoTrees.isEmpty() && upgma == null && completedTreesFile == null) {
-            return new Result(baseTrees, 0, 0, 0, 0);
+        if (discoTrees.isEmpty() && guides.isEmpty() && completedTreesFile == null) {
+            return new Result(baseTrees, 0, 0, 0, 0, 0);
         }
         // S7's base also contains its A-Pro greedy trees. Their exemplar
         // indices remain stable while completed DISCO trees are streamed.
@@ -54,6 +65,7 @@ public final class S2CandidateStreamer {
         int initialClusters = clusters.size();
         int newClusters = 0;
         long transitions = 0;
+        long newTransitions = 0;
         int retained = 0;
         long missingWithinScope = 0;
         long excludedOutsideScope = 0;
@@ -96,6 +108,7 @@ public final class S2CandidateStreamer {
                     }
                     newClusters += counts.newClusters;
                     transitions += counts.transitions;
+                    newTransitions += counts.newTransitions;
                     if (counts.newClusters > 0) {
                         exemplars.add(Tree.candidateExemplar(index, tree, n));
                         retained++;
@@ -117,18 +130,37 @@ public final class S2CandidateStreamer {
         }
 
         int discoNewClusters = newClusters;
-        int upgmaNewClusters = 0;
-        if (upgma != null) {
+        long discoTransitions = transitions;
+        long discoNewTransitions = newTransitions;
+        int guideNewClusters = 0;
+        long guideTransitions = 0;
+        long guideNewTransitions = 0;
+        List<String> guideReports = new ArrayList<>(guides.size());
+        for (Guide guide : guides) {
+            Tree tree = guide.tree();
+            if (tree == null) continue;
             Counts counts = new Counts();
             int index = exemplars.size();
-            emit(upgma.root, upgma, index, leaves, hasher.numSeeds(), clusters, dp, counts);
+            emit(tree.root, tree, index, leaves, hasher.numSeeds(), clusters, dp, counts);
             newClusters += counts.newClusters;
-            upgmaNewClusters = counts.newClusters;
             transitions += counts.transitions;
+            newTransitions += counts.newTransitions;
+            guideNewClusters += counts.newClusters;
+            guideTransitions += counts.transitions;
+            guideNewTransitions += counts.newTransitions;
+            // A guide that contributes only new splits needs no exemplar: every cluster
+            // it touches already carries one from the tree that introduced it.
             if (counts.newClusters > 0) {
-                exemplars.add(Tree.candidateExemplar(index, upgma, n));
+                exemplars.add(Tree.candidateExemplar(index, tree, n));
                 retained++;
             }
+            guideReports.add(String.format(
+                "%s: %d/%d clusters new, %d/%d splits new (%.1f%% of its splits "
+                    + "were already in the DP)",
+                guide.name(), counts.newClusters, tree.leafCount - 1,
+                counts.newTransitions, counts.transitions,
+                counts.transitions == 0 ? 0.0
+                    : 100.0 * (counts.transitions - counts.newTransitions) / counts.transitions));
         }
         if (completedTreesFile != null) {
             Logging.info("Completed gene trees written to %s (%d trees)",
@@ -144,13 +176,23 @@ public final class S2CandidateStreamer {
                 searchSpace, alreadyScopedComplete, discoTrees.size(), missingWithinScope,
                 excludedOutsideScope, partialRoots);
         }
-        Logging.info("%s streamed candidates: %d DISCO + %d UPGMA proposal(s), "
-                + "+%d unique clusters (%d DISCO, %d UPGMA; %d total in X), "
-                + "%d local transitions, %d compact exemplars retained",
-            searchSpace, discoTrees.size(), upgma == null ? 0 : 1,
-            newClusters, discoNewClusters, upgmaNewClusters, clusters.size(),
-            transitions, retained);
-        return new Result(exemplars, newClusters, discoTrees.size(), retained, transitions);
+        Logging.info("%s streamed candidates: %d DISCO + %d guide proposal(s), "
+                + "+%d unique clusters (%d DISCO, %d guide; %d total in X), "
+                + "%d local transitions emitted (%d DISCO, %d guide), "
+                + "+%d new splits after dedup (%d DISCO, %d guide), "
+                + "%d compact exemplars retained",
+            searchSpace, discoTrees.size(), guides.size(),
+            newClusters, discoNewClusters, guideNewClusters, clusters.size(),
+            transitions, discoTransitions, guideTransitions,
+            newTransitions, discoNewTransitions, guideNewTransitions,
+            retained);
+        // The headline numbers for guide-tree experiments: what each tree actually
+        // added to the search space, clusters and splits separately.
+        for (String report : guideReports) {
+            Logging.info("%s guide tree contribution: %s", searchSpace, report);
+        }
+        return new Result(exemplars, newClusters, discoTrees.size(), retained,
+            transitions, newTransitions);
     }
 
     private static ClusterHash[] singletonHashes(TaxonHasher hasher) {
@@ -168,7 +210,8 @@ public final class S2CandidateStreamer {
 
     private static final class Counts {
         int newClusters;
-        long transitions;
+        long transitions;     // emitted, counting splits already present in the DP
+        long newTransitions;  // first-time splits only: the real contribution
     }
 
     private static ClusterHash emit(TreeNode node, Tree tree, int exemplarIndex,
@@ -191,7 +234,7 @@ public final class S2CandidateStreamer {
                 xors[seed] = left.xors[seed] ^ right.xors[seed];
             }
             hash = new ClusterHash(sums, xors, left.size + right.size, seeds);
-            dp.addStreamedTransition(hash, left, right);
+            if (dp.addStreamedTransition(hash, left, right)) counts.newTransitions++;
             counts.transitions++;
         }
         // A partial component root is a real species subset; a globally
