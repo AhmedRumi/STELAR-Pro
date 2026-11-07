@@ -83,6 +83,8 @@ Optional:
                            separated. Base nj | bionj, optional transform suffix
                            -linear | -sqrt | -corrected | -inv (bare = -log sim)
   --dump-guide-trees F     Write each guide tree as name<TAB>newick
+  --guide-ensemble L       S2/S4/S7: resampled NJ guide ensembles, comma separated,
+                           each method:k[:seed[:scale]] e.g. nj-corrected:20
   --s5-rounds N      Number of independent S5 greedy searches (default: 4)
   --s5-seed N        S5 greedy-search random seed
   --max-search-passes N   Max S5/S6 search/DP passes, including first (default: 1)
@@ -197,7 +199,7 @@ while [[ $# -gt 0 ]]; do
       PROGRAM_ARGS+=("$1" "$2")
       shift 2
       ;;
-    --search-space|--search-mode|--max-search-passes|--s5-rounds|--s5-seed|--s5-adaptive-passes|--s6-rounds|--s6-seed|-t|--threads|--num-threads|-m|--seeds|--large-n-score-type|--large-score-type|--anchor-taxon|--gpu-batch-size|--gpu-batches|--gpu-vram-control-factor|--gpu-vram-occupancy-factor|--gpu-treewalk-vram-cap-mb|--gpu-progress-interval|--gpu-dp-state-space-construction-output-cap|--gpu-dp-state-space-progress-time-interval|--gpu-dp-state-space-progress-max-steps|--gpu-dist-tile-size|--gpu-sim-vram-cap-mb|--dump-clusters|--dump-completed-gene-trees|--extra-guide-trees|--dump-guide-trees|--completion-method|--stepb-restriction|--taxa-file|--species-list|--species-list-file|--taxa-set|--taxa-operation|--gene-species-map)
+    --search-space|--search-mode|--max-search-passes|--s5-rounds|--s5-seed|--s5-adaptive-passes|--s6-rounds|--s6-seed|-t|--threads|--num-threads|-m|--seeds|--large-n-score-type|--large-score-type|--anchor-taxon|--gpu-batch-size|--gpu-batches|--gpu-vram-control-factor|--gpu-vram-occupancy-factor|--gpu-treewalk-vram-cap-mb|--gpu-progress-interval|--gpu-dp-state-space-construction-output-cap|--gpu-dp-state-space-progress-time-interval|--gpu-dp-state-space-progress-max-steps|--gpu-dist-tile-size|--gpu-sim-vram-cap-mb|--dump-clusters|--dump-completed-gene-trees|--extra-guide-trees|--dump-guide-trees|--guide-ensemble|--completion-method|--stepb-restriction|--taxa-file|--species-list|--species-list-file|--taxa-set|--taxa-operation|--gene-species-map)
       PROGRAM_ARGS+=("$1" "$2")
       shift 2
       ;;
@@ -374,7 +376,9 @@ if [[ "$TAG_ONLY" != true ]]; then
 fi
 
 if [[ -n "$SCORE_SPECIES_TREE" ]]; then
-  TMP_LOG="$(mktemp /tmp/stelar-pro-score-only.XXXXXX.log)"
+  # macOS mktemp only substitutes TRAILING X's: a suffix after them makes the
+  # name literal, so concurrent score-only runs collided on one fixed path.
+  TMP_LOG="$(mktemp "${TMPDIR:-/tmp}/stelar-pro-score-only.XXXXXX")"
   cleanup_score_log() { rm -f "$TMP_LOG"; }
   trap cleanup_score_log EXIT
 

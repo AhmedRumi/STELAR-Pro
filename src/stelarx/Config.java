@@ -119,6 +119,12 @@ public class Config {
      * {@code -inv} ({@code (1-s)/s}). Empty by default.
      */
     private java.util.List<String> extraGuideTrees = java.util.List.of();
+    /**
+     * Resampled guide-tree ensembles, each spec {@code method:k[:seed[:scale]]}.
+     * Each expands to up to k NJ trees built from standard-error-perturbed resamples
+     * of the similarity matrix; see {@code ResampledGuideEnsemble}. Empty by default.
+     */
+    private java.util.List<String> guideEnsembles = java.util.List.of();
     private final WeightIntersectionMethod weightIntersectionMethod =
         WeightIntersectionMethod.SMALLER_SIDE_TRAVERSAL;
     private LargeScoreType largeScoreType = LargeScoreType.INT128;
@@ -346,6 +352,10 @@ public class Config {
     public java.util.List<String> getExtraGuideTrees()  { return extraGuideTrees; }
     public void setExtraGuideTrees(java.util.List<String> specs) {
         this.extraGuideTrees = java.util.List.copyOf(specs);
+    }
+    public java.util.List<String> getGuideEnsembles()  { return guideEnsembles; }
+    public void setGuideEnsembles(java.util.List<String> specs) {
+        this.guideEnsembles = java.util.List.copyOf(specs);
     }
     public WeightIntersectionMethod getWeightIntersectionMethod()        { return weightIntersectionMethod; }
 

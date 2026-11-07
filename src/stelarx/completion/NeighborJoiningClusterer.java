@@ -79,8 +79,8 @@ public final class NeighborJoiningClusterer {
         return d;
     }
 
-    /** Similarity to distance under the chosen transform. */
-    private static double distance(double s, Transform t) {
+    /** Similarity to distance under the chosen transform. Shared with the ensemble. */
+    static double distance(double s, Transform t) {
         return switch (t) {
             case ONE_MINUS_SIM -> 1.0 - s;
             case SQRT_ONE_MINUS_SIM -> Math.sqrt(Math.max(0.0, 1.0 - s));
@@ -116,6 +116,19 @@ public final class NeighborJoiningClusterer {
         return new NeighborJoiningClusterer(sim, n, variant, transform).run(treeIndex);
     }
 
+    /**
+     * Build from an externally supplied dense distance matrix, for the resampling
+     * ensemble, which perturbs similarity before transforming it. {@code transform}
+     * is carried for logging only - the caller has already applied it. The array is
+     * cloned because agglomeration overwrites it in place, and per-member logging is
+     * suppressed so an ensemble does not emit one line per member.
+     */
+    static Tree buildFromDistances(double[] d, int n, int treeIndex,
+                                   Variant variant, Transform transform) {
+        if (n < 2) return null;
+        return new NeighborJoiningClusterer(d, n, variant, transform).run(treeIndex);
+    }
+
     // ── State ────────────────────────────────────────────────────────────────
 
     private final int n;
@@ -128,6 +141,7 @@ public final class NeighborJoiningClusterer {
     private int activeCount;
     private int zeroSimPairs;          // off-diagonal pairs with sim == 0 (never co-occur)
     private int belowRandomPairs;      // pairs at or below the 1/3 random-quartet level
+    private final boolean quiet;       // ensemble members do not log individually
 
     private NeighborJoiningClusterer(SimilarityMatrix sim, int n,
                                      Variant variant, Transform transform) {
@@ -139,6 +153,7 @@ public final class NeighborJoiningClusterer {
         this.clusterRoot = new TreeNode[n];
         this.activeArr = new int[n];
         this.activeCount = n;
+        this.quiet = false;
 
         for (int i = 0; i < n; i++) {
             for (int j = i + 1; j < n; j++) {
@@ -154,6 +169,27 @@ public final class NeighborJoiningClusterer {
         if (v != null) System.arraycopy(d, 0, v, 0, d.length);
 
         for (int i = 0; i < n; i++) {
+            activeArr[i] = i;
+            TreeNode leaf = new TreeNode();
+            leaf.taxonId = i;
+            clusterRoot[i] = leaf;
+        }
+    }
+
+    /** Variant taking a ready-made distance matrix; see {@link #buildFromDistances}. */
+    private NeighborJoiningClusterer(double[] distances, int n,
+                                     Variant variant, Transform transform) {
+        this.n = n;
+        this.variant = variant;
+        this.transform = transform;
+        this.d = distances.clone();
+        this.v = (variant == Variant.BIONJ) ? distances.clone() : null;
+        this.clusterRoot = new TreeNode[n];
+        this.activeArr = new int[n];
+        this.activeCount = n;
+        this.quiet = true;
+        for (int i = 0; i < n; i++) {
+            d[i * n + i] = 0.0;
             activeArr[i] = i;
             TreeNode leaf = new TreeNode();
             leaf.taxonId = i;
@@ -237,9 +273,11 @@ public final class NeighborJoiningClusterer {
         int a = activeArr[0], b = activeArr[1];
         join(a, b);
 
-        Logging.info("%s guide tree built on %s: %d of %d pairs never co-occur, "
-            + "%d at or below the 1/3 random-quartet level (distance floored)",
-            variant, transform, zeroSimPairs, n * (n - 1) / 2, belowRandomPairs);
+        if (!quiet) {
+            Logging.info("%s guide tree built on %s: %d of %d pairs never co-occur, "
+                + "%d at or below the 1/3 random-quartet level (distance floored)",
+                variant, transform, zeroSimPairs, n * (n - 1) / 2, belowRandomPairs);
+        }
         return buildTree(treeIndex);
     }
 

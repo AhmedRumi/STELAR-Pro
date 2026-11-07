@@ -346,6 +346,15 @@ public class Main {
                         guideTrees.add(new stelarx.pro.S2CandidateStreamer.Guide(spec, extra));
                         guideIndex++;
                     }
+                    for (String spec : cfg.getGuideEnsembles()) {
+                        var members = buildGuideEnsemble(spec, similarityMatrix, guideIndex);
+                        for (var m : members) {
+                            markSyntheticCandidateNodes(m.tree().root);
+                            guideTrees.add(new stelarx.pro.S2CandidateStreamer.Guide(
+                                m.name(), m.tree()));
+                            guideIndex++;
+                        }
+                    }
                     if (cfg.getDumpGuideTreesFile() != null) {
                         dumpGuideTrees(guideTrees, registry, cfg.getDumpGuideTreesFile());
                     }
@@ -1017,6 +1026,26 @@ public class Main {
                     }
                     cfg.setExtraGuideTrees(specs);
                 }
+                case "--guide-ensemble" -> {
+                    if (++i >= args.length) return false;
+                    List<String> specs = new ArrayList<>();
+                    for (String s : args[i].split(",")) {
+                        String spec = s.trim().toLowerCase();
+                        if (spec.isEmpty()) continue;
+                        // method:k[:seed[:scale]] - fastme is excluded because it
+                        // contributes nothing measurably and costs O(n^3) per member.
+                        if (!spec.matches("(nj|bionj)(-linear|-sqrt|-corrected|-inv)?"
+                                + ":\\d{1,4}(:\\d{1,19}(:\\d+(\\.\\d+)?)?)?")) {
+                            Logging.error("Bad --guide-ensemble spec '%s' (expected "
+                                + "method:k[:seed[:scale]], method being nj or bionj "
+                                + "with an optional transform suffix, e.g. "
+                                + "nj-corrected:20 or nj-corrected:20:42:1.5)", spec);
+                            return false;
+                        }
+                        specs.add(spec);
+                    }
+                    cfg.setGuideEnsembles(specs);
+                }
                 case "--search-mode"   -> {
                     if (++i >= args.length) return false;
                     if (args[i].equalsIgnoreCase("full"))
@@ -1293,24 +1322,49 @@ public class Main {
      * Build one extra distance-based guide tree. Returns null when the method cannot
      * run (packed matrix), so the caller simply skips it.
      */
-    private static Tree buildExtraGuideTree(String spec, SimilarityMatrix similarity,
-                                            int treeIndex) {
-        var variant = spec.startsWith("bionj")
-            ? stelarx.completion.NeighborJoiningClusterer.Variant.BIONJ
-            : stelarx.completion.NeighborJoiningClusterer.Variant.NJ;
-        var transform = switch (spec.replaceFirst("^bionj|^fastme|^nj", "")) {
+    /** Transform named by a spec's suffix; bare means the additive -log sim. */
+    private static stelarx.completion.NeighborJoiningClusterer.Transform
+            guideTransform(String spec) {
+        return switch (spec.replaceFirst("^bionj|^fastme|^nj", "")) {
             case "-linear"    -> stelarx.completion.NeighborJoiningClusterer.Transform.ONE_MINUS_SIM;
             case "-sqrt"      -> stelarx.completion.NeighborJoiningClusterer.Transform.SQRT_ONE_MINUS_SIM;
             case "-corrected" -> stelarx.completion.NeighborJoiningClusterer.Transform.NEG_LOG_CORRECTED;
             case "-inv"       -> stelarx.completion.NeighborJoiningClusterer.Transform.INVERSE;
             default           -> stelarx.completion.NeighborJoiningClusterer.Transform.NEG_LOG_SIM;
         };
+    }
+
+    private static Tree buildExtraGuideTree(String spec, SimilarityMatrix similarity,
+                                            int treeIndex) {
+        var variant = spec.startsWith("bionj")
+            ? stelarx.completion.NeighborJoiningClusterer.Variant.BIONJ
+            : stelarx.completion.NeighborJoiningClusterer.Variant.NJ;
+        var transform = guideTransform(spec);
         if (spec.startsWith("fastme")) {
             return stelarx.completion.BalancedMEOptimizer.build(
                 similarity, treeIndex, transform, BME_MAX_NNI_PASSES);
         }
         return stelarx.completion.NeighborJoiningClusterer.build(
             similarity, treeIndex, variant, transform);
+    }
+
+    /**
+     * Expand one {@code method:k[:seed[:scale]]} spec into ensemble members. Defaults:
+     * seed 42 for reproducibility, scale 1.0 for the calibrated standard error.
+     */
+    private static java.util.List<stelarx.completion.ResampledGuideEnsemble.Member>
+            buildGuideEnsemble(String spec, SimilarityMatrix similarity, int firstTreeIndex) {
+        String[] parts = spec.split(":");
+        String method = parts[0];
+        int k = Integer.parseInt(parts[1]);
+        long seed = parts.length > 2 ? Long.parseLong(parts[2]) : 42L;
+        double scale = parts.length > 3 ? Double.parseDouble(parts[3]) : 1.0;
+        var variant = method.startsWith("bionj")
+            ? stelarx.completion.NeighborJoiningClusterer.Variant.BIONJ
+            : stelarx.completion.NeighborJoiningClusterer.Variant.NJ;
+        var transform = guideTransform(method);
+        return stelarx.completion.ResampledGuideEnsemble.build(
+            similarity, firstTreeIndex, variant, transform, k, seed, scale, method);
     }
 
     /** Cap on BME NNI passes; each pass is O(n^3), and search converges well before. */
@@ -1483,6 +1537,8 @@ public class Main {
               --full-disco-candidates         S2/S4: add S1 candidates and complete
                                               DISCO trees to all species (old behavior)
               --dump-guide-trees F             Write each guide tree as name<TAB>newick
+              --guide-ensemble L               S2/S4/S7: resampled NJ ensembles,
+                                              method:k[:seed[:scale]] (e.g. nj-corrected:20)
               --extra-guide-trees L            S2/S4/S7: extra distance guide trees beside
                                               UPGMA, comma separated. Base: nj | bionj.
                                               Optional transform suffix: -linear (1-sim),
