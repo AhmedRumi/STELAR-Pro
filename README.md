@@ -149,9 +149,10 @@ builds a rooted-triplet sister-frequency matrix for completion and UPGMA;
 the former S4 consensus stage is dormant.
 Its distance view is derived as `1 − similarity`. Select
 them with `--search-space S2`, `S3`, or `S4`. S5 is independent of those
-DISCO/completion/consensus paths: it adds four ASTRAL-Pro-style quartet-greedy
-species-tree proposals to S1, registers both rooted orientations of each
-greedy-tree edge, and uses STELAR-Pro's rooted-triplet DP to choose candidates.
+DISCO/completion/consensus paths: it builds four ASTRAL-Pro-style quartet-greedy
+species-tree proposals and one UPGMA tree from a shared DISCO quartet-similarity
+matrix. It does not include S1 candidates. It registers both rooted
+orientations of each greedy-tree edge and uses STELAR-Pro's rooted-triplet DP.
 Greedy placement/NNI uses parallel CPU workers; the final weight calculation
 remains STELAR-Pro's CPU/GPU triplet scorer. The original rooted/tagged trees
 are the only scoring evidence in all modes. Select S5 with `--search-space S5`.
@@ -161,11 +162,12 @@ taxa, S5 uses direct full-taxon greedy placement. At 100 taxa or more, each
 initial round uses ASTRAL-Pro's two-step search: build randomized subset guide trees,
 infer their backbone using STELAR-Pro's rooted-triplet DP on the original
 tagged gene trees restricted to that subset, then insert the remaining taxa
-in groups and run NNI. The default is one search/DP pass. Set
+in groups using the shared similarity matrix and run NNI. The default is one
+search/DP pass. Set
 `--max-search-passes N` to permit additional passes: each induces a new random
 backbone from the preceding STELAR tree, adds another batch of greedy proposals,
-and reruns the DP. All S1 and earlier S5
-candidates remain available. Search stops when the rooted tree no longer
+and reruns the DP. Earlier S5 guides and the one UPGMA tree remain available;
+S1 candidates do not. Search stops when the rooted tree no longer
 changes, following the ASTRAL-Pro2 supplement's tree-stability rule; the
 bundled ASTRAL-Pro3 binary instead uses score improvement and a different cap.
 Every backbone and full-tree DP remains rooted-triplet based.

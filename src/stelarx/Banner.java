@@ -197,7 +197,7 @@ public class Banner {
             case S2 -> "S2  (lineage-scoped DISCO + UPGMA candidates)";
             case S3 -> "S3  (global DISCO + S1 + greedy consensus)";
             case S4 -> "S4  (lineage-scoped DISCO + triplet guide + UPGMA)";
-            case S5 -> "S5  (A-Pro greedy + native candidates + triplet DP)";
+            case S5 -> "S5  (A-Pro greedy + UPGMA guide + triplet DP; no S1 candidates)";
             case S6 -> "S6  (rooted-triplet greedy + native candidates + triplet DP)";
             case S7 -> "S7  (A-Pro greedy + DISCO completion + UPGMA + triplet DP)";
         };

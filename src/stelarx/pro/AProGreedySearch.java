@@ -2,10 +2,14 @@ package stelarx.pro;
 
 import stelarx.Config;
 import stelarx.Logging;
+import stelarx.completion.SimilarityMatrix;
+import stelarx.completion.SimilarityMatrixBuilder;
+import stelarx.completion.UPGMAClusterer;
 import stelarx.cluster.ClusterTable;
 import stelarx.dp.DPTable;
 import stelarx.dp.Inference;
 import stelarx.gpu.GPUDPBuilder;
+import stelarx.gpu.GPUSimilarityMatrix;
 import stelarx.hash.PrefixHashArrays;
 import stelarx.hash.TaxonHasher;
 import stelarx.partition.PartitionTable;
@@ -89,6 +93,16 @@ public final class AProGreedySearch {
                                       TaxonRegistry registry, int firstTreeIndex,
                                       int threads, long seed, int rounds,
                                       boolean gpu, String previousTree) {
+        return generate(inputFile, taggedInputFile, registry, firstTreeIndex,
+            threads, seed, rounds, gpu, previousTree, null);
+    }
+
+    /** One prepared matrix is reused by all greedy rounds and adaptive passes. */
+    public static List<Tree> generate(String inputFile, String taggedInputFile,
+                                      TaxonRegistry registry, int firstTreeIndex,
+                                      int threads, long seed, int rounds,
+                                      boolean gpu, String previousTree,
+                                      GuideMatrix matrix) {
         if (gpu ? !tryLoadGPU() : !tryLoad()) {
             throw new IllegalStateException(
                 "S5 native greedy library is unavailable: " + (gpu
@@ -97,9 +111,13 @@ public final class AProGreedySearch {
         }
         String[] newicks = gpu
             ? generateGPU(inputFile, taggedInputFile, previousTree,
-                threads, seed, rounds)
+                threads, seed, rounds,
+                matrix == null ? null : matrix.names(),
+                matrix == null ? null : matrix.values())
             : generateCPU(inputFile, taggedInputFile, previousTree,
-                threads, seed, rounds);
+                threads, seed, rounds,
+                matrix == null ? null : matrix.names(),
+                matrix == null ? null : matrix.values());
         List<Tree> trees = new ArrayList<>(newicks.length);
         for (int i = 0; i < newicks.length; i++) {
             Tree parsed = TreeParser.parseSpeciesTreeNewick(newicks[i], registry);
@@ -109,6 +127,44 @@ public final class AProGreedySearch {
                 registry.size(), parsed.hasPolytomy));
         }
         return trees;
+    }
+
+    public record GuideMatrix(String[] names, double[] values, Tree upgmaTree) {}
+
+    /** Reuse parsed scoring trees; consume the matrix when constructing UPGMA. */
+    public static GuideMatrix prepareGuideMatrix(List<Tree> genes,
+                                                   TaxonRegistry taxa,
+                                                   int upgmaIndex) {
+        long start = System.nanoTime();
+        List<Tree> singleCopy = DiscoDecomposer.decomposeAll(
+            genes, taxa.size(), 0, 4).trees();
+        if (singleCopy.isEmpty())
+            throw new IllegalStateException("No DISCO trees for the S5 guide matrix");
+        // For small matrices the CPU scatter avoids CUDA tour/RMQ staging, which
+        // dominated host RSS without improving the 201-taxon matrix build time.
+        boolean gpu = taxa.size() > 256
+            && Config.getInstance().getComputeMode() == Config.ComputeMode.GPU
+            && GPUSimilarityMatrix.tryLoad();
+        SimilarityMatrix sim = gpu
+            ? SimilarityMatrixBuilder.buildGPU(singleCopy, taxa.size())
+            : SimilarityMatrixBuilder.buildCPU(singleCopy, taxa.size());
+        int n = taxa.size();
+        String[] names = new String[n];
+        double[] values = new double[Math.multiplyExact(n, n)];
+        for (int a = 0; a < n; a++) {
+            names[a] = taxa.getName(a);
+            for (int b = 0; b < n; b++)
+                values[a * n + b] = sim.getSim(a, b);
+        }
+        // The JNI buffer above is the only read-only placement copy. UPGMA
+        // mutates the original packed similarity triangle in place.
+        Tree upgma = UPGMAClusterer.build(sim, upgmaIndex, true);
+        markProposalNodes(upgma.root);
+        Logging.info("S5 shared quartet matrix: %d DISCO trees, %d taxa, %s; "
+            + "one UPGMA guide (matrix consumed) in %d ms",
+            singleCopy.size(), n, gpu ? "GPU" : "CPU",
+            (System.nanoTime() - start) / 1_000_000);
+        return new GuideMatrix(names, values, upgma);
     }
 
     /** Called by native two-step search after building subset guide trees. */
@@ -271,9 +327,11 @@ public final class AProGreedySearch {
     private static native String[] generateCPU(String inputFile, String taggedInputFile,
                                                 String previousTree,
                                                 int threads,
-                                                long seed, int rounds);
+                                                long seed, int rounds,
+                                                String[] matrixTaxa, double[] matrixValues);
     private static native String[] generateGPU(String inputFile, String taggedInputFile,
                                                 String previousTree,
                                                 int threads,
-                                                long seed, int rounds);
+                                                long seed, int rounds,
+                                                String[] matrixTaxa, double[] matrixValues);
 }

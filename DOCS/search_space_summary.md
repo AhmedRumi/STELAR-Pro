@@ -245,7 +245,7 @@ from S1–S5. It is not a second final objective. See
 | **S2** | Lineage-scoped DISCO trees; one UPGMA tree; no S1 by default | Quartet pair similarity | Local; cross-tree opt-in |
 | **S3** | S1, globally completed DISCO trees, UPGMA, greedy-consensus clades/refinements | Quartet pair similarity | Full |
 | **S4** | Lineage-scoped DISCO trees; one UPGMA tree; no S1 by default | Rooted-triplet pair similarity | Local; cross-tree opt-in |
-| **S5** | S1 plus ASTRAL-Pro quartet-greedy proposal trees; accumulated adaptive proposals | A-Pro quartet-equivalence objective | Local; cross-tree opt-in |
+| **S5** | ASTRAL-Pro quartet-greedy proposal trees plus one shared-matrix UPGMA tree; no S1; accumulated adaptive proposals | A-Pro quartet-equivalence objective | Local; cross-tree opt-in |
 | **S6** | S1 plus rooted-triplet greedy proposal trees; accumulated adaptive proposals | STELAR triplet tensor `H` | Local; cross-tree opt-in |
 
 The presets are configured in [`CliPresets.java`](../src/stelarx/CliPresets.java).

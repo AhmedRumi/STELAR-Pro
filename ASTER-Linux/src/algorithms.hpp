@@ -43,6 +43,7 @@ typedef unsigned __int128 hash_t;
 #include<stdexcept>
 #include<iomanip>
 #include<limits>
+#include<queue>
 
 #include "incbeta.c"
 #include "argparser.hpp"
@@ -1567,11 +1568,89 @@ struct ConstrainedOptimizationAlgorithm{
 		}
 	}
 	
+	// Resolve each backbone-edge group with the shared similarity matrix. Only
+	// group-sized scratch storage is allocated; the global matrix is read-only.
+	static void attachUpgmaGroup(vector<PlacementAlgorithm::Node> &nodes,
+		int edgeChild, const vector<int> &taxa, const vector<double> &globalSim,
+		int N, int &rootNodeId){
+		if (taxa.empty()) return;
+		int m = static_cast<int>(taxa.size()), capacity = 2 * m - 1;
+		vector<double> similarity(static_cast<size_t>(capacity) * capacity, 0.0);
+		vector<int> clusterSize(capacity, 0), nodeId(capacity, -1);
+		vector<char> active(capacity, 0);
+		priority_queue<tuple<double, int, int>> nearest;
+		auto at = [&](int a, int b) -> double& {
+			return similarity[static_cast<size_t>(a) * capacity + b];
+		};
+		for (int a = 0; a < m; a++) {
+			nodeId[a] = static_cast<int>(nodes.size());
+			nodes.emplace_back(taxa[a]);
+			clusterSize[a] = 1;
+			active[a] = 1;
+			for (int b = 0; b < a; b++) {
+				double score = globalSim[static_cast<size_t>(taxa[a]) * N + taxa[b]];
+				at(a, b) = at(b, a) = score;
+				nearest.emplace(score, b, a);
+			}
+		}
+		int next = m;
+		while (next < capacity) {
+			int a, b;
+			while (true) {
+				if (nearest.empty()) throw runtime_error("S5 UPGMA exhausted candidate pairs");
+				a = get<1>(nearest.top());
+				b = get<2>(nearest.top());
+				nearest.pop();
+				if (active[a] && active[b]) break;
+			}
+			int w = static_cast<int>(nodes.size());
+			nodes.emplace_back(-1);
+			nodes[w].heavy = nodeId[a];
+			nodes[w].light = nodeId[b];
+			nodes[nodeId[a]].parent = w;
+			nodes[nodeId[b]].parent = w;
+			clusterSize[next] = clusterSize[a] + clusterSize[b];
+			nodes[w].leafCnt = clusterSize[next];
+			nodeId[next] = w;
+			active[a] = active[b] = 0;
+			for (int k = 0; k < next; k++) if (active[k]) {
+				double score = (clusterSize[a] * at(a, k) + clusterSize[b] * at(b, k))
+					/ clusterSize[next];
+				at(next, k) = at(k, next) = score;
+				nearest.emplace(score, k, next);
+			}
+			active[next] = 1;
+			next++;
+		}
+		int groupRoot = nodeId[capacity - 1];
+		int oldParent = nodes[edgeChild].parent;
+		int w = static_cast<int>(nodes.size());
+		nodes.emplace_back(-1);
+		nodes[w].parent = oldParent;
+		nodes[w].heavy = edgeChild;
+		nodes[w].light = groupRoot;
+		nodes[edgeChild].parent = w;
+		nodes[groupRoot].parent = w;
+		if (oldParent == -1) rootNodeId = w;
+		else if (nodes[oldParent].heavy == edgeChild) nodes[oldParent].heavy = w;
+		else if (nodes[oldParent].light == edgeChild) nodes[oldParent].light = w;
+		else throw runtime_error("S5 UPGMA backbone parent is inconsistent");
+	}
+
+	static int rebalanceUpgmaTree(vector<PlacementAlgorithm::Node> &nodes, int v){
+		if (nodes[v].leafId != -1) return nodes[v].leafCnt = 1;
+		int heavyCount = rebalanceUpgmaTree(nodes, nodes[v].heavy);
+		int lightCount = rebalanceUpgmaTree(nodes, nodes[v].light);
+		if (heavyCount < lightCount) swap(nodes[v].heavy, nodes[v].light);
+		return nodes[v].leafCnt = heavyCount + lightCount;
+	}
+
 	// A null resolver retains ASTRAL-Pro's quartet-DP backbone. S5 supplies a
 	// rooted-triplet DP resolver while reusing the placement and NNI stages.
 	void twoStepWorkflow(PlacementAlgorithm &pAlg,
 		const function<string(const vector<string>&, const vector<int>&)> &backboneResolver = {},
-		const function<string(const vector<int>&)> &priorBackboneResolver = {}){
+		const function<string(const vector<int>&)> &priorBackboneResolver = {},
+		const vector<double> *upgmaSimilarity = nullptr){
 		int N = ntaxa, rId = roundId;
 		int n = sqrt(N) * log2(names.size()) / 4;
 		vector<int> order;
@@ -1663,7 +1742,13 @@ struct ConstrainedOptimizationAlgorithm{
 				for (int i = n; i < N; i++) {
 					nodeBranch[pAlg.locateBranch(order[i])].push_back(order[i]);
 				}
-				for (size_t b = 0; b < nodeBranch.size(); b++){
+				if (upgmaSimilarity) {
+					for (size_t b = 0; b < nodeBranch.size(); b++)
+						attachUpgmaGroup(pNodes, static_cast<int>(b), nodeBranch[b],
+							*upgmaSimilarity, N, rootNodeId);
+					rebalanceUpgmaTree(pNodes, rootNodeId);
+				}
+				else for (size_t b = 0; b < nodeBranch.size(); b++){
 					pAlg.nodes = originalNodes;
 					pAlg.rootNodeId = originalRootNodeId;
 					vector<int> added;

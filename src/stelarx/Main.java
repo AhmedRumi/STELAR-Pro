@@ -190,7 +190,9 @@ public class Main {
             // S2-S4 and S7 decompose multicopy trees with DISCO, complete those
             // single-copy trees, and add a UPGMA guide. Only S3 adds greedy
             // consensus candidates; S4 uses triplet similarity for its guide.
-            // S5 adds A-Pro quartet-greedy trees; S7 adds these plus S2's
+            // S5 uses A-Pro quartet-greedy trees and one shared-matrix UPGMA
+            // guide, with no original-gene candidate clusters. S7 adds the
+            // greedy trees to S2's
             // completed DISCO and UPGMA proposals. S6 uses triplet-greedy trees.
             // S2/S4 now use only lineage-scoped DISCO and UPGMA proposals by
             // default. --exhaustive restores their older S1 plus
@@ -201,6 +203,7 @@ public class Main {
             // trees may contain completed or guide-tree relationships, but those
             // artificial relationships never become scoring observations.
             List<Tree> originalTrees = trees; // always points to pre-completion trees
+            AProGreedySearch.GuideMatrix s5GuideMatrix = null;
             boolean strictLineageDisco =
                 (cfg.getSearchSpace() == Config.SearchSpace.S2
                     || cfg.getSearchSpace() == Config.SearchSpace.S4)
@@ -279,20 +282,39 @@ public class Main {
                     ? cfg.getS7Rounds() : cfg.getS5Rounds();
                 long seed = cfg.getSearchSpace() == Config.SearchSpace.S7
                     ? cfg.getS7Seed() : cfg.getS5Seed();
+                if (cfg.getSearchSpace() == Config.SearchSpace.S5) {
+                    s5GuideMatrix = AProGreedySearch.prepareGuideMatrix(
+                        originalTrees, registry, rounds);
+                    // DISCO components and matrix-build scratch are not scoring data.
+                    System.gc();
+                }
+                int firstGreedyIndex = cfg.getSearchSpace() == Config.SearchSpace.S5
+                    ? 0 : originalTrees.size();
                 List<Tree> greedyTrees = AProGreedySearch.generate(
                     preprocessingInput, cfg.getInputFile(), registry,
-                    originalTrees.size(), cfg.getThreadCount(), seed, rounds, false);
+                    firstGreedyIndex, cfg.getThreadCount(), seed, rounds,
+                    false, null, s5GuideMatrix);
                 greedyProposalCount = greedyTrees.size();
-                List<Tree> candidateTrees = new ArrayList<>(
-                    originalTrees.size() + greedyTrees.size());
-                candidateTrees.addAll(originalTrees);
+                List<Tree> candidateTrees = new ArrayList<>(cfg.getSearchSpace()
+                    == Config.SearchSpace.S5 ? greedyTrees.size() + 1
+                    : originalTrees.size() + greedyTrees.size());
+                if (cfg.getSearchSpace() != Config.SearchSpace.S5)
+                    candidateTrees.addAll(originalTrees);
                 candidateTrees.addAll(greedyTrees);
+                if (s5GuideMatrix != null)
+                    candidateTrees.add(s5GuideMatrix.upgmaTree());
                 trees = candidateTrees;
-                Logging.info("%s candidates: %d original gene trees + %d A-Pro "
-                        + "quartet-greedy proposal(s) (CPU, %d threads); "
-                        + "triplet scoring remains original-only",
-                    cfg.getSearchSpace(), originalTrees.size(), greedyTrees.size(),
-                    cfg.getThreadCount());
+                // Default S5 has no later greedy pass: release the dense JNI
+                // placement buffer before candidate hashing and DP allocation.
+                if (cfg.getSearchSpace() == Config.SearchSpace.S5
+                        && cfg.getMaxSearchPasses() == 1)
+                    s5GuideMatrix = null;
+                Logging.info("%s candidates: %d A-Pro greedy proposal(s), %d UPGMA "
+                        + "guide(s), %d original candidate(s); original genes score triplets only",
+                    cfg.getSearchSpace(), greedyTrees.size(),
+                    cfg.getSearchSpace() == Config.SearchSpace.S5 ? 1 : 0,
+                    cfg.getSearchSpace() == Config.SearchSpace.S5
+                        ? 0 : originalTrees.size());
                 PhaseLogger.end(greedyPhase, t1b, false);
             }
             if (discoSearch && !cfg.isScoreOnly()) {
@@ -538,9 +560,10 @@ public class Main {
             boolean aProGreedySearch = cfg.getSearchSpace() == Config.SearchSpace.S5
                 || cfg.getSearchSpace() == Config.SearchSpace.S7;
             int firstS5GreedyTreeIndex = aProGreedySearch
-                ? originalTrees.size() : Integer.MAX_VALUE;
+                ? (cfg.getSearchSpace() == Config.SearchSpace.S5
+                    ? 0 : originalTrees.size()) : Integer.MAX_VALUE;
             int lastS5GreedyTreeIndex = aProGreedySearch
-                ? originalTrees.size() + greedyProposalCount : Integer.MAX_VALUE;
+                ? firstS5GreedyTreeIndex + greedyProposalCount : Integer.MAX_VALUE;
             ClusterTable clusterTable = new ClusterTable(
                 candidateSourceTrees, pref, registry.size(), candidateHashes,
                 firstS5GreedyTreeIndex, lastS5GreedyTreeIndex);
@@ -653,8 +676,13 @@ public class Main {
             // ── Phase 4: Gene-tree tripartition extraction (from ORIGINAL trees) ──
             // Uses originalTrees so tripartitions reflect actual gene-tree signal.
             long t4 = PhaseLogger.begin("Phase 4  Rooted child-partition extraction", false);
+            UniqueTaxonSubtreeHashes originalHashes =
+                cfg.getSearchSpace() == Config.SearchSpace.S5
+                    ? new UniqueTaxonSubtreeHashes(originalTrees, hasher)
+                    : candidateHashes;
             PartitionTable partTable = new PartitionTable(
-                originalTrees, prefParts, candidateHashes);
+                originalTrees, prefParts, originalHashes);
+            if (originalHashes != candidateHashes) originalHashes.release();
             PhaseLogger.end("Phase 4  Rooted child-partition extraction", t4, false);
 
             if (cfg.isVerifyPartitions()) {
@@ -755,8 +783,8 @@ public class Main {
 
             if (cfg.getSearchSpace() == Config.SearchSpace.S5
                     && cfg.getMaxSearchPasses() > 1) {
-                // The initial greedy proposals have already been optimized by
-                // STELAR DP. Retain S1 and every proposal in later passes.
+                // Keep only greedy and UPGMA candidate trees. Original genes
+                // remain scoring evidence and never enter the S5 candidate set.
                 List<Tree> accumulated = new ArrayList<>(trees);
                 weightTable = null;
                 partTable = null;
@@ -772,15 +800,21 @@ public class Main {
                         gpuTripletDP);
                     String previousTree = speciesTree;
                     long greedyStart = System.nanoTime();
+                    Tree previousUpgma = accumulated.remove(accumulated.size() - 1);
                     List<Tree> added = AProGreedySearch.generate(
                         preprocessingInput, cfg.getInputFile(), registry,
                         accumulated.size(), cfg.getThreadCount(),
                         cfg.getS5Seed() + pass, cfg.getS5Rounds(),
-                        false, previousTree);
+                        false, previousTree, s5GuideMatrix);
                     Logging.info("S5 adaptive pass %d: %d CPU greedy proposals "
                             + "with %d threads in %d ms", pass, added.size(),
                         cfg.getThreadCount(), (System.nanoTime() - greedyStart) / 1_000_000);
                     accumulated.addAll(added);
+                    // Keep UPGMA last so the greedy trees form one contiguous
+                    // index range for opposite-edge candidate extraction.
+                    accumulated.add(new Tree(accumulated.size(), previousUpgma.root,
+                        previousUpgma.postorderArray, previousUpgma.positionMap,
+                        previousUpgma.leafCount, registry.size()));
                     S5OverallSearch.Result updated = S5OverallSearch.infer(
                         originalTrees, accumulated, registry);
                     boolean unchanged = S5OverallSearch.sameRootedTopology(
@@ -790,7 +824,7 @@ public class Main {
                     Logging.info("S5 adaptive DP pass %d/%d: +%d greedy trees, "
                         + "%d total; rooted topology %s", pass,
                         cfg.getMaxSearchPasses() - 1, added.size(),
-                        accumulated.size() - originalTrees.size(),
+                        accumulated.size() - 1,
                         unchanged ? "unchanged (stop)" : "changed");
                     PhaseLogger.end("Phase 7b S5 adaptive pass " + pass
                         + " (CPU greedy + triplet DP)", t7b, gpuTripletDP);
@@ -1415,7 +1449,7 @@ public class Main {
                                                  DISCO completion and UPGMA, without S1 candidates;
                                                  S3 retains global DISCO + S1 + greedy consensus;
                                                  S4 uses S2's scoped candidates with a triplet guide;
-                                                 S5 adds A-Pro quartet-greedy candidates;
+                                                 S5 uses A-Pro quartet-greedy + UPGMA candidates (no S1);
                                                  S6 adds rooted-triplet greedy candidates;
                                                  S7 combines S5 greedy with S2 DISCO/UPGMA
               --s5-rounds N                  Greedy trees per S5 DP pass (default: 4;

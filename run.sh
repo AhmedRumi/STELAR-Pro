@@ -73,7 +73,7 @@ Optional:
   --search-space     S1 (default) | S2 (lineage-scoped DISCO/UPGMA candidates) |
                      S3 (global DISCO + S1 + greedy consensus) |
                      S4 (S2 candidates with rooted-triplet similarity) |
-                     S5 (A-Pro greedy trees + S1; rooted-triplet DP) |
+                     S5 (A-Pro greedy trees + shared-matrix UPGMA; triplet DP) |
                      S6 (rooted-triplet greedy trees + S1; triplet DP)
   --search-mode      local | full
   --cross-tree-splits     Enable cross-tree splits for S2/S4/S5/S6/S7 (default: off)

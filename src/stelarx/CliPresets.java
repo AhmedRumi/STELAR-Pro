@@ -43,7 +43,7 @@ final class CliPresets {
             }
             case "5", "s5" -> {
                 cfg.setSearchSpace(Config.SearchSpace.S5);
-                // S5 adds A-Pro greedy-tree candidates to S1; recombination is optional.
+                // S5 uses A-Pro greedy and one UPGMA guide, excluding S1 candidates.
             }
             case "6", "s6" -> {
                 cfg.setSearchSpace(Config.SearchSpace.S6);

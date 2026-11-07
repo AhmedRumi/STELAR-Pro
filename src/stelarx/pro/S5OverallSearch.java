@@ -17,7 +17,7 @@ import stelarx.weight.WeightTable;
 
 import java.util.List;
 
-/** Re-runs the full rooted-triplet DP over S1 plus all accumulated S5 proposals. */
+/** Re-runs rooted-triplet DP over accumulated greedy and UPGMA proposals. */
 public final class S5OverallSearch {
     private S5OverallSearch() {}
 
@@ -31,12 +31,16 @@ public final class S5OverallSearch {
         PrefixHashArrays candidatePrefix = new PrefixHashArrays(candidates, hasher);
         PrefixHashArrays genePrefix = new PrefixHashArrays(originalTrees, hasher);
         UniqueTaxonSubtreeHashes hashes = new UniqueTaxonSubtreeHashes(candidates, hasher);
+        UniqueTaxonSubtreeHashes geneHashes =
+            new UniqueTaxonSubtreeHashes(originalTrees, hasher);
+        int greedyCount = candidates.size() - 1; // UPGMA remains last
         ClusterTable clusters = new ClusterTable(candidates, candidatePrefix,
-            registry.size(), hashes, originalTrees.size());
-        PartitionTable partitions = new PartitionTable(originalTrees, genePrefix, hashes);
+            registry.size(), hashes, 0, greedyCount);
+        PartitionTable partitions = new PartitionTable(originalTrees, genePrefix, geneHashes);
         DPTable dp = new DPTable(candidates, candidatePrefix, clusters, hashes,
-            originalTrees.size());
+            0, greedyCount);
         hashes.release();
+        geneHashes.release();
         if (cfg.getSearchMode() == Config.SearchMode.FULL)
             dp.addCrossTreeTransitions(clusters,
                 cfg.getComputeMode() == Config.ComputeMode.GPU && GPUDPBuilder.tryLoad());
@@ -44,9 +48,9 @@ public final class S5OverallSearch {
             candidates, originalTrees);
         Inference inference = new Inference();
         String tree = inference.run(dp, weights, clusters, candidates, registry, hasher);
-        Logging.info("S5 accumulated DP: %d S1 gene trees + %d greedy trees; "
-            + "triplet score %s", originalTrees.size(),
-            candidates.size() - originalTrees.size(), inference.getLastTripletScore());
+        Logging.info("S5 accumulated DP: %d greedy trees + 1 UPGMA guide; "
+            + "%d original genes supply triplet scores only; score %s",
+            greedyCount, originalTrees.size(), inference.getLastTripletScore());
         return new Result(tree, inference.getLastTripletScore());
     }
 

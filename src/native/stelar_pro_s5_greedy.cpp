@@ -134,6 +134,43 @@ string resolvePreviousBackbone(JNIEnv* env, jstring previousTree,
     return backbone;
 }
 
+// Reorder the Java matrix once per search, not once per greedy round or group.
+// A single row scratch avoids a second dense native copy during JNI transfer.
+vector<double> nativeSimilarity(JNIEnv* env, jobjectArray matrixTaxa,
+                                jdoubleArray matrixValues,
+                                const vector<string>& nativeNames) {
+    int n = static_cast<int>(nativeNames.size());
+    if (env->GetArrayLength(matrixTaxa) != n
+            || env->GetArrayLength(matrixValues) != static_cast<jsize>((long long)n * n))
+        throw std::invalid_argument("S5 UPGMA matrix dimensions differ from native taxa");
+    unordered_map<string, int> javaId;
+    for (int i = 0; i < n; i++) {
+        jstring label = static_cast<jstring>(env->GetObjectArrayElement(matrixTaxa, i));
+        if (label == nullptr) throw std::invalid_argument("Null S5 matrix taxon");
+        const char* value = env->GetStringUTFChars(label, nullptr);
+        if (value == nullptr) throw std::runtime_error("Cannot read S5 matrix taxon");
+        javaId[value] = i;
+        env->ReleaseStringUTFChars(label, value);
+        env->DeleteLocalRef(label);
+    }
+    vector<int> nativeToJava(n);
+    for (int a = 0; a < n; a++) {
+        auto ia = javaId.find(nativeNames[a]);
+        if (ia == javaId.end()) throw std::invalid_argument("S5 matrix taxon is missing");
+        nativeToJava[a] = ia->second;
+    }
+    vector<double> reordered(static_cast<size_t>(n) * n);
+    vector<double> row(n);
+    for (int a = 0; a < n; a++) {
+        env->GetDoubleArrayRegion(matrixValues,
+            static_cast<jsize>((long long)nativeToJava[a] * n), n, row.data());
+        if (env->ExceptionCheck()) throw std::runtime_error("Cannot read S5 UPGMA matrix");
+        for (int b = 0; b < n; b++)
+            reordered[static_cast<size_t>(a) * n + b] = row[nativeToJava[b]];
+    }
+    return reordered;
+}
+
 }  // namespace
 
 #ifdef STELAR_S5_GPU_BUILD
@@ -145,7 +182,8 @@ string resolvePreviousBackbone(JNIEnv* env, jstring previousTree,
 extern "C" JNIEXPORT jobjectArray JNICALL
 S5_JNI_ENTRY(
     JNIEnv* env, jclass, jstring inputPath, jstring taggedPath, jstring previousTree,
-    jint threads, jlong seed, jint rounds) {
+    jint threads, jlong seed, jint rounds,
+    jobjectArray matrixTaxa, jdoubleArray matrixValues) {
     if (inputPath == nullptr || threads < 1 || rounds < 1) {
         throwJava(env, "java/lang/IllegalArgumentException",
                   "S5 requires an input path, positive thread count and positive round count");
@@ -176,6 +214,10 @@ S5_JNI_ENTRY(
         ThreadPool pool;
         pool.initialize(threads);
         const int n = static_cast<int>(id2name.size());
+        if ((matrixTaxa == nullptr) != (matrixValues == nullptr))
+            throw std::invalid_argument("S5 UPGMA taxon names and values must both be supplied");
+        vector<double> similarity = matrixValues == nullptr
+            ? vector<double>() : nativeSimilarity(env, matrixTaxa, matrixValues, id2name);
         if (n >= 100 && taggedPath == nullptr) {
             throw std::invalid_argument(
                 "S5 two-step search requires the rooted/tagged scoring input");
@@ -206,13 +248,16 @@ S5_JNI_ENTRY(
 #endif
                     );
                 };
-                if (previousTree == nullptr) search.twoStepWorkflow(tree, resolver);
+                if (previousTree == nullptr)
+                    search.twoStepWorkflow(tree, resolver, {},
+                        matrixValues == nullptr ? nullptr : &similarity);
                 else {
                     auto prior = [&](const vector<int>& selected) {
                         return resolvePreviousBackbone(env, previousTree,
                             selected, id2name);
                     };
-                    search.twoStepWorkflow(tree, {}, prior);
+                    search.twoStepWorkflow(tree, {}, prior,
+                        matrixValues == nullptr ? nullptr : &similarity);
                 }
             } else if (previousTree != nullptr) {
                 // A-Pro's small-taxon subsampling uses about one-quarter of the
