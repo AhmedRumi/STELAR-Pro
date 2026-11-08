@@ -87,6 +87,7 @@ Optional:
   --s6-seed N        S6 greedy-search random seed
   --s6-no-upgma-candidate
                      Keep UPGMA for S6 guides, omit it from final DP candidates
+  --subsetlocal      S6 only: subset-local similarity/completion; guides-only final DP
   --no-prune-search-space  Disable the DP-reachability weight prune (default: on)
   --threads, --num-threads, -t
                      Thread count
@@ -208,7 +209,7 @@ while [[ $# -gt 0 ]]; do
       PROGRAM_ARGS+=("$1")
       shift
       ;;
-    --rooted|--unrooted|--keep-polytomy-during-inference|--anchor-outgroup|--anchor|--no-anchor-outgroup|--no-anchor|--no-prune-search-space|--no-prune-unreachable|--prune-search-space|--prune-unreachable|--no-gpu-batch|--cross-tree-splits|--no-cross-tree-splits|--exhaustive|--consensus-experimental|--stepb-quadratic-nn-balls|--stepb-random-leftover-resolution|--stepb-process-large-polytomies|--resolve-input-gene-tree-polytomies|--s6-no-upgma-candidate|--verify-parse|--verify-hash|--verify-clusters|--verify-partitions|--verify-dp|--verify-weights|--verify-distance-matrix|--verify-similarity-matrix|--verify-upgma|--verify-greedy-consensus|--autocomplete-incomplete-gene-trees|--extract-taxa|-v|-vv|-vvv|-q|--quiet)
+    --rooted|--unrooted|--keep-polytomy-during-inference|--anchor-outgroup|--anchor|--no-anchor-outgroup|--no-anchor|--no-prune-search-space|--no-prune-unreachable|--prune-search-space|--prune-unreachable|--no-gpu-batch|--cross-tree-splits|--no-cross-tree-splits|--exhaustive|--consensus-experimental|--stepb-quadratic-nn-balls|--stepb-random-leftover-resolution|--stepb-process-large-polytomies|--resolve-input-gene-tree-polytomies|--s6-no-upgma-candidate|--subsetlocal|--verify-parse|--verify-hash|--verify-clusters|--verify-partitions|--verify-dp|--verify-weights|--verify-distance-matrix|--verify-similarity-matrix|--verify-upgma|--verify-greedy-consensus|--autocomplete-incomplete-gene-trees|--extract-taxa|-v|-vv|-vvv|-q|--quiet)
       PROGRAM_ARGS+=("$1")
       shift
       ;;

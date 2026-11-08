@@ -188,7 +188,19 @@ builds partition trees from the shared matrix, and cached triplet NNI refines
 the guides. S6 supports one outer DP pass; `--s6-rounds N` controls its
 independent guides. The opt-in `--s6-no-upgma-candidate` experiment leaves
 this guide construction unchanged but omits the global UPGMA tree from the
-final candidate DP. S6 does not use ASTRAL-Pro's quartet placement counter;
+final candidate DP.
+
+With `--subsetlocal`, S6 instead retains uncompleted DISCO components and
+builds a similarity matrix and completed guides only for each backbone subset.
+After edge assignment, it restricts those components to disjoint partition
+groups in one pass and builds a small similarity matrix and UPGMA tree per
+group; partition trees need no completion. Each group matrix is released
+after its UPGMA tree is built. This mode has no global similarity matrix or
+global UPGMA candidate, so the final DP uses the greedy guides only. Without
+the flag, the shared-global S6 path above is unchanged. `--subsetlocal` is
+valid only with `--search-space S6`.
+
+S6 does not use ASTRAL-Pro's quartet placement counter;
 ASTRAL-Pro3 is used only for the common input
 rooting/tagging preprocessing. CPU workers score independent guides and NNI
 choices; CUDA builds bounded O(n²) slices for taxa being inserted. The final

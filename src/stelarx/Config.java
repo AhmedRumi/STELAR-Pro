@@ -96,6 +96,8 @@ public class Config {
     private long s6Seed = baseSeed;
     /** Experiment: keep UPGMA for S6 guide construction, but omit it from final DP candidates. */
     private boolean s6IncludeUpgmaCandidate = true;
+    /** S6 opt-in: build completion and similarity only for backbone/partition subsets. */
+    private boolean s6SubsetLocal = false;
     /** A-Pro greedy proposals used only by the combined S7 search. */
     private int s7Rounds = 4;
     private long s7Seed = baseSeed;
@@ -316,6 +318,8 @@ public class Config {
     public void setS6IncludeUpgmaCandidate(boolean value) {
         this.s6IncludeUpgmaCandidate = value;
     }
+    public boolean isS6SubsetLocal()             { return s6SubsetLocal; }
+    public void setS6SubsetLocal(boolean value)  { this.s6SubsetLocal = value; }
     public int getS7Rounds()                  { return s7Rounds; }
     public void setS7Rounds(int rounds) {
         if (rounds < 1) throw new IllegalArgumentException("--s7-rounds must be positive");

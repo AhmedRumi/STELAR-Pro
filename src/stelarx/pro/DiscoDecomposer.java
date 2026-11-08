@@ -43,6 +43,25 @@ public final class DiscoDecomposer {
         public int missingCount() { return missingCount; }
     }
 
+    /** Build a subset-scoped component after restricting its observed leaves and missing scope. */
+    public static ScopedTree restrictedScopedTree(int index, TreeNode root,
+                                                   int totalTaxa, long[] missingWords) {
+        int leafCount = countLeaves(root);
+        int[] leaves = new int[leafCount];
+        int[] cursor = {0};
+        assignRanges(root, leaves, cursor);
+        int[] positions = new int[totalTaxa];
+        Arrays.fill(positions, -1);
+        for (int i = 0; i < leafCount; i++) {
+            if (positions[leaves[i]] >= 0)
+                throw new IllegalStateException("Restricted DISCO component duplicated a taxon");
+            positions[leaves[i]] = i;
+            if (missingWords.length > (leaves[i] >>> 6))
+                missingWords[leaves[i] >>> 6] &= ~(1L << leaves[i]);
+        }
+        return new ScopedTree(index, root, leaves, positions, totalTaxa, missingWords);
+    }
+
     private record CutPlan(IdentityHashMap<TreeNode, Boolean> detachLeft,
                            IdentityHashMap<TreeNode, long[]> originalScopes) {}
 

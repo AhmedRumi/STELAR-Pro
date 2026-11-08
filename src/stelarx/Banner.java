@@ -203,7 +203,12 @@ public class Banner {
         };
         out.println("    " + row("Search space",  c(WHT, searchSpace)));
         if (cfg.getSearchSpace() == Config.SearchSpace.S6
-                && !cfg.isS6IncludeUpgmaCandidate()) {
+                && cfg.isS6SubsetLocal()) {
+            out.println("    " + row("S6 guide preparation",
+                c(WHT, "subset-local similarity and completion (no global matrix)")));
+        }
+        if (cfg.getSearchSpace() == Config.SearchSpace.S6
+                && (cfg.isS6SubsetLocal() || !cfg.isS6IncludeUpgmaCandidate())) {
             out.println("    " + row("Final S6 candidate trees",
                 c(WHT, "guide trees only (UPGMA still builds guides)")));
         }

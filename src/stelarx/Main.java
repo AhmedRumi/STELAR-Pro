@@ -249,7 +249,7 @@ public class Main {
                     throw new IllegalArgumentException(
                         "S6 supports one outer DP pass; use --s6-rounds for independent guides");
                 S6S2BBGuideData guideData = S6S2BBGuideData.prepare(
-                    originalTrees, registry, cfg.getS6Rounds());
+                    originalTrees, registry, cfg.getS6Rounds(), cfg.isS6SubsetLocal());
                 System.gc(); // release DISCO/matrix-build scratch
                 s6Support = S6DynamicTripletSupport.build(originalTrees, registry.size(),
                     cfg.getThreadCount());
@@ -257,7 +257,8 @@ public class Main {
                     originalTrees, cfg.getInputFile(), registry,
                     0,
                     cfg.getS6Seed(), cfg.getS6Rounds(), null, guideData);
-                boolean includeUpgma = cfg.isS6IncludeUpgmaCandidate();
+                boolean includeUpgma = cfg.isS6IncludeUpgmaCandidate()
+                    && !guideData.localMatrices();
                 List<Tree> candidateTrees = new ArrayList<>(
                     greedyTrees.size() + (includeUpgma ? 1 : 0));
                 candidateTrees.addAll(greedyTrees);
@@ -1004,6 +1005,7 @@ public class Main {
                 }
                 case "--s6-no-upgma-candidate" ->
                     cfg.setS6IncludeUpgmaCandidate(false);
+                case "--subsetlocal" -> cfg.setS6SubsetLocal(true);
                 case "--s7-rounds" -> {
                     if (++i >= args.length) return false;
                     cfg.setS7Rounds(Integer.parseInt(args[i]));
@@ -1134,6 +1136,10 @@ public class Main {
         if (!cfg.isS6IncludeUpgmaCandidate()
                 && cfg.getSearchSpace() != Config.SearchSpace.S6) {
             System.err.println("--s6-no-upgma-candidate requires --search-space S6");
+            return false;
+        }
+        if (cfg.isS6SubsetLocal() && cfg.getSearchSpace() != Config.SearchSpace.S6) {
+            System.err.println("--subsetlocal requires --search-space S6");
             return false;
         }
         if (cfg.getInputFile() == null && !cfg.isDiagnose()) return false;
@@ -1438,6 +1444,7 @@ public class Main {
               --s6-rounds N                  Rooted-triplet greedy trees per S6 DP pass (default: 4)
               --s6-seed N                    S6 greedy-search random seed
               --s6-no-upgma-candidate        S6 experiment: omit UPGMA from final DP candidates
+              --subsetlocal                   S6: local similarity/completion; guides-only final DP
               --s7-rounds N                  S7 A-Pro greedy trees (default: 4)
               --s7-seed N                    S7 greedy-search random seed
               --cross-tree-splits             Enable cross-tree DP splits for S2/S4/S5/S6/S7

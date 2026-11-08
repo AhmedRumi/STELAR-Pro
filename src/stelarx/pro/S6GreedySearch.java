@@ -148,7 +148,7 @@ public final class S6GreedySearch {
                     ? placeByBackboneGroups(root, order.subList(size, n),
                         scorer, random)
                     : placeByBackboneGroupsUpgma(root, order.subList(size, n),
-                        scorer, guideData.matrix(), random);
+                        scorer, guideData, random);
             } else if (previousTree == null) {
                 root = fromOrder(order, scorer, random);
             } else {
@@ -346,7 +346,7 @@ public final class S6GreedySearch {
     private static Node placeByBackboneGroupsUpgma(Node root,
                                                     List<Integer> remaining,
                                                     S6ScoreSource support,
-                                                    SimilarityMatrix matrix,
+                                                    S6S2BBGuideData guideData,
                                                     Random random) {
         List<Node> edges = new ArrayList<>();
         collectNodes(root, edges);
@@ -364,13 +364,19 @@ public final class S6GreedySearch {
                 backboneTaxa).node;
             groups.get(edgeId.get(edge)).add(taxon);
         }
+        SimilarityMatrix[] local = guideData.localMatrices()
+            ? guideData.partitionMatrices(groups) : null;
         int nonempty = 0;
         for (int i = 0; i < edges.size(); i++) {
             if (groups.get(i).isEmpty()) continue;
             nonempty++;
             Node edge = edges.get(i);
             Node parent = edge.parent;
-            Node joined = new Node(edge, upgmaGroup(groups.get(i), matrix));
+            Node partition = upgmaGroup(groups.get(i),
+                local == null ? guideData.matrix() : local[i], local != null);
+            // Each disjoint group's matrix has no readers after its UPGMA tree.
+            if (local != null) local[i] = null;
+            Node joined = new Node(edge, partition);
             joined.parent = parent;
             if (parent == null) root = joined;
             else if (parent.left == edge) parent.left = joined;
@@ -384,9 +390,12 @@ public final class S6GreedySearch {
     }
 
     /** Group-sized scratch only; the packed global similarity stays read-only. */
-    private static Node upgmaGroup(List<Integer> group, SimilarityMatrix global) {
+    private static Node upgmaGroup(List<Integer> group, SimilarityMatrix matrix,
+                                   boolean local) {
         int m = group.size();
         if (m == 1) return new Node(group.get(0));
+        if (m == 2)
+            return new Node(new Node(group.get(0)), new Node(group.get(1)));
         int capacity = 2 * m - 1;
         double[][] sim = new double[capacity][capacity];
         Node[] roots = new Node[capacity];
@@ -403,7 +412,9 @@ public final class S6GreedySearch {
             sizes[a] = 1;
             active[a] = true;
             for (int b = 0; b < a; b++) {
-                double score = global.getSim(group.get(a), group.get(b));
+                double score = local
+                    ? matrix.getSim(a, b)
+                    : matrix.getSim(group.get(a), group.get(b));
                 sim[a][b] = sim[b][a] = score;
                 nearest.add(new GroupPair(score, b, a));
             }
