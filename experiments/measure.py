@@ -96,27 +96,43 @@ def _subtree_rss(root: int, table: dict[int, tuple[int, int]]) -> int:
     return total
 
 
-class _Sampler(threading.Thread):
-    """Poll the subtree's summed RSS until told to stop."""
+class _Sampler:
+    """Poll the subtree's summed RSS until told to stop.
+
+    This deliberately *owns* a thread rather than subclassing ``Thread``. A
+    subclass shares its namespace with ``Thread``'s own private attributes, and
+    ``Thread`` already defines a ``_stop()`` method that ``join()`` calls
+    internally -- so an instance attribute named ``_stop`` shadows it and makes
+    ``join()`` raise ``TypeError: 'Event' object is not callable``. It surfaces
+    only when ``join()`` wins the race to the thread's state lock, so it can
+    pass on one machine and fail on another. Composition cannot collide.
+    """
 
     def __init__(self, pid: int, interval: float):
-        super().__init__(daemon=True)
         self.pid = pid
         self.interval = interval
         self.peak = 0
         self.samples = 0
-        self._stop = threading.Event()
+        self._halt = threading.Event()
+        self._thread = threading.Thread(target=self._loop, daemon=True,
+                                        name="rss-sampler")
 
-    def run(self) -> None:
-        while not self._stop.is_set():
+    def _loop(self) -> None:
+        while not self._halt.is_set():
             total = _subtree_rss(self.pid, _process_table())
             if total > self.peak:
                 self.peak = total
             self.samples += 1
-            self._stop.wait(self.interval)
+            self._halt.wait(self.interval)
+
+    def start(self) -> None:
+        self._thread.start()
 
     def stop(self) -> None:
-        self._stop.set()
+        self._halt.set()
+
+    def join(self, timeout: float | None = None) -> None:
+        self._thread.join(timeout=timeout)
 
 
 def _terminate(process: subprocess.Popen, grace: float = 20.0) -> None:
@@ -208,13 +224,21 @@ def main(argv: list[str] | None = None) -> int:
             _terminate(process)
             exit_code = process.returncode
     finally:
+        # Teardown must never lose the measurement of a run that already
+        # finished, so each step is isolated and its failure only noted.
+        teardown_error = None
         if sampler is not None:
-            sampler.stop()
-            sampler.join(timeout=5.0)
-        if out_handle is not None:
-            out_handle.close()
-        if err_handle is not None:
-            err_handle.close()
+            try:
+                sampler.stop()
+                sampler.join(timeout=5.0)
+            except BaseException as error:              # noqa: BLE001
+                teardown_error = f"{type(error).__name__}: {error}"
+        for handle in (out_handle, err_handle):
+            if handle is not None:
+                try:
+                    handle.close()
+                except OSError:
+                    pass
 
     elapsed = time.perf_counter() - started
     rusage_peak = resource.getrusage(resource.RUSAGE_CHILDREN).ru_maxrss \
@@ -231,6 +255,8 @@ def main(argv: list[str] | None = None) -> int:
         rss_samples=sampler.samples if sampler is not None else 0,
         sample_interval_seconds=args.sample_interval,
     )
+    if teardown_error is not None:
+        record["teardown_error"] = teardown_error
     _write(args.json_out, record)
 
     peak_mb = record["peak_rss_bytes"] / (1024 * 1024)

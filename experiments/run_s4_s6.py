@@ -311,13 +311,22 @@ def run_arm(args: argparse.Namespace, condition: str, replicate: str, arm: str,
         except (OSError, json.JSONDecodeError):
             pass
 
-    if result.returncode != 0 or not tree.is_file() or tree.stat().st_size == 0:
+    produced_tree = tree.is_file() and tree.stat().st_size > 0
+    if not produced_tree:
         row["status"] = "failed"
         print(f"  {arm}: FAILED (exit {result.returncode}); see "
               f"{destination / (arm + '.stderr.log')}", file=sys.stderr)
         return row
 
-    row["status"] = "ok"
+    if result.returncode != 0:
+        # The inference produced a tree, so the wrapper itself failed. Score the
+        # tree rather than discarding hours of work over a lost measurement.
+        row["status"] = "ok/measurement-failed"
+        print(f"  {arm}: tree produced, but the measurement wrapper exited "
+              f"{result.returncode}; scoring anyway, time and memory may be "
+              f"missing", file=sys.stderr)
+    else:
+        row["status"] = "ok"
     return score(args, condition, replicate, tree, row)
 
 
