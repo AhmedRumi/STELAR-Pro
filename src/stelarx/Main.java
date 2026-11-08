@@ -23,9 +23,9 @@ import stelarx.pro.DiscoDecomposer;
 import stelarx.pro.AProGreedySearch;
 import stelarx.pro.S5OverallSearch;
 import stelarx.pro.S6GreedySearch;
-import stelarx.pro.S6OverallSearch;
 import stelarx.pro.S6DynamicTripletSupport;
 import stelarx.pro.S6ScoreSource;
+import stelarx.pro.S6S2BBGuideData;
 import stelarx.pro.GeneTreeRooterTagger;
 import stelarx.pro.GeneTreePolytomyResolver;
 import stelarx.pro.UniqueTaxonSubtreeHashes;
@@ -190,10 +190,9 @@ public class Main {
             // S2-S4 and S7 decompose multicopy trees with DISCO, complete those
             // single-copy trees, and add a UPGMA guide. Only S3 adds greedy
             // consensus candidates; S4 uses triplet similarity for its guide.
-            // S5 uses A-Pro quartet-greedy trees and one shared-matrix UPGMA
-            // guide, with no original-gene candidate clusters. S7 adds the
-            // greedy trees to S2's
-            // completed DISCO and UPGMA proposals. S6 uses triplet-greedy trees.
+            // S5 uses S2 backbones, A-Pro quartet placements, and UPGMA;
+            // S6 uses S4 backbones and triplet placements. Neither adds S1
+            // candidate clusters. S7 adds greedy trees to S2 proposals.
             // S2/S4 now use only lineage-scoped DISCO and UPGMA proposals by
             // default. --exhaustive restores their older S1 plus
             // globally completed DISCO search; S3/S7 retain their own paths.
@@ -246,27 +245,36 @@ public class Main {
             if (cfg.getSearchSpace() == Config.SearchSpace.S6 && !cfg.isScoreOnly()) {
                 long t1b = PhaseLogger.begin("Phase 1b S6 rooted-triplet greedy proposals",
                     cfg.getComputeMode() == Config.ComputeMode.GPU);
+                if (cfg.getMaxSearchPasses() != 1)
+                    throw new IllegalArgumentException(
+                        "S6 supports one outer DP pass; use --s6-rounds for independent guides");
+                S6S2BBGuideData guideData = S6S2BBGuideData.prepare(
+                    originalTrees, registry, cfg.getS6Rounds());
+                System.gc(); // release DISCO/matrix-build scratch
                 s6Support = S6DynamicTripletSupport.build(originalTrees, registry.size(),
                     cfg.getThreadCount());
                 List<Tree> greedyTrees = S6GreedySearch.generate(s6Support,
-                    originalTrees, cfg.getInputFile(), registry, originalTrees.size(),
-                    cfg.getS6Seed(), cfg.getS6Rounds(), null);
+                    originalTrees, cfg.getInputFile(), registry,
+                    0,
+                    cfg.getS6Seed(), cfg.getS6Rounds(), null, guideData);
+                boolean includeUpgma = cfg.isS6IncludeUpgmaCandidate();
                 List<Tree> candidateTrees = new ArrayList<>(
-                    originalTrees.size() + greedyTrees.size());
-                candidateTrees.addAll(originalTrees);
+                    greedyTrees.size() + (includeUpgma ? 1 : 0));
                 candidateTrees.addAll(greedyTrees);
+                // UPGMA still builds backbones and partition trees; this flag
+                // changes only the trees admitted to the final candidate DP.
+                if (includeUpgma) candidateTrees.add(guideData.upgmaTree());
                 trees = candidateTrees;
-                Logging.info("S6 candidates: %d original gene trees + %d rooted "
-                    + "triplet-greedy proposal(s); weights use original genes only",
-                    originalTrees.size(), greedyTrees.size());
+                Logging.info("S6 candidates: %d rooted triplet-greedy tree(s), "
+                    + "%d UPGMA tree(s), no S1 candidates; weights use original genes only",
+                    greedyTrees.size(), includeUpgma ? 1 : 0);
+                guideData = null; // completed DISCO guides and matrix no longer needed
                 PhaseLogger.end("Phase 1b S6 rooted-triplet greedy proposals", t1b,
                     cfg.getComputeMode() == Config.ComputeMode.GPU);
-                if (cfg.getMaxSearchPasses() == 1) {
-                    // One-pass inference never reads greedy support again.
-                    s6Support.close();
-                    s6Support = null;
-                    System.gc();
-                }
+                // The one-pass search never reads greedy support again.
+                s6Support.close();
+                s6Support = null;
+                System.gc();
             } else if ((cfg.getSearchSpace() == Config.SearchSpace.S5
                     || cfg.getSearchSpace() == Config.SearchSpace.S7)
                     && !cfg.isScoreOnly()) {
@@ -677,7 +685,8 @@ public class Main {
             // Uses originalTrees so tripartitions reflect actual gene-tree signal.
             long t4 = PhaseLogger.begin("Phase 4  Rooted child-partition extraction", false);
             UniqueTaxonSubtreeHashes originalHashes =
-                cfg.getSearchSpace() == Config.SearchSpace.S5
+                (cfg.getSearchSpace() == Config.SearchSpace.S5
+                    || cfg.getSearchSpace() == Config.SearchSpace.S6)
                     ? new UniqueTaxonSubtreeHashes(originalTrees, hasher)
                     : candidateHashes;
             PartitionTable partTable = new PartitionTable(
@@ -828,44 +837,6 @@ public class Main {
                         unchanged ? "unchanged (stop)" : "changed");
                     PhaseLogger.end("Phase 7b S5 adaptive pass " + pass
                         + " (CPU greedy + triplet DP)", t7b, gpuTripletDP);
-                    if (unchanged) break;
-                    System.gc();
-                }
-            } else if (cfg.getSearchSpace() == Config.SearchSpace.S6
-                    && cfg.getMaxSearchPasses() > 1) {
-                // Repeat triplet-guided proposal generation around the previous
-                // STELAR-DP tree; candidates and original evidence accumulate.
-                List<Tree> accumulated = new ArrayList<>(trees);
-                weightTable = null;
-                partTable = null;
-                dpTable = null;
-                clusterTable = null;
-                weightClusterTrees = null;
-                candidateHashes = null;
-                System.gc();
-                for (int pass = 1; pass < cfg.getMaxSearchPasses(); pass++) {
-                    long t7b = PhaseLogger.begin(
-                        "Phase 7b S6 adaptive DP pass " + pass,
-                        cfg.getComputeMode() == Config.ComputeMode.GPU);
-                    String previousTree = speciesTree;
-                    List<Tree> added = S6GreedySearch.generate(s6Support,
-                        originalTrees, cfg.getInputFile(), registry,
-                        accumulated.size(), cfg.getS6Seed() + pass,
-                        cfg.getS6Rounds(), previousTree);
-                    accumulated.addAll(added);
-                    S6OverallSearch.Result updated = S6OverallSearch.infer(
-                        originalTrees, accumulated, registry);
-                    boolean unchanged = S6OverallSearch.sameRootedTopology(
-                        previousTree, updated.newick(), registry);
-                    speciesTree = updated.newick();
-                    finalTripletScore = updated.tripletScore();
-                    Logging.info("S6 adaptive DP pass %d/%d: +%d greedy trees, "
-                        + "%d total; rooted topology %s", pass,
-                        cfg.getMaxSearchPasses() - 1, added.size(),
-                        accumulated.size() - originalTrees.size(),
-                        unchanged ? "unchanged (stop)" : "changed");
-                    PhaseLogger.end("Phase 7b S6 adaptive DP pass " + pass,
-                        t7b, cfg.getComputeMode() == Config.ComputeMode.GPU);
                     if (unchanged) break;
                     System.gc();
                 }
@@ -1031,6 +1002,8 @@ public class Main {
                     if (++i >= args.length) return false;
                     cfg.setS6Seed(Long.parseLong(args[i]));
                 }
+                case "--s6-no-upgma-candidate" ->
+                    cfg.setS6IncludeUpgmaCandidate(false);
                 case "--s7-rounds" -> {
                     if (++i >= args.length) return false;
                     cfg.setS7Rounds(Integer.parseInt(args[i]));
@@ -1158,6 +1131,11 @@ public class Main {
         }
         // Search-mode overrides are independent of --search-space argument order.
         if (explicitSearchMode != null) cfg.setSearchMode(explicitSearchMode);
+        if (!cfg.isS6IncludeUpgmaCandidate()
+                && cfg.getSearchSpace() != Config.SearchSpace.S6) {
+            System.err.println("--s6-no-upgma-candidate requires --search-space S6");
+            return false;
+        }
         if (cfg.getInputFile() == null && !cfg.isDiagnose()) return false;
         if (cfg.isExtractTaxa() && cfg.isScoreOnly()) {
             System.err.println("--extract-taxa cannot be combined with --score-species-tree");
@@ -1449,16 +1427,17 @@ public class Main {
                                                  DISCO completion and UPGMA, without S1 candidates;
                                                  S3 retains global DISCO + S1 + greedy consensus;
                                                  S4 uses S2's scoped candidates with a triplet guide;
-                                                 S5 uses A-Pro quartet-greedy + UPGMA candidates (no S1);
-                                                 S6 adds rooted-triplet greedy candidates;
+                                                 S5 uses S2 backbones, A-Pro placement + UPGMA (no S1);
+                                                 S6 uses S4 backbones, triplet placement + UPGMA (no S1);
                                                  S7 combines S5 greedy with S2 DISCO/UPGMA
               --s5-rounds N                  Greedy trees per S5 DP pass (default: 4;
                                              >=100 taxa use triplet-DP two-step backbones)
               --s5-seed N                    S5 greedy-search random seed
-              --max-search-passes N          Maximum S5/S6 search/DP passes (default: 1)
+              --max-search-passes N          Maximum S5 search/DP passes (default: 1; S6 requires 1)
               --s5-adaptive-passes N         Legacy S5 alias: N extra passes (0-5)
               --s6-rounds N                  Rooted-triplet greedy trees per S6 DP pass (default: 4)
               --s6-seed N                    S6 greedy-search random seed
+              --s6-no-upgma-candidate        S6 experiment: omit UPGMA from final DP candidates
               --s7-rounds N                  S7 A-Pro greedy trees (default: 4)
               --s7-seed N                    S7 greedy-search random seed
               --cross-tree-splits             Enable cross-tree DP splits for S2/S4/S5/S6/S7

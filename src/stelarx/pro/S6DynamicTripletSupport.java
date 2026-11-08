@@ -119,8 +119,7 @@ public final class S6DynamicTripletSupport implements S6ScoreSource {
             + support.taxonChildren.length)
             + (long) maxStates * (3L * support.childCount * Character.BYTES
                 + 2L * (parts.length - 1) * Integer.BYTES
-                + 2L * n * Integer.BYTES
-                + 2L * n * n * Long.BYTES);
+                + 2L * n * Integer.BYTES);
         for (int i = 0; i < maxStates; i++)
             support.states.add(support.new Session(i));
         if (support.gpuIndex != 0 && support.colourIndex != 0) {
@@ -248,6 +247,8 @@ public final class S6DynamicTripletSupport implements S6ScoreSource {
                                                 int[] partOfChild, int[] taxonOffsets,
                                                 int[] taxonChildren);
     private static native void fillFocus(long index, int taxon, long[] destination);
+    private static native void fillFocusOn(long index, int taxon,
+                                           int[] selected, long[] destination);
     private static native void destroyFocusIndex(long index);
     private static native long createColourIndex(int n, int[] parts,
                                                 int[] partOfChild,
@@ -287,6 +288,37 @@ public final class S6DynamicTripletSupport implements S6ScoreSource {
         }
     }
 
+    /** Exact focused counts, but only for pairs present in the fixed backbone. */
+    private void fillFocusOnCPU(int x, int[] selectedMap, int m, long[] result) {
+        Arrays.fill(result, 0L);
+        int paired = m * m;
+        for (int p = 0; p + 1 < parts.length; p++) {
+            for (int side = parts[p]; side < parts[p + 1]; side++) {
+                if (Arrays.binarySearch(taxa, children[side], children[side + 1], x) < 0)
+                    continue;
+                for (int out = parts[p]; out < parts[p + 1]; out++) {
+                    if (out == side) continue;
+                    for (int i = children[out]; i < children[out + 1]; i++) {
+                        int a = selectedMap[taxa[i]];
+                        if (a < 0) continue;
+                        for (int j = i + 1; j < children[out + 1]; j++) {
+                            int b = selectedMap[taxa[j]];
+                            if (b >= 0) result[a * m + b]++;
+                        }
+                    }
+                    for (int i = children[out]; i < children[out + 1]; i++) {
+                        int c = selectedMap[taxa[i]];
+                        if (c < 0) continue;
+                        for (int j = children[side]; j < children[side + 1]; j++) {
+                            int a = selectedMap[taxa[j]];
+                            if (a >= 0 && a != c) result[paired + c * m + a]++;
+                        }
+                    }
+                }
+            }
+        }
+    }
+
     /** One mutable colour state; states are reused rather than copied per guide. */
     private final class Session implements S6ScoreSource {
         // n is bounded by the focused-array index limit, so a distinct-species
@@ -294,7 +326,12 @@ public final class S6DynamicTripletSupport implements S6ScoreSource {
         private final char[] colourCounts;
         private final int[] colours, desired = new int[n];
         private final int[] partMarks, touched;
-        private final long[] focusData = new long[2 * n * n];
+        // The S2BB path needs only its compact backbone slice; allocate the
+        // full O(n²) slice lazily for ordinary S6 calls to focus().
+        private long[] focusData;
+        private long[] subsetFocusData;
+        private int[] subsetTaxa, subsetMap;
+        private int lastSubsetFocusTaxon = -1;
         private final long[] totals;
         private final int stateId;
         private int epoch, lastFocusTaxon = -1;
@@ -322,6 +359,7 @@ public final class S6DynamicTripletSupport implements S6ScoreSource {
         @Override public Focus focus(int x) {
             long[] slice = guideFocus.get(x);
             if (slice == null) {
+                if (focusData == null) focusData = new long[2 * n * n];
                 slice = focusData;
                 if (lastFocusTaxon != x) {
                     long started = System.nanoTime();
@@ -343,6 +381,52 @@ public final class S6DynamicTripletSupport implements S6ScoreSource {
                 if (other < 0)
                     throw new IllegalArgumentException("Triplet does not contain focused taxon");
                 return data[n * n + c * n + other];
+            };
+        }
+
+        @Override public Focus focusOn(int x, int[] selected) {
+            if (selected != subsetTaxa) {
+                if (selected.length < 2 || selected.length >= n)
+                    throw new IllegalArgumentException("Invalid S6 backbone subset size");
+                subsetTaxa = selected;
+                subsetMap = new int[n];
+                Arrays.fill(subsetMap, -1);
+                for (int i = 0; i < selected.length; i++) {
+                    int taxon = selected[i];
+                    if (taxon < 0 || taxon >= n || subsetMap[taxon] >= 0)
+                        throw new IllegalArgumentException("Invalid S6 backbone taxon");
+                    subsetMap[taxon] = i;
+                }
+                subsetFocusData = new long[2 * selected.length * selected.length];
+                lastSubsetFocusTaxon = -1;
+            }
+            if (x < 0 || x >= n || subsetMap[x] >= 0)
+                throw new IllegalArgumentException("Inserted taxon is in S6 backbone");
+            if (lastSubsetFocusTaxon != x) {
+                long started = System.nanoTime();
+                if (gpuIndex != 0)
+                    fillFocusOn(gpuIndex, x, selected, subsetFocusData);
+                else fillFocusOnCPU(x, subsetMap, selected.length, subsetFocusData);
+                lastSubsetFocusTaxon = x;
+                focusCalls.incrementAndGet();
+                focusNanos.addAndGet(System.nanoTime() - started);
+            }
+            final int m = selected.length;
+            final int[] map = subsetMap;
+            final long[] data = subsetFocusData;
+            return (a, b, c) -> {
+                if (a == b || a == c || b == c) return 0;
+                if (c == x) {
+                    if (a > b) { int swap = a; a = b; b = swap; }
+                    int i = map[a], j = map[b];
+                    if (i < 0 || j < 0)
+                        throw new IllegalArgumentException("Triplet taxon is outside backbone");
+                    return data[i * m + j];
+                }
+                int other = a == x ? b : b == x ? a : -1;
+                if (other < 0 || map[c] < 0 || map[other] < 0)
+                    throw new IllegalArgumentException("Triplet is outside focused backbone");
+                return data[m * m + map[c] * m + map[other]];
             };
         }
 

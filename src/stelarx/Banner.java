@@ -197,11 +197,16 @@ public class Banner {
             case S2 -> "S2  (lineage-scoped DISCO + UPGMA candidates)";
             case S3 -> "S3  (global DISCO + S1 + greedy consensus)";
             case S4 -> "S4  (lineage-scoped DISCO + triplet guide + UPGMA)";
-            case S5 -> "S5  (A-Pro greedy + UPGMA guide + triplet DP; no S1 candidates)";
-            case S6 -> "S6  (rooted-triplet greedy + native candidates + triplet DP)";
+            case S5 -> "S5  (S2 backbones + A-Pro placement + UPGMA; no S1 candidates)";
+            case S6 -> "S6  (S4 backbones + triplet placement + UPGMA; no S1 candidates)";
             case S7 -> "S7  (A-Pro greedy + DISCO completion + UPGMA + triplet DP)";
         };
         out.println("    " + row("Search space",  c(WHT, searchSpace)));
+        if (cfg.getSearchSpace() == Config.SearchSpace.S6
+                && !cfg.isS6IncludeUpgmaCandidate()) {
+            out.println("    " + row("Final S6 candidate trees",
+                c(WHT, "guide trees only (UPGMA still builds guides)")));
+        }
         if (cfg.getSearchSpace() == Config.SearchSpace.S2
                 || cfg.getSearchSpace() == Config.SearchSpace.S4) {
             out.println("    " + row("DISCO candidate scope", c(WHT,

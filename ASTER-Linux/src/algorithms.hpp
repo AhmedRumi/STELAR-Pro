@@ -1686,7 +1686,9 @@ struct ConstrainedOptimizationAlgorithm{
 			
 			pAlg.taxonHash[0] = -hashsum;
 			if (alg) alg->taxonHash[0] = -hashsum;
-			for (int r = 0; r < n; r++){
+			// Only the shared-matrix S5 resolver supplies its own proposals;
+			// S7's resolver still needs the quartet-greedy subset guides.
+			if (!backboneResolver || upgmaSimilarity == nullptr) for (int r = 0; r < n; r++){
 				LOG << "Guide Tree " << r << "/" << n << endl;
 				for (int i = 0; i < n; i++) pAlg.order.push_back(order[i]);
 				shuffle(pAlg.order.begin(), pAlg.order.end(), RND_GENERATOR);

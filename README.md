@@ -148,21 +148,21 @@ polytomy refinements. S4 uses S2's bounded candidate pipeline, but
 builds a rooted-triplet sister-frequency matrix for completion and UPGMA;
 the former S4 consensus stage is dormant.
 Its distance view is derived as `1 − similarity`. Select
-them with `--search-space S2`, `S3`, or `S4`. S5 is independent of those
-DISCO/completion/consensus paths: it builds four ASTRAL-Pro-style quartet-greedy
-species-tree proposals and one UPGMA tree from a shared DISCO quartet-similarity
-matrix. It does not include S1 candidates. It registers both rooted
+them with `--search-space S2`, `S3`, or `S4`. S5 builds four ASTRAL-Pro-style
+quartet-greedy species-tree proposals and one UPGMA tree from a shared DISCO
+quartet-similarity matrix. It does not include S1 candidates. It registers both rooted
 orientations of each greedy-tree edge and uses STELAR-Pro's rooted-triplet DP.
 Greedy placement/NNI uses parallel CPU workers; the final weight calculation
 remains STELAR-Pro's CPU/GPU triplet scorer. The original rooted/tagged trees
 are the only scoring evidence in all modes. Select S5 with `--search-space S5`.
 Each DP pass adds four greedy trees by default (`--s5-rounds N` changes this
 batch size); `--s5-seed N` makes the pass sequence reproducible. With fewer than 100
-taxa, S5 uses direct full-taxon greedy placement. At 100 taxa or more, each
-initial round uses ASTRAL-Pro's two-step search: build randomized subset guide trees,
-infer their backbone using STELAR-Pro's rooted-triplet DP on the original
-tagged gene trees restricted to that subset, then insert the remaining taxa
-in groups using the shared similarity matrix and run NNI. The default is one
+taxa, S5 uses direct full-taxon greedy placement. At 100 taxa or more, it
+restricts strict-lineage completed DISCO trees and the shared UPGMA tree to
+each randomized subset. A rooted STELAR-Pro triplet DP on the restricted
+original gene trees infers that subset's backbone; A-Pro quartet scores place
+the remaining taxa, shared-matrix UPGMA builds partition trees, and NNI
+refines the full guides. The default is one
 search/DP pass. Set
 `--max-search-passes N` to permit additional passes: each induces a new random
 backbone from the preceding STELAR tree, adds another batch of greedy proposals,
@@ -172,31 +172,38 @@ changes, following the ASTRAL-Pro2 supplement's tree-stability rule; the
 bundled ASTRAL-Pro3 binary instead uses score improvement and a different cap.
 Every backbone and full-tree DP remains rooted-triplet based.
 
-S6 is independent of S2–S5: select `--search-space S6`. It keeps every S1
-candidate and adds four rooted species-tree proposals per DP pass by default
+S6 is a separate selectable path: select `--search-space S6`. It adds four rooted
+species-tree proposals and one UPGMA tree, with no S1 candidates
 (`--s6-rounds N`, `--s6-seed N`). Unlike S5, **all greedy placement and rooted
 NNI decisions use STELAR-Pro's speciation-driven triplet score** from the
 original tagged multicopy gene trees. S6 stores speciation-child taxon lists
 and incremental colour counts, not a dense triplet tensor; duplicate copies
 are collapsed within each child species set, and duplication-rooted nodes
 contribute no observations.
-For 100 or more taxa, S6 builds randomized subset guides, infers a rooted
-STELAR-DP backbone, groups the remaining taxa by their preferred backbone
-edge, then places and refines them by triplet score. With
-`--max-search-passes N` greater than one, later passes restrict the previous
-rooted STELAR tree to a fresh subset, accumulate all S1 and S6 candidates,
-and stop when the rooted DP topology is unchanged or the pass limit is reached.
-S6 does not use ASTRAL-Pro's quartet placement counter or
-DISCO/completion/consensus; ASTRAL-Pro3 is used only for the common input
+For 100 or more taxa, S6 builds one strict-lineage DISCO/UPGMA pool using
+S4's rooted-triplet similarity matrix. Each randomized subset receives
+restricted guides; STELAR-DP infers its backbone from the induced original
+genes. Triplet scores assign the remaining taxa to backbone edges, UPGMA
+builds partition trees from the shared matrix, and cached triplet NNI refines
+the guides. S6 supports one outer DP pass; `--s6-rounds N` controls its
+independent guides. The opt-in `--s6-no-upgma-candidate` experiment leaves
+this guide construction unchanged but omits the global UPGMA tree from the
+final candidate DP. S6 does not use ASTRAL-Pro's quartet placement counter;
+ASTRAL-Pro3 is used only for the common input
 rooting/tagging preprocessing. CPU workers score independent guides and NNI
 choices; CUDA builds bounded O(n²) slices for taxa being inserted. The final
 STELAR weight calculation remains CUDA-capable. Guide-slice reuse is capped at
 32 MiB, and one-pass runs release their search-only indexes and native pages
 before final DP.
-The subset guides score only gene families induced on their selected taxa;
-their backbone DP takes candidates from those guides and weights from the
-induced original genes, as in S5. Native CPU colour states accelerate the
+The backbone DP takes candidates from restricted DISCO/UPGMA guides and
+weights from the induced original genes. Native CPU colour states accelerate
 triplet placement and NNI queries, with a Java fallback when unavailable.
+
+The former production S5 and S6 implementations are preserved outside this
+source tree as **S5 ancient** and **S6 ancient** in
+`../data/stelar-pro-ancient-20261108/`. Use its `run-s5-ancient.sh` or
+`run-s6-ancient.sh` to reproduce
+those search paths; normal `S5` and `S6` now mean the S2/S4-backbone versions.
 
 S7 combines S5's A-Pro quartet-greedy proposals with S2's DISCO-completed
 single-copy proposals and UPGMA guide (`--search-space S7`). It retains S1

@@ -1,6 +1,14 @@
 # STELAR-Pro search spaces S1–S6
 
-This describes the **current implementation**, not six different statistical
+> Historical detail: the S5/S6 sections below describe **S5 ancient** and
+> **S6 ancient** (archived under `../../data/stelar-pro-ancient-20261108/`).
+> Production S5 now uses strict-lineage S2 backbones and shared-matrix UPGMA
+> partition trees; production S6 uses S4 triplet-similarity backbones and
+> UPGMA partition trees. Both add four guide trees and one global UPGMA tree
+> by default, without S1 candidates. See the [README](../README.md) for
+> current search-space behavior.
+
+This describes the underlying search-space design, not six different statistical
 objectives. S1–S6 change which rooted species-tree clusters and compatible
 splits are available to the optimizer. The final optimizer in every path is
 STELAR-Pro's rooted, speciation-driven **triplet** dynamic program (DP), scored

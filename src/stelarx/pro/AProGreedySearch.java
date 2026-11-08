@@ -4,6 +4,8 @@ import stelarx.Config;
 import stelarx.Logging;
 import stelarx.completion.SimilarityMatrix;
 import stelarx.completion.SimilarityMatrixBuilder;
+import stelarx.completion.SortedRows;
+import stelarx.completion.SortedRowsBuilder;
 import stelarx.completion.UPGMAClusterer;
 import stelarx.cluster.ClusterTable;
 import stelarx.dp.DPTable;
@@ -30,6 +32,7 @@ import java.util.List;
  * remain the sole observations scored by STELAR-Pro's triplet DP.
  */
 public final class AProGreedySearch {
+    private static final ThreadLocal<GuideMatrix> backboneContext = new ThreadLocal<>();
     private static boolean cpuLoadAttempted;
     private static boolean cpuLoaded;
     private static boolean gpuLoadAttempted;
@@ -109,15 +112,30 @@ public final class AProGreedySearch {
                     ? "libstelar_pro_s5_greedy_gpu.so"
                     : "libstelar_pro_s5_greedy.so"));
         }
-        String[] newicks = gpu
-            ? generateGPU(inputFile, taggedInputFile, previousTree,
-                threads, seed, rounds,
-                matrix == null ? null : matrix.names(),
-                matrix == null ? null : matrix.values())
-            : generateCPU(inputFile, taggedInputFile, previousTree,
-                threads, seed, rounds,
-                matrix == null ? null : matrix.names(),
-                matrix == null ? null : matrix.values());
+        // JNI calls back synchronously for each backbone. Do not retain the
+        // completed S2 proposal pool beyond this greedy generation call.
+        backboneContext.set(matrix);
+        String[] newicks;
+        try {
+            newicks = gpu
+                ? generateGPU(inputFile, taggedInputFile, previousTree,
+                    threads, seed, rounds,
+                    matrix == null ? null : matrix.names(),
+                    matrix == null ? null : matrix.values())
+                : generateCPU(inputFile, taggedInputFile, previousTree,
+                    threads, seed, rounds,
+                    matrix == null ? null : matrix.names(),
+                    matrix == null ? null : matrix.values());
+        } finally {
+            backboneContext.remove();
+            // Default one-pass S5 never needs these completed S2 trees again.
+            // Clear their only retained list before the final candidate DP.
+            if (matrix != null && !matrix.completedDisco().isEmpty()
+                    && Config.getInstance().getMaxSearchPasses() == 1) {
+                matrix.completedDisco().clear();
+                System.gc();
+            }
+        }
         List<Tree> trees = new ArrayList<>(newicks.length);
         for (int i = 0; i < newicks.length; i++) {
             Tree parsed = TreeParser.parseSpeciesTreeNewick(newicks[i], registry);
@@ -129,7 +147,8 @@ public final class AProGreedySearch {
         return trees;
     }
 
-    public record GuideMatrix(String[] names, double[] values, Tree upgmaTree) {}
+    public record GuideMatrix(String[] names, double[] values, Tree upgmaTree,
+                              List<Tree> completedDisco) {}
 
     /** Reuse parsed scoring trees; consume the matrix when constructing UPGMA. */
     public static GuideMatrix prepareGuideMatrix(List<Tree> genes,
@@ -137,7 +156,7 @@ public final class AProGreedySearch {
                                                    int upgmaIndex) {
         long start = System.nanoTime();
         List<Tree> singleCopy = DiscoDecomposer.decomposeAll(
-            genes, taxa.size(), 0, 4).trees();
+            genes, taxa.size(), 0, 4, true).trees();
         if (singleCopy.isEmpty())
             throw new IllegalStateException("No DISCO trees for the S5 guide matrix");
         // For small matrices the CPU scatter avoids CUDA tour/RMQ staging, which
@@ -156,6 +175,16 @@ public final class AProGreedySearch {
             for (int b = 0; b < n; b++)
                 values[a * n + b] = sim.getSim(a, b);
         }
+        SortedRows rows = SortedRowsBuilder.build(sim);
+        ScopedTreeCompleter completer = ScopedTreeCompleter.prepare(
+            rows, singleCopy, n);
+        List<Tree> completed = new ArrayList<>(singleCopy.size());
+        for (int startTree = 0; startTree < singleCopy.size(); startTree += 256) {
+            completed.addAll(completer.completeBatch(singleCopy.subList(
+                startTree, Math.min(singleCopy.size(), startTree + 256))));
+        }
+        Logging.info("S5 backbone: completed %d strict-lineage DISCO trees once",
+            completed.size());
         // The JNI buffer above is the only read-only placement copy. UPGMA
         // mutates the original packed similarity triangle in place.
         Tree upgma = UPGMAClusterer.build(sim, upgmaIndex, true);
@@ -164,7 +193,7 @@ public final class AProGreedySearch {
             + "one UPGMA guide (matrix consumed) in %d ms",
             singleCopy.size(), n, gpu ? "GPU" : "CPU",
             (System.nanoTime() - start) / 1_000_000);
-        return new GuideMatrix(names, values, upgma);
+        return new GuideMatrix(names, values, upgma, completed);
     }
 
     /** Called by native two-step search after building subset guide trees. */
@@ -172,8 +201,10 @@ public final class AProGreedySearch {
                                                String[] guideNewicks,
                                                String[] selectedTaxa,
                                                boolean greedyGpu) throws IOException {
-        if (taggedInputFile == null || guideNewicks.length == 0
-                || selectedTaxa.length < 4) {
+        GuideMatrix context = backboneContext.get();
+        boolean s2Backbone = context != null && !context.completedDisco().isEmpty();
+        if (taggedInputFile == null || selectedTaxa.length < 4
+                || (!s2Backbone && guideNewicks.length == 0)) {
             throw new IllegalArgumentException("Invalid S5 two-step backbone input");
         }
         TaxonRegistry subset = new TaxonRegistry();
@@ -183,12 +214,19 @@ public final class AProGreedySearch {
             throw new IllegalArgumentException("S5 backbone subset contains duplicate taxa");
         }
 
-        List<Tree> guides = new ArrayList<>(guideNewicks.length);
-        for (int i = 0; i < guideNewicks.length; i++) {
-            Tree parsed = TreeParser.parseSpeciesTreeNewick(guideNewicks[i], subset);
-            markProposalNodes(parsed.root);
-            guides.add(new Tree(i, parsed.root, parsed.postorderArray,
-                parsed.positionMap, parsed.leafCount, subset.size(), false));
+        List<Tree> guides;
+        if (s2Backbone) {
+            Logging.info("S5 backbone: using restricted DISCO/UPGMA proposals");
+            guides = S5S2Backbone.restrict(context.completedDisco(),
+                context.upgmaTree(), context.names(), subset);
+        } else {
+            guides = new ArrayList<>(guideNewicks.length);
+            for (int i = 0; i < guideNewicks.length; i++) {
+                Tree parsed = TreeParser.parseSpeciesTreeNewick(guideNewicks[i], subset);
+                markProposalNodes(parsed.root);
+                guides.add(new Tree(i, parsed.root, parsed.postorderArray,
+                    parsed.positionMap, parsed.leafCount, subset.size(), false));
+            }
         }
 
         // Restrict only the ORIGINAL tagged multicopy trees to the backbone taxa.
@@ -204,9 +242,10 @@ public final class AProGreedySearch {
         UniqueTaxonSubtreeHashes geneHashes =
             new UniqueTaxonSubtreeHashes(genes, hasher);
         ClusterTable clusters = new ClusterTable(guides, guidePrefix,
-            subset.size(), guideHashes, 0);
+            subset.size(), guideHashes, s2Backbone ? Integer.MAX_VALUE : 0);
         PartitionTable partitions = new PartitionTable(genes, genePrefix, geneHashes);
-        DPTable dp = new DPTable(guides, guidePrefix, clusters, guideHashes, 0);
+        DPTable dp = new DPTable(guides, guidePrefix, clusters, guideHashes,
+            s2Backbone ? Integer.MAX_VALUE : 0);
         guideHashes.release();
         geneHashes.release();
         // The native greedy scorer and STELAR's triplet backend are independent.
@@ -219,9 +258,10 @@ public final class AProGreedySearch {
         WeightTable weights = new WeightTable(dp, partitions, clusters, guides, genes);
         Inference inference = new Inference();
         String rooted = inference.run(dp, weights, clusters, guides, subset, hasher);
-        Logging.info("A-Pro two-step backbone: %d taxa, %d quartet-greedy guides "
-            + "(%s scorer), STELAR triplet score %s", subset.size(), guides.size(),
-            greedyGpu ? "GPU" : "CPU", inference.getLastTripletScore());
+        Logging.info("A-Pro two-step backbone: %d taxa, %d %s proposals, "
+            + "STELAR triplet score %s", subset.size(), guides.size(),
+            s2Backbone ? "restricted S2 DISCO/UPGMA" : "quartet-greedy",
+            inference.getLastTripletScore());
 
         // A-Pro places onto an unrooted backbone anchored at taxon 0. Retain
         // the triplet-DP-selected topology while changing only its Newick root.

@@ -20,6 +20,11 @@ public interface S6ScoreSource extends AutoCloseable {
     /** Support involving one taxon currently being inserted. */
     Focus focus(int taxon);
 
+    /** Restrict an insertion query to taxa in its fixed backbone. */
+    default Focus focusOn(int taxon, int[] backboneTaxa) {
+        return focus(taxon);
+    }
+
     /** Scores AB|C, AC|B, and BC|A for three disjoint species sets. */
     long[] groupScores(int[] a, int[] b, int[] c);
 

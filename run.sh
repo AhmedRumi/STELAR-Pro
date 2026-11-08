@@ -73,18 +73,20 @@ Optional:
   --search-space     S1 (default) | S2 (lineage-scoped DISCO/UPGMA candidates) |
                      S3 (global DISCO + S1 + greedy consensus) |
                      S4 (S2 candidates with rooted-triplet similarity) |
-                     S5 (A-Pro greedy trees + shared-matrix UPGMA; triplet DP) |
-                     S6 (rooted-triplet greedy trees + S1; triplet DP)
+                     S5 (S2-backbone A-Pro guides + UPGMA; triplet DP) |
+                     S6 (S4-backbone triplet guides + UPGMA; triplet DP)
   --search-mode      local | full
   --cross-tree-splits     Enable cross-tree splits for S2/S4/S5/S6/S7 (default: off)
   --no-cross-tree-splits  Disable cross-tree splits
   --exhaustive        S2/S4: restore S1 candidates and global DISCO completion
   --s5-rounds N      Number of independent S5 greedy searches (default: 4)
   --s5-seed N        S5 greedy-search random seed
-  --max-search-passes N   Max S5/S6 search/DP passes, including first (default: 1)
+  --max-search-passes N   Max S5 search/DP passes, including first (default: 1; S6 requires 1)
   --s5-adaptive-passes N  Legacy alias for N extra S5 passes (0-5)
   --s6-rounds N      Number of independent S6 greedy searches (default: 4)
   --s6-seed N        S6 greedy-search random seed
+  --s6-no-upgma-candidate
+                     Keep UPGMA for S6 guides, omit it from final DP candidates
   --no-prune-search-space  Disable the DP-reachability weight prune (default: on)
   --threads, --num-threads, -t
                      Thread count
@@ -206,7 +208,7 @@ while [[ $# -gt 0 ]]; do
       PROGRAM_ARGS+=("$1")
       shift
       ;;
-    --rooted|--unrooted|--keep-polytomy-during-inference|--anchor-outgroup|--anchor|--no-anchor-outgroup|--no-anchor|--no-prune-search-space|--no-prune-unreachable|--prune-search-space|--prune-unreachable|--no-gpu-batch|--cross-tree-splits|--no-cross-tree-splits|--exhaustive|--consensus-experimental|--stepb-quadratic-nn-balls|--stepb-random-leftover-resolution|--stepb-process-large-polytomies|--resolve-input-gene-tree-polytomies|--verify-parse|--verify-hash|--verify-clusters|--verify-partitions|--verify-dp|--verify-weights|--verify-distance-matrix|--verify-similarity-matrix|--verify-upgma|--verify-greedy-consensus|--autocomplete-incomplete-gene-trees|--extract-taxa|-v|-vv|-vvv|-q|--quiet)
+    --rooted|--unrooted|--keep-polytomy-during-inference|--anchor-outgroup|--anchor|--no-anchor-outgroup|--no-anchor|--no-prune-search-space|--no-prune-unreachable|--prune-search-space|--prune-unreachable|--no-gpu-batch|--cross-tree-splits|--no-cross-tree-splits|--exhaustive|--consensus-experimental|--stepb-quadratic-nn-balls|--stepb-random-leftover-resolution|--stepb-process-large-polytomies|--resolve-input-gene-tree-polytomies|--s6-no-upgma-candidate|--verify-parse|--verify-hash|--verify-clusters|--verify-partitions|--verify-dp|--verify-weights|--verify-distance-matrix|--verify-similarity-matrix|--verify-upgma|--verify-greedy-consensus|--autocomplete-incomplete-gene-trees|--extract-taxa|-v|-vv|-vvv|-q|--quiet)
       PROGRAM_ARGS+=("$1")
       shift
       ;;

@@ -264,7 +264,9 @@ public class ClusterTable {
         // A leaf is already unique, so its legacy one-position hash is safe.
         ClusterHash knownHash = uniqueTaxonHashes == null || node.isLeaf()
             ? null : uniqueTaxonHashes.get(ti, node);
-        if (!node.isRoot()) {
+        // A partial DISCO component's root is a valid proposal. Only a
+        // complete all-taxa root is the DP sentinel rather than a candidate.
+        if (!node.isRoot() || L < numTaxa) {
             registerCluster(ti, lo, hi, false, hi - lo, L, pref, numTaxa, knownHash);
             count[0]++;
             if (ti >= firstS5GreedyTreeIndex && ti < lastS5GreedyTreeIndex) {

@@ -3,6 +3,7 @@ package stelarx.pro;
 import stelarx.Config;
 import stelarx.Logging;
 import stelarx.cluster.ClusterTable;
+import stelarx.completion.SimilarityMatrix;
 import stelarx.dp.DPTable;
 import stelarx.dp.Inference;
 import stelarx.gpu.GPUDPBuilder;
@@ -21,6 +22,7 @@ import java.util.ArrayList;
 import java.util.Collections;
 import java.util.IdentityHashMap;
 import java.util.List;
+import java.util.PriorityQueue;
 import java.util.Random;
 import java.util.concurrent.atomic.AtomicInteger;
 
@@ -46,11 +48,22 @@ public final class S6GreedySearch {
     }
 
     private record Edge(Node node, long delta) {}
+    private record GroupPair(double score, int a, int b) {}
 
     public static List<Tree> generate(S6ScoreSource support, List<Tree> originalGenes,
                                       String taggedInput, TaxonRegistry registry,
                                       int firstIndex, long seed, int rounds,
                                       String previousTree) throws IOException {
+        return generate(support, originalGenes, taggedInput, registry,
+            firstIndex, seed, rounds, previousTree, null);
+    }
+
+    /** Shared guide data supplies S4-style backbones and UPGMA partitions. */
+    public static List<Tree> generate(S6ScoreSource support, List<Tree> originalGenes,
+                                      String taggedInput, TaxonRegistry registry,
+                                      int firstIndex, long seed, int rounds,
+                                      String previousTree,
+                                      S6S2BBGuideData guideData) throws IOException {
         int n = registry.size();
         if (support.taxa() != n || rounds < 1)
             throw new IllegalArgumentException("Invalid S6 support or round count");
@@ -67,7 +80,18 @@ public final class S6GreedySearch {
                 int size = Math.max(4, Math.min(n,
                     (int) (Math.sqrt(n) * Math.log(n) / Math.log(2.0) / 4.0)));
                 List<Integer> selected = order.subList(0, size);
-                if (previousTree == null) {
+                if (previousTree == null && guideData != null) {
+                    TaxonRegistry subset = new TaxonRegistry();
+                    for (int taxon : selected)
+                        subset.register(registry.getName(taxon));
+                    subset.lock();
+                    List<Tree> genes = TreeParser.parseRestrictedGeneTrees(
+                        taggedInput, subset, false).trees();
+                    root = inferBackboneTrees(genes, subset,
+                        guideData.restrict(subset), registry);
+                    Logging.info("S6-S2BB round %d/%d: STELAR triplet-DP backbone "
+                        + "from restricted S4 candidates", round + 1, rounds);
+                } else if (previousTree == null) {
                     // A-Pro scores subset guides on the induced gene families.
                     // Restriction preserves every triplet among selected taxa
                     // while making each reusable guide state much smaller.
@@ -120,8 +144,11 @@ public final class S6GreedySearch {
                 } else {
                     root = inducedPrevious(previousTree, selected, registry);
                 }
-                root = placeByBackboneGroups(root, order.subList(size, n),
-                    scorer, random);
+                root = guideData == null
+                    ? placeByBackboneGroups(root, order.subList(size, n),
+                        scorer, random)
+                    : placeByBackboneGroupsUpgma(root, order.subList(size, n),
+                        scorer, guideData.matrix(), random);
             } else if (previousTree == null) {
                 root = fromOrder(order, scorer, random);
             } else {
@@ -163,7 +190,14 @@ public final class S6GreedySearch {
     /** One focused slice supplies every triplet needed to place taxon x. */
     private static Edge locate(Node root, int x, S6ScoreSource support,
                                int group, Node originalChild, Random random) {
-        placementCounts(root, x, support.focus(x));
+        return locate(root, x, support, group, originalChild, random, null);
+    }
+
+    private static Edge locate(Node root, int x, S6ScoreSource support,
+                               int group, Node originalChild, Random random,
+                               int[] backboneTaxa) {
+        placementCounts(root, x, backboneTaxa == null
+            ? support.focus(x) : support.focusOn(x, backboneTaxa));
         List<Edge> edges = new ArrayList<>();
         collectEdges(root, 0L, edges);
         long best = Long.MIN_VALUE;
@@ -238,6 +272,7 @@ public final class S6GreedySearch {
         for (Edge edge : edges) {
             IdentityHashMap<Node, Node> copies = new IdentityHashMap<>();
             Node copied = copy(root, copies);
+            refresh(copied); // copy() links nodes but does not populate internal sets.
             copied = insert(copied, copies.get(edge.node), 3, -1);
             refresh(copied);
             long observed = score(copied, support) - base;
@@ -307,6 +342,95 @@ public final class S6GreedySearch {
         return root;
     }
 
+    /** Triplet-scored edge assignment; UPGMA resolves each edge's taxa once. */
+    private static Node placeByBackboneGroupsUpgma(Node root,
+                                                    List<Integer> remaining,
+                                                    S6ScoreSource support,
+                                                    SimilarityMatrix matrix,
+                                                    Random random) {
+        List<Node> edges = new ArrayList<>();
+        collectNodes(root, edges);
+        IdentityHashMap<Node, Integer> edgeId = new IdentityHashMap<>();
+        List<List<Integer>> groups = new ArrayList<>(edges.size());
+        for (int i = 0; i < edges.size(); i++) {
+            edgeId.put(edges.get(i), i);
+            groups.add(new ArrayList<>());
+        }
+        // The backbone is unchanged while assigning taxa, so each focused
+        // triplet placement score needs only backbone-species pairs.
+        int[] backboneTaxa = root.taxa;
+        for (int taxon : remaining) {
+            Node edge = locate(root, taxon, support, -1, null, random,
+                backboneTaxa).node;
+            groups.get(edgeId.get(edge)).add(taxon);
+        }
+        int nonempty = 0;
+        for (int i = 0; i < edges.size(); i++) {
+            if (groups.get(i).isEmpty()) continue;
+            nonempty++;
+            Node edge = edges.get(i);
+            Node parent = edge.parent;
+            Node joined = new Node(edge, upgmaGroup(groups.get(i), matrix));
+            joined.parent = parent;
+            if (parent == null) root = joined;
+            else if (parent.left == edge) parent.left = joined;
+            else if (parent.right == edge) parent.right = joined;
+            else throw new IllegalStateException("S6-S2BB backbone parent changed");
+        }
+        refresh(root);
+        Logging.info("S6-S2BB UPGMA placement: %d taxa in %d nonempty "
+            + "backbone-edge groups", remaining.size(), nonempty);
+        return root;
+    }
+
+    /** Group-sized scratch only; the packed global similarity stays read-only. */
+    private static Node upgmaGroup(List<Integer> group, SimilarityMatrix global) {
+        int m = group.size();
+        if (m == 1) return new Node(group.get(0));
+        int capacity = 2 * m - 1;
+        double[][] sim = new double[capacity][capacity];
+        Node[] roots = new Node[capacity];
+        int[] sizes = new int[capacity];
+        boolean[] active = new boolean[capacity];
+        PriorityQueue<GroupPair> nearest = new PriorityQueue<>((x, y) -> {
+            int cmp = Double.compare(y.score(), x.score());
+            if (cmp != 0) return cmp;
+            cmp = Integer.compare(y.a(), x.a());
+            return cmp != 0 ? cmp : Integer.compare(y.b(), x.b());
+        });
+        for (int a = 0; a < m; a++) {
+            roots[a] = new Node(group.get(a));
+            sizes[a] = 1;
+            active[a] = true;
+            for (int b = 0; b < a; b++) {
+                double score = global.getSim(group.get(a), group.get(b));
+                sim[a][b] = sim[b][a] = score;
+                nearest.add(new GroupPair(score, b, a));
+            }
+        }
+        for (int next = m; next < capacity; next++) {
+            GroupPair best;
+            do {
+                best = nearest.poll();
+                if (best == null)
+                    throw new IllegalStateException("S6-S2BB UPGMA exhausted pairs");
+            } while (!active[best.a()] || !active[best.b()]);
+            int a = best.a(), b = best.b();
+            roots[next] = new Node(roots[a], roots[b]);
+            sizes[next] = sizes[a] + sizes[b];
+            active[a] = active[b] = false;
+            for (int k = 0; k < next; k++) {
+                if (!active[k]) continue;
+                double score = (sizes[a] * sim[a][k] + sizes[b] * sim[b][k])
+                    / sizes[next];
+                sim[next][k] = sim[k][next] = score;
+                nearest.add(new GroupPair(score, k, next));
+            }
+            active[next] = true;
+        }
+        return roots[capacity - 1];
+    }
+
     private static void collectNodes(Node node, List<Node> result) {
         result.add(node);
         if (!node.leaf()) {
@@ -319,37 +443,119 @@ public final class S6GreedySearch {
     private static void refineNni(Node root, S6ScoreSource support, int n,
                                   boolean allowParallel) {
         int limit = 20 + (int) (2 * Math.sqrt(n) * Math.log(n) / Math.log(2.0));
+        int parallelism = allowParallel && n >= 100 && Threading.isStarted()
+            ? Math.min(3, Threading.getNumThreads()) : 1;
+        long started = System.nanoTime();
+        // An NNI changes only the swapped neighborhood, so choices elsewhere
+        // remain valid even though their position in the postorder may move.
+        IdentityHashMap<Node, Integer> cachedChoices = new IdentityHashMap<>();
+        if (n >= 1000)
+            Logging.info("S6 triplet NNI: up to %d first-improving moves, "
+                + "%d bounded scorer worker(s)", limit, parallelism);
+        int applied = 0;
         for (int move = 0; move < limit; move++) {
             refresh(root);
             List<Node> nodes = new ArrayList<>();
             collectPostorder(root, nodes);
             int index = -1, choice = 0;
-            if (allowParallel && n >= 100 && Threading.isStarted()
-                    && Threading.getNumThreads() > 1) {
-                // Score disjoint candidate NNIs on CPU workers, but apply only
-                // the first improving move in postorder, as in serial S6.
-                int[] choices = new int[nodes.size()];
-                AtomicInteger earliest = new AtomicInteger(nodes.size());
-                Threading.processRangeParallel(nodes.size(), i -> {
-                    if (i >= earliest.get()) return;
-                    try (S6ScoreSource worker = support.fork()) {
-                        int candidate = nniChoice(nodes.get(i), worker);
-                        choices[i] = candidate;
-                        if (candidate != 0) earliest.accumulateAndGet(i, Math::min);
+            if (parallelism > 1) {
+                // A full-tree task per node previously queued thousands of
+                // jobs against just three colour states. Scan small postorder
+                // windows, borrowing each state once per worker; the minimum
+                // improving index is exactly the serial first-improvement.
+                int window = 24 * parallelism;
+                for (int begin = 0; begin < nodes.size(); begin += window) {
+                    final int from = begin;
+                    final int end = Math.min(nodes.size(), begin + window);
+                    final int chunk = (end - from + parallelism - 1) / parallelism;
+                    int[] choices = new int[end - from];
+                    int earliestKnown = end;
+                    for (int i = from; i < end; i++) {
+                        Integer cached = cachedChoices.get(nodes.get(i));
+                        choices[i - from] = cached == null
+                            ? Integer.MIN_VALUE : cached;
+                        if (cached != null && cached != 0 && i < earliestKnown)
+                            earliestKnown = i;
                     }
-                });
-                index = earliest.get();
-                if (index < nodes.size()) choice = choices[index];
+                    boolean missingBeforeEarliest = false;
+                    for (int i = from; i < earliestKnown; i++) {
+                        if (choices[i - from] == Integer.MIN_VALUE) {
+                            missingBeforeEarliest = true;
+                            break;
+                        }
+                    }
+                    if (!missingBeforeEarliest) {
+                        if (earliestKnown < end) {
+                            index = earliestKnown;
+                            choice = choices[index - from];
+                            break;
+                        }
+                        continue;
+                    }
+                    AtomicInteger earliest = new AtomicInteger(earliestKnown);
+                    Threading.processRangeParallel(parallelism, workerId -> {
+                        S6ScoreSource worker = workerId == 0 ? support : support.fork();
+                        try {
+                            int first = from + workerId * chunk;
+                            int last = Math.min(end, first + chunk);
+                            for (int i = first; i < last && i < earliest.get(); i++) {
+                                if (choices[i - from] != Integer.MIN_VALUE)
+                                    continue;
+                                int candidate = nniChoice(nodes.get(i), worker);
+                                choices[i - from] = candidate;
+                                if (candidate != 0)
+                                    earliest.accumulateAndGet(i, Math::min);
+                            }
+                        } finally {
+                            if (workerId != 0) worker.close();
+                        }
+                    });
+                    // Workers only read the cache; publish their results after
+                    // joining so the IdentityHashMap is never mutated in parallel.
+                    for (int i = from; i < end; i++) {
+                        int candidate = choices[i - from];
+                        if (candidate != Integer.MIN_VALUE)
+                            cachedChoices.put(nodes.get(i), candidate);
+                    }
+                    if (earliest.get() < end) {
+                        index = earliest.get();
+                        choice = choices[index - from];
+                        break;
+                    }
+                }
             } else {
                 for (int i = 0; i < nodes.size(); i++) {
-                    choice = nniChoice(nodes.get(i), support);
+                    Node node = nodes.get(i);
+                    Integer cached = cachedChoices.get(node);
+                    choice = cached == null ? nniChoice(node, support) : cached;
+                    if (cached == null) cachedChoices.put(node, choice);
                     if (choice != 0) { index = i; break; }
                 }
             }
             if (index < 0 || index >= nodes.size()) break;
-            applyNni(nodes.get(index), choice);
+            Node parent = nodes.get(index);
+            Node child = choice <= 2 ? parent.left : parent.right;
+            Node sibling = choice <= 2 ? parent.right : parent.left;
+            Node a = child.left, b = child.right;
+            Node grandparent = parent.parent;
+            applyNni(parent, choice);
+            // The parent keeps the same species set. Only these local NNI
+            // choices can change; grandparent observes the parent's new arms.
+            cachedChoices.remove(grandparent);
+            cachedChoices.remove(parent);
+            cachedChoices.remove(child);
+            cachedChoices.remove(sibling);
+            cachedChoices.remove(a);
+            cachedChoices.remove(b);
+            applied++;
+            if (n >= 1000 && applied % 20 == 0)
+                Logging.info("S6 triplet NNI: %d move(s) applied in %d ms",
+                    applied, (System.nanoTime() - started) / 1_000_000);
         }
         refresh(root);
+        if (n >= 1000)
+            Logging.info("S6 triplet NNI: finished %d move(s) in %d ms",
+                applied, (System.nanoTime() - started) / 1_000_000);
     }
 
     /** Encode left/right child and which of its two arms is moved. */
@@ -466,6 +672,12 @@ public final class S6GreedySearch {
                 parsed.postorderArray, parsed.positionMap,
                 parsed.leafCount, subset.size()));
         }
+        return inferBackboneTrees(genes, subset, guides, registry);
+    }
+
+    private static Node inferBackboneTrees(List<Tree> genes, TaxonRegistry subset,
+                                           List<Tree> guides,
+                                           TaxonRegistry registry) throws IOException {
         TaxonHasher hasher = new TaxonHasher(subset.size(),
             Config.getInstance().getNumHashSeeds(), Config.getInstance().getBaseSeed());
         PrefixHashArrays candidatePrefix = new PrefixHashArrays(guides, hasher);
