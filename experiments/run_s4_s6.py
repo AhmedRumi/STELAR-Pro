@@ -136,6 +136,18 @@ def discover(data_dir: Path, condition_spec: str | None,
     if not data_dir.is_dir():
         raise ValueError(f"--data-dir is not a directory: {data_dir}")
 
+    # A common slip is to point at one condition instead of the folder holding
+    # them, which would otherwise read each R* as a condition and report only
+    # that nothing matched.
+    if any(entry.is_dir() and re.fullmatch(r"[Rr]\d+", entry.name)
+           for entry in data_dir.iterdir()):
+        raise ValueError(
+            f"--data-dir points at a single condition: {data_dir}\n"
+            "It expects the folder that CONTAINS the taxa*_gt*_dup*_loss*_pop* "
+            "condition directories, so pass the parent:\n"
+            f"    --data-dir {data_dir.parent}\n"
+            f"and add --conditions {data_dir.name} to run only this one.")
+
     conditions = sorted(
         entry.name for entry in data_dir.iterdir()
         if entry.is_dir() and not entry.name.startswith(".")
