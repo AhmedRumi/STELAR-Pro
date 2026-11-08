@@ -421,3 +421,181 @@ machine are worthless. A mid-run claim that runtimes had "roughly doubled" came
 from exactly that mistake and was wrong; the sweep finished in 2 h 36 m. The
 per-split figure of 20-100x for guide splits is not contradicted - there are simply
 too few of them for it to matter.
+
+## Tier 4: an ASTRID-style internode-distance matrix (2026-11-08)
+
+Implemented in `InternodeDistanceMatrix`. Specs `astrid`, `astrid-bionj`,
+`astrid-fastme` under `--extra-guide-trees`, and
+`astrid-ensemble[-bionj|-fastme]:k[:seed[:scale]]` under `--guide-ensemble`.
+
+### Why this is different from Tiers 1-3
+
+Every earlier guide method reads the same quartet `SimilarityMatrix`. The transforms
+change how it is read, NJ/BIONJ change the agglomeration rule, BME changes the
+objective, the resampling ensemble changes its noise. All are bounded by what quartet
+similarity records, and that matrix is largely saturated: on a 200-taxon run **14,631
+of 20,100 pairs sit at or below the 1/3 random-quartet level** and have their distance
+floored. Tier 4 measures a different quantity - the average topological internode
+distance over the gene trees in which both taxa appear.
+
+The dynamic range confirms the saturation diagnosis was the right one. On
+`dup1_ILS25` 03 the internode matrix runs **min 2.02, mean 15.09, max 22.78** with no
+flooring at all, against a quartet matrix where three quarters of the entries are
+pinned to the same floor.
+
+### Two correctness traps, both caught by the self-test
+
+`CompletionSelfTest` (run: `java -cp build stelarx.completion.CompletionSelfTest`) is
+new and covers this plus the BME checks, which existed as `*ForTest` hooks that nothing
+ever called. 35 assertions, all passing.
+
+1. **The degree-2 root.** ASTRID's matrix is defined on unrooted gene trees, but DISCO
+   components arrive rooted, and a rooted binary root is not an edge of the unrooted
+   topology. Every path crossing it is one edge too long. This is *not* a constant
+   offset - it applies to a topology-dependent subset of pairs - so it breaks
+   additivity rather than shifting it. The accumulator subtracts that edge for exactly
+   the pairs whose LCA is the root, and the test checks that two different rootings of
+   one unrooted topology give the identical matrix.
+2. **Additivity itself.** The four-point condition is verified on all 70 quadruples of
+   an 8-taxon tree, and the decisive end-to-end check is that **NJ run on a single
+   tree's own internode matrix returns that exact topology**. NJ is provably consistent
+   on an additive matrix, so a matrix that is merely plausible fails this almost always.
+
+Because internode counts are natively additive, no similarity transform is applied -
+the `Transform` enum is deliberately bypassed. `-log` existed only to make quartet
+similarity additive.
+
+### First measurement: a different tree, but X already knows its clades
+
+On `dup1_ILS25` 03, with UPGMA and `nj-corrected` alongside:
+
+| guide | new clusters | new splits | Jaccard vs `nj-corrected` |
+|---|---:|---:|---:|
+| UPGMA | 0/200 | 1/200 | 0.770 |
+| `nj-corrected` | 10/200 | 13/200 | - |
+| `astrid` | **2/200** | 3/200 | **0.778** |
+| `astrid-bionj` | 0/200 | 0/200 | 0.778 |
+| `astrid-fastme` | 0/200 | 0/200 | 0.770 |
+
+**The hypothesis was right and the consequence was still small.** ASTRID does produce a
+genuinely different tree - 25 of its 200 clades are absent from `nj-corrected`, a
+Jaccard of 0.778, as different as any two methods tried. But only 2 of its clades are
+new to `X`, because `X` already holds 25,899 clusters from 4,183 DISCO components. A
+single guide tree contributes 200 clades against that, whatever it measures.
+
+This is the saturation story one level up. Tier 1 found the *matrix* saturated; Tier 4
+finds that even an unsaturated matrix hits a saturated *candidate set*. The only thing
+that ever broke the ceiling was quantity - the 20-member ensemble reaching 594 clades -
+which is why the ensemble form below is the operative part of this tier, not the single
+tree. Caveat: `dup1_ILS25` is the condition measured to be inert for every guide
+method, so this is the least favourable test case; the loss conditions are pending.
+
+Two smaller results:
+
+- **`astrid-bionj` is bit-identical to `astrid`** (Jaccard 1.000, 0 clades either way).
+  BIONJ added nothing on the quartet matrix and adds nothing on this one either, so
+  that finding is about BIONJ, not about the matrix it reads.
+- **BME has nothing to fix here.** `astrid-fastme` applied 1 NNI move for a 0.00%
+  shorter tree, against 70 moves and 13.48% on `fastme-corrected`. The NJ tree on a
+  near-additive matrix is already at a BME local optimum - consistent with the
+  four-point test passing exactly. BME's value came from repairing a badly
+  non-additive matrix, which is a statement about `NEG_LOG_CORRECTED`, not about BME.
+
+### The standard error this matrix gives for free
+
+The most useful by-product. Tier 2's ensemble perturbed quartet similarity by a
+binomial standard error `sqrt(p(1-p)/den)` where `den` counts quartets - about 1e7 per
+pair, all derived from 1000 gene trees. Treating 1e7 dependent quantities as
+independent observations understated the error by roughly `sqrt(1e7/1e3)` ~ 100x, which
+is why that ensemble collapsed to 12 distinct topologies until the scale was hand-set
+to 100.
+
+The internode matrix carries its own sample size: the number of gene trees each pair
+co-occurs in. So `se = sd/sqrt(count)` is an **empirical standard error over genuinely
+independent observations**, and `scale = 1.0` is the principled default rather than a
+fudge factor. The self-test pins this down - SE is 0 when every tree agrees, and
+exactly `sd/sqrt(trees)` when they disagree.
+
+### Pairs never seen together: the policy does not bind
+
+A pair can appear in no common component. Those entries are completed by
+single-intermediate metric closure, `D(a,b) = min_c D(a,c) + D(c,b)`, up to three
+passes, then filled with the largest observed distance; all counts are logged.
+
+**Measured: 20,100 of 20,100 pairs observed, 100.00%, from 4,183 components.** The fill
+policy never fires at 200 taxa with 1000 genes, so the concern it answers is real in
+principle and inert here. Matrix build cost 119 ms.
+
+### The ensemble: honestly calibrated, and therefore less diverse
+
+Measured on `dup1_loss1` 01 - a loss condition, where guides do affect the result -
+with `--guide-ensemble astrid-ensemble:20:42:1`:
+
+| | Tier 2, quartet matrix | Tier 4, internode matrix |
+|---|---|---|
+| sample size per pair | 4.5e6 quartets (median) | **475 gene trees** (median) |
+| standard error | 1.95e-4 (median) | 0.1768, **1.15% of the mean** |
+| scale needed for 20/20 distinct | **100** | **1.0** |
+| distinct topologies at that scale | 20/20 | 20/20 |
+| clades per member | 199 | 200 |
+| distinct clades in the union | **838 (4.21x)** | **274 (1.37x)** |
+| mean pairwise clade Jaccard | 0.472 | 0.835 |
+
+**The calibration works and the diversity is worse.** Scale 1.0 gives 20 distinct
+topologies with no fudge factor, which is exactly what the design predicted. But the
+honest standard error is small - 1.15% of the mean distance - so the ensemble spans
+274 clades where Tier 2's spanned 838.
+
+That inverts the reading of Tier 2. Its scale of 100 was not a correction for a
+mis-estimated error; it was **over-perturbation beyond what the data supports**, and
+over-perturbation is what broke the 242-clade ceiling. The corroborating evidence was
+already there and pointing the other way: scale 300 - more over-perturbation still -
+produced a *worse* tree than doing nothing on this same replicate. Scale 100 was an
+empirical sweet spot, not a statistical one, and this measurement is what makes that
+unambiguous.
+
+So Tier 4's ensemble is not the drop-in improvement it was designed to be. Its value
+is that it makes the knob interpretable: scale is now measured in units of the actual
+standard error, so `astrid-ensemble:20:42:10` means "ten times what the data supports"
+rather than "100, found by trial".
+
+### Candidate contribution on a loss replicate
+
+`dup1_loss1` 01, with UPGMA + `nj-corrected` + `astrid` + 20 ensemble members
+(23 guides):
+
+| guide | new clusters | new splits |
+|---|---:|---:|
+| UPGMA | 0/200 | 4/200 |
+| `nj-corrected` | 19/200 | 26/200 |
+| `astrid` | 4/200 | 15/200 |
+| `astrid-ensemble~e01` | 1/200 | 2/200 |
+| **all 23 guides** | **48** | **89** |
+
+Against sweep4's 36 guides on the identical replicate, which donated **198 clusters and
+428 splits**. The ASTRID ensemble is the weaker candidate generator, for the reason
+above: its perturbation is the size the data justifies.
+
+The ensemble's union does hold clades the single trees miss - 110 beyond
+`nj-corrected`, 74 beyond `astrid` itself - so the diversity is in the right place. It
+is simply smaller.
+
+### ILS saturation, now confirmed four ways
+
+`dup1_ILS25` 03 scores **635,352,076** under the baseline, under `nj-corrected,nj`,
+under all 36 guides, and under `nj-corrected` plus three ASTRID guides. Four
+independent candidate-source configurations, one score, to the digit. Nothing in
+Tiers 1-4 moves this condition.
+
+### Status and the open question
+
+Implemented, tested (35 assertions) and measured on two replicates. Not yet run as a
+sweep arm, so there is no RF number for it. The question this tier was built to answer
+- does a matrix measuring a different quantity find clades the quartet matrix cannot -
+has a split answer: **yes for the tree (Jaccard 0.778, genuinely different), no for the
+candidate set (2-4 new clusters of 200)**, because `X` already holds 25,899-81,730
+clusters from DISCO.
+
+The next measurement worth taking is `astrid-ensemble` at scale 10 and 30, now that
+scale 1 is known to be the honest unit. That isolates whether the Tier 2 gain came from
+diversity per se or from over-perturbation of that particular matrix.

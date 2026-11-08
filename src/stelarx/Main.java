@@ -317,6 +317,21 @@ public class Main {
                             : SimilarityMatrixBuilder.buildCPU(
                                 completedDiscoTrees, registry.size());
                     }
+                    // ASTRID measures a different quantity from the similarity
+                    // matrix - average topological internode distance - and must see
+                    // the RAW DISCO components. Built here, because the branch below
+                    // replaces them with completed trees whose synthetic placements
+                    // would invent path lengths that no gene tree witnessed.
+                    stelarx.completion.InternodeDistanceMatrix astridMatrix = null;
+                    boolean wantAstrid = cfg.getExtraGuideTrees().stream().anyMatch(
+                            stelarx.completion.InternodeDistanceMatrix::isAstridSpec)
+                        || cfg.getGuideEnsembles().stream().anyMatch(
+                            stelarx.completion.InternodeDistanceMatrix::isAstridEnsembleSpec);
+                    if (wantAstrid) {
+                        astridMatrix = stelarx.completion.InternodeDistanceMatrix.build(
+                            completedDiscoTrees, registry.size());
+                    }
+
                     if (streamDiscoCandidates) {
                         // Mutable references let each raw DISCO component be
                         // released immediately after its completion batch.
@@ -340,14 +355,33 @@ public class Main {
                         "UPGMA", upgmaGuideTree));
                     int guideIndex = trees.size() + completedDiscoTrees.size() + 1;
                     for (String spec : cfg.getExtraGuideTrees()) {
-                        Tree extra = buildExtraGuideTree(spec, similarityMatrix, guideIndex);
+                        Tree extra;
+                        if (stelarx.completion.InternodeDistanceMatrix.isAstridSpec(spec)) {
+                            extra = astridMatrix == null ? null
+                                : astridMatrix.guide(spec, guideIndex, BME_MAX_NNI_PASSES);
+                        } else {
+                            extra = buildExtraGuideTree(spec, similarityMatrix, guideIndex);
+                        }
                         if (extra == null) continue;
                         markSyntheticCandidateNodes(extra.root);
                         guideTrees.add(new stelarx.pro.S2CandidateStreamer.Guide(spec, extra));
                         guideIndex++;
                     }
                     for (String spec : cfg.getGuideEnsembles()) {
-                        var members = buildGuideEnsemble(spec, similarityMatrix, guideIndex);
+                        java.util.List<stelarx.completion.ResampledGuideEnsemble.Member>
+                            members;
+                        if (stelarx.completion.InternodeDistanceMatrix
+                                .isAstridEnsembleSpec(spec)) {
+                            if (astridMatrix == null) continue;
+                            String[] ps = spec.split(":");
+                            members = astridMatrix.ensemble(ps[0], guideIndex,
+                                Integer.parseInt(ps[1]),
+                                ps.length > 2 ? Long.parseLong(ps[2]) : 42L,
+                                ps.length > 3 ? Double.parseDouble(ps[3]) : 1.0,
+                                BME_MAX_NNI_PASSES);
+                        } else {
+                            members = buildGuideEnsemble(spec, similarityMatrix, guideIndex);
+                        }
                         for (var m : members) {
                             markSyntheticCandidateNodes(m.tree().root);
                             guideTrees.add(new stelarx.pro.S2CandidateStreamer.Guide(
@@ -1015,10 +1049,15 @@ public class Main {
                     for (String s : args[i].split(",")) {
                         String spec = s.trim().toLowerCase();
                         if (spec.isEmpty()) continue;
-                        if (!spec.matches("(nj|bionj|fastme)(-linear|-sqrt|-corrected|-inv)?")) {
+                        // astrid* build their own internode-distance matrix and take
+                        // no transform suffix: an internode count is already additive.
+                        if (!spec.matches("(nj|bionj|fastme)(-linear|-sqrt|-corrected|-inv)?")
+                                && !stelarx.completion.InternodeDistanceMatrix
+                                    .isAstridSpec(spec)) {
                             Logging.error("Unknown --extra-guide-trees spec '%s' (expected "
                                 + "nj, bionj or fastme, optionally suffixed -linear, -sqrt, "
-                                + "-corrected or -inv; bare name means the -log transform)",
+                                + "-corrected or -inv; bare name means the -log transform; "
+                                + "or astrid, astrid-bionj, astrid-fastme)",
                                 spec);
                             return false;
                         }
@@ -1035,11 +1074,15 @@ public class Main {
                         // method:k[:seed[:scale]] - fastme is excluded because it
                         // contributes nothing measurably and costs O(n^3) per member.
                         if (!spec.matches("(nj|bionj)(-linear|-sqrt|-corrected|-inv)?"
-                                + ":\\d{1,4}(:\\d{1,19}(:\\d+(\\.\\d+)?)?)?")) {
+                                    + ":\\d{1,4}(:\\d{1,19}(:\\d+(\\.\\d+)?)?)?")
+                                && !stelarx.completion.InternodeDistanceMatrix
+                                    .isAstridEnsembleSpec(spec)) {
                             Logging.error("Bad --guide-ensemble spec '%s' (expected "
                                 + "method:k[:seed[:scale]], method being nj or bionj "
                                 + "with an optional transform suffix, e.g. "
-                                + "nj-corrected:20 or nj-corrected:20:42:1.5)", spec);
+                                + "nj-corrected:20 or nj-corrected:20:42:1.5; or "
+                                + "astrid-ensemble[-bionj|-fastme]:k[:seed[:scale]], "
+                                + "whose scale 1.0 is already calibrated)", spec);
                             return false;
                         }
                         specs.add(spec);
@@ -1537,13 +1580,26 @@ public class Main {
               --full-disco-candidates         S2/S4: add S1 candidates and complete
                                               DISCO trees to all species (old behavior)
               --dump-guide-trees F             Write each guide tree as name<TAB>newick
-              --guide-ensemble L               S2/S4/S7: resampled NJ ensembles,
-                                              method:k[:seed[:scale]] (e.g. nj-corrected:20)
+              --guide-ensemble L               S2/S4/S7: resampled guide ensembles,
+                                              method:k[:seed[:scale]] (e.g. nj-corrected:20).
+                                              On the quartet matrix the standard error is
+                                              binomial over quartets and needs scale ~100.
+                                              astrid-ensemble[-bionj|-fastme]:k instead
+                                              perturbs the internode matrix by an
+                                              empirical SE over gene trees, where the
+                                              default scale 1.0 is already calibrated.
               --extra-guide-trees L            S2/S4/S7: extra distance guide trees beside
-                                              UPGMA, comma separated. Base: nj | bionj.
-                                              Optional transform suffix: -linear (1-sim),
-                                              -sqrt, -corrected (1/3 random baseline),
-                                              -inv; bare name means -log(sim).
+                                              UPGMA, comma separated.
+                                              Base: nj | bionj | fastme, on the quartet
+                                              similarity matrix. Optional transform
+                                              suffix: -linear (1-sim), -sqrt, -corrected
+                                              (1/3 random baseline), -inv; bare name
+                                              means -log(sim).
+                                              Also astrid | astrid-bionj | astrid-fastme,
+                                              which build an ASTRID-style average
+                                              internode-distance matrix from the raw
+                                              DISCO components instead, and take no
+                                              transform suffix (already additive).
               --search-mode local|full         Legacy alias for cross-tree control
               --large-n-score-type T            int128 (exact) | double
               --no-prune-search-space           Disable reachability pruning

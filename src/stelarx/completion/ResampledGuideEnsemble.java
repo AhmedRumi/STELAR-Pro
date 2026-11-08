@@ -170,6 +170,14 @@ public final class ResampledGuideEnsemble {
     }
 
     /** Rooted clades of size 2..n-1, as taxon-id bitsets. */
+    /**
+     * Rooted clade set, shared with {@link InternodeDistanceMatrix#ensemble}. Exposed
+     * so both ensembles deduplicate members by the identical definition; two notions
+     * of "same tree" drifting apart would silently change the member counts each
+     * reports.
+     */
+    static Set<BitSet> cladeSet(Tree tree, int n) { return clades(tree, n); }
+
     private static Set<BitSet> clades(Tree tree, int n) {
         Set<BitSet> out = new HashSet<>();
         collect(tree.root, tree, n, out, true);
