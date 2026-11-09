@@ -8,6 +8,8 @@ memory** and **normalized unrooted RF** for every replicate.
   arm, scores it, writes `results.tsv` plus a per-run JSON record.
 - `measure.py` — runs one command and reports its wall time, CPU time and peak
   memory, host and GPU. Usable on its own for any single run.
+- `parse_phases.py` — recovers STELAR-Pro's own per-phase instrumentation from
+  a run's log. Also runnable directly on any `*.stelar-pro.log`.
 
 ## Quick start
 
@@ -61,18 +63,60 @@ Per replicate directory:
 | `<arm>.tre` | the inferred species tree |
 | `<arm>.measure.json` | time, CPU and memory record for that run |
 | `<arm>.memory-trace.tsv` | every memory sample: `seconds`, `rss_mib`, `gpu_mib`, `gpu_device_mib` |
-| `<arm>.stelar-pro.log` | STELAR-Pro's own log |
+| `<arm>.stelar-pro.log` | STELAR-Pro's own log, parsed for the phase table |
 | `<arm>.stdout.log`, `<arm>.stderr.log` | captured streams |
 
 And one `results.tsv` at the root of the output location, appended to across
 invocations, with `rf_rate`, `raw_rf`/`max_rf`, `elapsed_seconds`,
 `cpu_seconds`, `cpu_utilization`, `cpu_seconds_per_core`, `cpu_efficiency`,
-`cpu_count`, `peak_rss_mib`, `peak_gpu_mib`, `peak_gpu_device_mib`, and the
-settings each row was produced under. The two GPU columns are left **empty**, not zero, when no
+`cpu_count`, `peak_rss_mib`, `peak_gpu_mib`, `peak_gpu_device_mib`, the
+log-derived columns below, and the settings each row was produced under.
+
+A companion **`results-phases.tsv`** holds one row per phase, in long format:
+`condition`, `replicate`, `arm`, `phase_index`, `phase`, `device`, `phase_ms`,
+`peak_ram_mib`, `peak_ram_so_far_mib`, `peak_vram_mib`, `peak_vram_so_far_mib`.
+It is a separate table rather than extra columns because the number of phases
+varies and the phase *sets* differ between arms — S4 runs `Phase 1b S4 DISCO +
+completion + UPGMA guide` where S6 runs `Phase 1b S6 rooted-triplet greedy
+proposals` — so one column per phase name would be mostly empty. Join on the
+first three columns. The two GPU columns are left **empty**, not zero, when no
 GPU was visible — "this run used no device memory" and "nobody looked" must not
 read the same.
 
-## How the measurements are taken
+## STELAR-Pro's own instrumentation
+
+`PhaseLogger` already measures more finely in time than any external wrapper
+can: it polls `/proc/self/status` `VmRSS` every **50 ms**, and during GPU phases
+`cudaMemGetInfo()` every **50 ms**, reporting a per-phase and a run-wide peak
+alongside each phase's wall time. It prints all of that for a human to read and
+keeps nothing, so `parse_phases.py` reads it back out of the log.
+
+Into `results.tsv`: `internal_total_ms`, `triplet_score`, `log_peak_ram_mib`,
+`log_peak_vram_mib`, `phase_count`, `slowest_phase`, `slowest_phase_ms`,
+`unfinished_phase`. Into `results-phases.tsv`: every phase.
+
+`internal_total_ms` is **not** the same quantity as `elapsed_seconds`, and the
+difference is the point of keeping both. It is a `System.nanoTime()` delta from
+`Main.java:119` to `Main.java:914`, so it excludes JVM startup and class
+loading, the `run.sh` wrapper, the `build.sh`/`ensure_backends.sh` step,
+argument parsing, compute-mode probing and the banner — measured at 503 ms
+against 781 ms of wall clock on a small test run. Being logged from a `finally`
+block, it appears even when the run throws, so a `Total time` line is not
+evidence of success; `unfinished_phase` is, naming the phase the log ends inside.
+
+Two properties of these numbers belong to the source, not the parsing:
+
+- **`peak_vram_mib` is device-wide, not per-process.** `PhaseLogger` derives it
+  as `total - minFree` from `cudaMemGetInfo`, which reports the whole card, so
+  another job sharing the GPU inflates it. `measure.py`'s `peak_gpu_mib` is the
+  pid-attributed figure, and this one has the better time resolution; they
+  answer different questions and both are kept.
+- **`peak_ram_mib` changes meaning off Linux.** When `/proc/self/status` cannot
+  be read, `readVmRssMiB()` falls back to `totalMemory() - freeMemory()` — Java
+  heap only, not RSS, and much smaller. Fine on Linux; figures from a macOS run
+  are not comparable.
+
+## How the harness's own measurements are taken
 
 **RF** comes from `scripts/calculate_rf_rate.py` — normalized unrooted RF
 against `species-tree/s_tree.trees`. It is dependency-free, which matters here
@@ -266,6 +310,17 @@ an argument and were unit-tested against fixtures instead of shipped unrun:
 sockets → `2`, an ARM-style file with no `core id` → `None`; `cpu.max` of
 `400000 100000` → `4.0`, `max 100000` → `None`, unparseable → `None`, missing
 → `None`.
+
+The phase parser was checked against real logs from both arms, which recovered
+8 phases each with times and RAM peaks, and against fixtures for the cases real
+logs here cannot produce: a GPU phase carrying VRAM peaks, ANSI colour escapes
+(normally absent when stderr is redirected, but `FORCE_COLOR` or a tty would
+leave them), a log that stops inside a phase with no Run Summary — where the
+run-wide peaks are recovered from the phase blocks instead and
+`unfinished_phase` names the phase — and empty and missing files, which yield
+an empty summary rather than an exception. One bug was found this way and
+fixed: the first version left the previous phase marked open after its
+completion tick, so every finished phase was reported as unfinished.
 
 GPU accounting was verified against a **stub `nvidia-smi`**, since the machine
 this was written on has no NVIDIA card and an untested parser is worth nothing.

@@ -66,6 +66,9 @@ MEASURE = Path(__file__).resolve().parent / "measure.py"
 sys.path.insert(0, str(SCRIPTS))
 from calculate_rf_rate import compare_newicks, read_tree  # noqa: E402
 
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+from parse_phases import parse_log  # noqa: E402
+
 # Arm name -> the STELAR-Pro options that define it. Everything shared between
 # arms (threads, heap, CPU/GPU) is added per run, so these stay purely about the
 # search space under test.
@@ -93,7 +96,22 @@ RESULT_FIELDS = [
     "cpu_seconds_per_core", "cpu_efficiency", "cpu_count",
     "peak_rss_mib", "peak_gpu_mib", "peak_gpu_device_mib",
     "genetrees", "threads", "xmx", "exit_code",
+    "internal_total_ms", "triplet_score",
+    "log_peak_ram_mib", "log_peak_vram_mib",
+    "phase_count", "slowest_phase", "slowest_phase_ms", "unfinished_phase",
     "output_tree", "measurement_json", "finished_at",
+]
+
+# One row per phase, in long format. A variable number of phases cannot go into
+# results.tsv without either exploding its width or inventing a column per phase
+# name, and the phase sets differ between arms (S4 has "Phase 1b S4 DISCO +
+# completion + UPGMA guide" where S6 has "Phase 1b S6 rooted-triplet greedy
+# proposals"), so they get their own table to join on the first four columns.
+PHASE_FIELDS = [
+    "condition", "replicate", "arm",
+    "phase_index", "phase", "device", "phase_ms",
+    "peak_ram_mib", "peak_ram_so_far_mib",
+    "peak_vram_mib", "peak_vram_so_far_mib",
 ]
 
 
@@ -269,11 +287,44 @@ def absorb_measurement(row: dict[str, object], measurement: Path) -> dict | None
     return saved
 
 
+def absorb_log(row: dict[str, object], condition: str, replicate: str, arm: str,
+               stelar_log: Path) -> list[dict[str, object]]:
+    """Copy STELAR-Pro's own phase instrumentation into ``row`` and phase rows.
+
+    PhaseLogger samples VmRSS every 50 ms and, in GPU phases, cudaMemGetInfo
+    every 50 ms -- twenty times finer than this harness can sample from
+    outside. It prints that for a human and keeps nothing, so it is recovered
+    from the log rather than re-measured.
+    """
+    summary = parse_log(stelar_log)
+    row["internal_total_ms"] = summary.internal_total_ms
+    row["triplet_score"] = summary.triplet_score
+    row["log_peak_ram_mib"] = summary.log_peak_ram_mib
+    row["log_peak_vram_mib"] = summary.log_peak_vram_mib
+    row["phase_count"] = len(summary.phases) or None
+    row["unfinished_phase"] = summary.unfinished_phase
+    slowest = summary.slowest
+    if slowest is not None:
+        row["slowest_phase"] = slowest.label
+        row["slowest_phase_ms"] = slowest.ms
+    return [
+        {"condition": condition, "replicate": replicate, "arm": arm,
+         "phase_index": phase.index, "phase": phase.label, "device": phase.device,
+         "phase_ms": phase.ms,
+         "peak_ram_mib": phase.peak_ram_mib,
+         "peak_ram_so_far_mib": phase.peak_ram_so_far_mib,
+         "peak_vram_mib": phase.peak_vram_mib,
+         "peak_vram_so_far_mib": phase.peak_vram_so_far_mib}
+        for phase in summary.phases
+    ]
+
+
 def run_arm(args: argparse.Namespace, condition: str, replicate: str, arm: str,
             prepared: Path, destination: Path) -> dict[str, object]:
     """Run one arm under measure.py and score the tree it produced."""
     tree = destination / f"{arm}.tre"
     measurement = destination / f"{arm}.measure.json"
+    stelar_log = destination / f"{arm}.stelar-pro.log"
     row: dict[str, object] = {
         "condition": condition, "replicate": replicate, "arm": arm,
         "genetrees": args.genetrees, "threads": args.threads, "xmx": args.xmx,
@@ -285,9 +336,9 @@ def run_arm(args: argparse.Namespace, condition: str, replicate: str, arm: str,
         print(f"  {arm}: output exists, scoring only (use --fresh to rerun)")
         row["status"] = "reused"
         absorb_measurement(row, measurement)
+        row["_phases"] = absorb_log(row, condition, replicate, arm, stelar_log)
         return score(args, condition, replicate, tree, row)
 
-    stelar_log = destination / f"{arm}.stelar-pro.log"
     stelar = [
         "./run.sh", "--input", str(prepared), "--output", str(tree),
         "--threads", str(args.threads), "--xmx", args.xmx,
@@ -328,6 +379,10 @@ def run_arm(args: argparse.Namespace, condition: str, replicate: str, arm: str,
     row["finished_at"] = time.strftime("%Y-%m-%dT%H:%M:%S%z")
 
     saved = absorb_measurement(row, measurement)
+    row["_phases"] = absorb_log(row, condition, replicate, arm, stelar_log)
+    if row.get("unfinished_phase"):
+        print(f"  {arm}: STELAR-Pro's log ends inside "
+              f"{row['unfinished_phase']!r}", file=sys.stderr)
     if saved is not None:
         if saved.get("timed_out"):
             row["status"] = "timeout"
@@ -398,6 +453,23 @@ def score(args: argparse.Namespace, condition: str, replicate: str,
 
 
 # ── reporting ────────────────────────────────────────────────────────────────
+
+def append_phase_rows(path: Path, rows: list[dict[str, object]]) -> int:
+    """Append the per-phase table, writing the header only on first creation."""
+    phases = [phase for row in rows for phase in row.get("_phases") or ()]
+    if not phases:
+        return 0
+    fresh = not path.is_file() or path.stat().st_size == 0
+    path.parent.mkdir(parents=True, exist_ok=True)
+    with path.open("a", encoding="utf-8", newline="") as handle:
+        writer = csv.DictWriter(handle, fieldnames=PHASE_FIELDS,
+                                delimiter="\t", extrasaction="ignore")
+        if fresh:
+            writer.writeheader()
+        for phase in phases:
+            writer.writerow({key: phase.get(key, "") for key in PHASE_FIELDS})
+    return len(phases)
+
 
 def append_rows(path: Path, rows: list[dict[str, object]]) -> None:
     """Append to results.tsv, writing the header only on first creation."""
@@ -566,6 +638,7 @@ def main(argv: list[str] | None = None) -> int:
     print(f"  gene trees        {args.genetrees} ({GENETREE_SOURCES[args.genetrees]})")
     print(f"  outputs           {args.out_dir or 'in each replicate: stelar-pro/'}")
     print(f"  results           {results_path}")
+    print(f"  phase table       {results_path.stem}-phases{results_path.suffix}")
     print(f"  backend/threads   {args.backend}, {args.threads} thread(s), heap {args.xmx}")
     print(f"  timeout           {args.timeout or 'none'}")
     print(f"  jobs              {len(jobs)} replicate(s) x {len(arms)} arm(s) "
@@ -594,6 +667,11 @@ def main(argv: list[str] | None = None) -> int:
     if not args.dry_run:
         append_rows(results_path, rows)
         print(f"Appended {len(rows)} row(s) to {results_path}")
+        phases_path = results_path.with_name(
+            results_path.stem + "-phases" + results_path.suffix)
+        written = append_phase_rows(phases_path, rows)
+        if written:
+            print(f"Appended {written} phase row(s) to {phases_path}")
         summarise(rows, arms)
     else:
         print("Dry run complete; no files were written.")
