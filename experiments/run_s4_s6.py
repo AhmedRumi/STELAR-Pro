@@ -7,7 +7,7 @@ For every selected replicate this driver:
      (``45_0_0`` -> ``45``; copies stay separate leaves, source data untouched),
      once per replicate and shared by both arms so the arms see identical input;
   2. runs each arm through ``experiments/measure.py``, recording elapsed wall
-     time and peak resident memory;
+     time, peak host memory and -- on a GPU run -- peak device memory;
   3. scores the result against ``species-tree/s_tree.trees`` with
      ``scripts/calculate_rf_rate.py`` (normalized unrooted RF);
   4. appends one row to ``results.tsv`` and writes a per-job JSON record.
@@ -89,7 +89,7 @@ RESULT_FIELDS = [
     "condition", "replicate", "arm", "status",
     "rf_rate", "raw_rf", "max_rf", "taxa",
     "output_splits", "true_splits", "shared_splits",
-    "elapsed_seconds", "peak_rss_mib",
+    "elapsed_seconds", "peak_rss_mib", "peak_gpu_mib", "peak_gpu_device_mib",
     "genetrees", "threads", "xmx", "exit_code",
     "output_tree", "measurement_json", "finished_at",
 ]
@@ -232,6 +232,34 @@ def prepare_input(args: argparse.Namespace, condition: str, replicate: str,
     return prepared
 
 
+def absorb_measurement(row: dict[str, object], measurement: Path) -> dict | None:
+    """Copy time and memory out of a measure.py record into ``row``.
+
+    Returns the parsed record so callers can inspect fields the row does not
+    carry, or None if there was nothing readable to absorb.
+    """
+    if not measurement.is_file():
+        return None
+    try:
+        saved = json.loads(measurement.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError):
+        return None
+
+    def mib(key: str) -> float | None:
+        value = saved.get(key)
+        return None if value is None else value / (1024 * 1024)
+
+    row["elapsed_seconds"] = saved.get("elapsed_seconds")
+    row["peak_rss_mib"] = mib("peak_rss_bytes")
+    row["exit_code"] = saved.get("exit_code")
+    # GPU columns stay empty rather than 0 when no GPU was visible: "this run
+    # used no device memory" and "nobody looked" must not read the same.
+    if saved.get("gpu_visible"):
+        row["peak_gpu_mib"] = mib("gpu_peak_bytes")
+        row["peak_gpu_device_mib"] = mib("gpu_device_peak_bytes")
+    return saved
+
+
 def run_arm(args: argparse.Namespace, condition: str, replicate: str, arm: str,
             prepared: Path, destination: Path) -> dict[str, object]:
     """Run one arm under measure.py and score the tree it produced."""
@@ -247,15 +275,7 @@ def run_arm(args: argparse.Namespace, condition: str, replicate: str, arm: str,
     if tree.is_file() and tree.stat().st_size > 0 and not args.fresh:
         print(f"  {arm}: output exists, scoring only (use --fresh to rerun)")
         row["status"] = "reused"
-        if measurement.is_file():
-            try:
-                saved = json.loads(measurement.read_text(encoding="utf-8"))
-                row["elapsed_seconds"] = saved.get("elapsed_seconds")
-                peak = saved.get("peak_rss_bytes")
-                row["peak_rss_mib"] = None if peak is None else peak / (1024 * 1024)
-                row["exit_code"] = saved.get("exit_code")
-            except (OSError, json.JSONDecodeError):
-                pass
+        absorb_measurement(row, measurement)
         return score(args, condition, replicate, tree, row)
 
     stelar_log = destination / f"{arm}.stelar-pro.log"
@@ -278,6 +298,7 @@ def run_arm(args: argparse.Namespace, condition: str, replicate: str, arm: str,
         "--stderr", str(destination / f"{arm}.stderr.log"),
         "--cwd", str(ROOT),
         "--sample-interval", str(args.sample_interval),
+        "--trace", str(destination / f"{arm}.memory-trace.tsv"),
     ]
     if args.timeout:
         command.extend(["--timeout", str(args.timeout)])
@@ -297,19 +318,21 @@ def run_arm(args: argparse.Namespace, condition: str, replicate: str, arm: str,
     result = subprocess.run(command)
     row["finished_at"] = time.strftime("%Y-%m-%dT%H:%M:%S%z")
 
-    if measurement.is_file():
-        try:
-            saved = json.loads(measurement.read_text(encoding="utf-8"))
-            row["elapsed_seconds"] = saved.get("elapsed_seconds")
-            peak = saved.get("peak_rss_bytes")
-            row["peak_rss_mib"] = None if peak is None else peak / (1024 * 1024)
-            row["exit_code"] = saved.get("exit_code")
-            if saved.get("timed_out"):
-                row["status"] = "timeout"
-                print(f"  {arm}: TIMED OUT after {args.timeout} s", file=sys.stderr)
-                return row
-        except (OSError, json.JSONDecodeError):
-            pass
+    saved = absorb_measurement(row, measurement)
+    if saved is not None:
+        if saved.get("timed_out"):
+            row["status"] = "timeout"
+            print(f"  {arm}: TIMED OUT after {args.timeout} s", file=sys.stderr)
+            return row
+        # A GPU that was there but held nothing for us is the signature of a
+        # silent fallback to a CPU backend, which would otherwise be reported
+        # as a clean GPU timing.
+        if (args.backend in ("gpu", "auto") and saved.get("gpu_visible")
+                and not saved.get("gpu_peak_attributed")):
+            print(f"  {arm}: warning: a GPU was visible but no device memory "
+                  f"was attributable to this run -- check "
+                  f"{destination / (arm + '.stelar-pro.log')} for a fallback "
+                  f"to a CPU backend", file=sys.stderr)
 
     produced_tree = tree.is_file() and tree.stat().st_size > 0
     if not produced_tree:
@@ -348,10 +371,12 @@ def score(args: argparse.Namespace, condition: str, replicate: str,
     )
     elapsed = row.get("elapsed_seconds")
     peak = row.get("peak_rss_mib")
+    gpu = row.get("peak_gpu_mib")
     print(f"  {row['arm']}: RF {result.rf_rate:.6f} "
           f"({result.raw_rf}/{result.max_rf})"
           + (f", {elapsed:.1f} s" if isinstance(elapsed, (int, float)) else "")
-          + (f", {peak:.0f} MiB" if isinstance(peak, (int, float)) else ""))
+          + (f", {peak:.0f} MiB host" if isinstance(peak, (int, float)) else "")
+          + (f", {gpu:.0f} MiB GPU" if isinstance(gpu, (int, float)) else ""))
     return row
 
 
@@ -386,8 +411,15 @@ def summarise(rows: list[dict[str, object]], arms: list[str]) -> None:
     print("\n" + "=" * 78)
     print("SUMMARY")
     print("=" * 78)
-    print(f"{'arm':<18}{'n':>4}{'mean RF':>12}{'mean sec':>12}{'mean MiB':>12}")
-    print("-" * 78)
+    # Show the GPU column only when a run actually measured device memory, so
+    # a CPU sweep is not padded with a column of zeros.
+    show_gpu = any(isinstance(row.get("peak_gpu_mib"), (int, float)) for row in scored)
+    header = f"{'arm':<18}{'n':>4}{'mean RF':>12}{'mean sec':>12}{'mean host MiB':>16}"
+    if show_gpu:
+        header += f"{'mean GPU MiB':>16}"
+    width = len(header)
+    print(header)
+    print("-" * width)
     for arm in arms:
         group = [row for row in scored if row["arm"] == arm]
         if not group:
@@ -395,9 +427,12 @@ def summarise(rows: list[dict[str, object]], arms: list[str]) -> None:
         mean = lambda key: (                                      # noqa: E731
             sum(float(row[key]) for row in group if isinstance(row.get(key), (int, float)))
             / max(1, sum(1 for row in group if isinstance(row.get(key), (int, float)))))
-        print(f"{arm:<18}{len(group):>4}{mean('rf_rate'):>12.6f}"
-              f"{mean('elapsed_seconds'):>12.1f}{mean('peak_rss_mib'):>12.0f}")
-    print("-" * 78)
+        line = (f"{arm:<18}{len(group):>4}{mean('rf_rate'):>12.6f}"
+                f"{mean('elapsed_seconds'):>12.1f}{mean('peak_rss_mib'):>16.0f}")
+        if show_gpu:
+            line += f"{mean('peak_gpu_mib'):>16.0f}"
+        print(line)
+    print("-" * width)
 
     if len(arms) != 2:
         return
