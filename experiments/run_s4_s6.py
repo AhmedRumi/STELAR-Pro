@@ -69,7 +69,7 @@ from calculate_rf_rate import compare_newicks, read_tree  # noqa: E402
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 from parse_phases import parse_log  # noqa: E402
-from measure import _cpu_budget  # noqa: E402
+from measure import _DEFAULT_INTERVAL, _cpu_budget  # noqa: E402
 
 
 def default_threads() -> tuple[int, str]:
@@ -124,7 +124,8 @@ RESULT_FIELDS = [
     "output_splits", "true_splits", "shared_splits",
     "elapsed_seconds", "cpu_seconds", "cpu_utilization",
     "cpu_seconds_per_core", "cpu_efficiency", "cpu_count",
-    "peak_rss_mib", "peak_gpu_mib", "peak_gpu_device_mib",
+    "peak_rss_mib", "hwm_sum_mib", "peak_swap_mib",
+    "peak_gpu_mib", "peak_gpu_device_mib",
     "genetrees", "threads", "xmx", "backend", "exit_code",
     "internal_total_ms", "triplet_score", "quartet_score",
     "log_peak_ram_mib", "log_peak_vram_mib",
@@ -308,6 +309,11 @@ def absorb_measurement(row: dict[str, object], measurement: Path) -> dict | None
     row["cpu_efficiency"] = saved.get("cpu_efficiency")
     row["cpu_count"] = saved.get("cpu_count")
     row["peak_rss_mib"] = mib("peak_rss_bytes")
+    # Only meaningful where /proc exists; left empty rather than zero elsewhere
+    # so "no swap was used" and "swap could not be seen" stay distinguishable.
+    if saved.get("memory_source") == "proc":
+        row["hwm_sum_mib"] = mib("hwm_sum_bytes")
+        row["peak_swap_mib"] = mib("peak_swap_bytes")
     row["exit_code"] = saved.get("exit_code")
     # GPU columns stay empty rather than 0 when no GPU was visible: "this run
     # used no device memory" and "nobody looked" must not read the same.
@@ -455,9 +461,14 @@ def run_arm(args: argparse.Namespace, condition: str, replicate: str, arm: str,
         "--stdout", str(destination / f"{arm}.stdout.log"),
         "--stderr", str(destination / f"{arm}.stderr.log"),
         "--cwd", str(ROOT),
-        "--sample-interval", str(args.sample_interval),
         "--trace", str(destination / f"{arm}.memory-trace.tsv"),
     ]
+    # Left unset unless asked for, so measure.py applies its own default, which
+    # depends on whether /proc is available on the run host.
+    if args.sample_interval is not None:
+        command.extend(["--sample-interval", str(args.sample_interval)])
+    if args.gpu_sample_interval is not None:
+        command.extend(["--gpu-sample-interval", str(args.gpu_sample_interval)])
     if args.timeout:
         command.extend(["--timeout", str(args.timeout)])
     command.append("--")
@@ -480,6 +491,13 @@ def run_arm(args: argparse.Namespace, condition: str, replicate: str, arm: str,
 
     saved = absorb_measurement(row, measurement)
     absorb_own_log()
+    swapped = row.get("peak_swap_mib")
+    if isinstance(swapped, (int, float)) and swapped > 1:
+        # Resident pages are all RSS counts, so a job pushed into swap reports
+        # *less* memory while running slower. Saying so beats a quiet lie.
+        print(f"  {arm}: warning: {swapped:.0f} MiB of this job was swapped "
+              f"out, so peak_rss_mib understates its real demand",
+              file=sys.stderr)
     if row.get("unfinished_phase"):
         print(f"  {arm}: STELAR-Pro's log ends inside "
               f"{row['unfinished_phase']!r}", file=sys.stderr)
@@ -721,8 +739,14 @@ def main(argv: list[str] | None = None) -> int:
                              "\"-u 0\" for a topology-only output tree")
     parser.add_argument("--timeout", type=float,
                         help="per-run timeout in seconds (default: none)")
-    parser.add_argument("--sample-interval", type=float, default=1.0,
-                        help="memory sampling period in seconds (default: 1.0)")
+    parser.add_argument("--sample-interval", type=float, default=None,
+                        help="host memory sampling period in seconds "
+                             f"(default: {_DEFAULT_INTERVAL} on this host, set "
+                             "by whether /proc is available)")
+    parser.add_argument("--gpu-sample-interval", type=float, default=None,
+                        help="GPU memory sampling period in seconds, separate "
+                             "because nvidia-smi is far costlier than a /proc "
+                             "read (default: 1.0)")
     parser.add_argument("--extra-opts", default="",
                         help="extra STELAR-Pro options added to every arm")
     parser.add_argument("--no-build", action="store_true",

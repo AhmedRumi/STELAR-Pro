@@ -262,8 +262,48 @@ trustworthy, and the larger is reported as `peak_rss_bytes`:
   sum. The unit is platform-dependent and is normalized (bytes on darwin,
   kibibytes on Linux).
 - `sampled_peak_bytes` — the maximum over samples of the summed RSS of the whole
-  process subtree, so `run.sh` plus its JVM are both counted. Can miss a spike
-  between samples; tighten with `--sample-interval`.
+  process subtree, so `run.sh`, its JVM and the `astral-pro3` rooting
+  subprocess are all counted. Can miss a spike between samples; tighten with
+  `--sample-interval`.
+- `hwm_sum_bytes` / `hwm_max_bytes` — on Linux, the sum and the max of each
+  subtree process's own `VmHWM`, the kernel's per-process peak-RSS high-water
+  mark. **Gap-free**: unlike a sampled sum these cannot miss a spike between
+  ticks. The sum is an upper bound on the simultaneous total, since the
+  per-process peaks need not coincide; the max is exact for the largest
+  process. Values are accumulated per pid as they are seen, so a process that
+  exits still contributes — which is the point, since the preprocessing
+  subprocesses are the short-lived ones.
+- `peak_swap_bytes` — on Linux, the peak of the subtree's summed `VmSwap`. This
+  closes a hole in RSS: only *resident* pages are RSS, so a job pushed into
+  swap reports **less** memory while running slower. The driver warns when it
+  is non-zero, because `peak_rss_mib` is then understating real demand.
+
+### Sampling rate
+
+The host sampler reads `/proc` directly where it exists, so no subprocess is
+spawned per tick and the default interval is **50 ms**, matching STELAR-Pro's
+own internal poller. On a platform without `/proc` it must spawn `ps`, which
+costs about **11 ms of CPU per spawn** — 20 times a second that would burn more
+CPU than it measures — so the default there stays at **1.0 s**. The record says
+which applied in `memory_source`.
+
+Measured cost of one `/proc` tick, which is one small read per process:
+
+| processes on the box | per tick | at 20 Hz |
+|---:|---:|---:|
+| 100 | 1.2 ms | 2.5% of one core |
+| 400 | 5.1 ms | 10.3% of one core |
+| 1000 | 13.8 ms | 27.6% of one core |
+
+Negligible beside a 32-thread job, and a conservative over-estimate since real
+procfs is kernel-generated rather than read from disk. Raise
+`--sample-interval` if a box is unusually crowded.
+
+**`nvidia-smi` keeps its own, slower cadence** (`--gpu-sample-interval`,
+default 1.0 s). It is the one expensive probe left — tens to hundreds of
+milliseconds per call, and it contends with the CUDA driver — so polling it at
+the host rate would be self-defeating. Host memory is sampled 20x more often
+than GPU memory by design.
 
 **Peak GPU memory** is a *separate* measurement, not a component of the host
 one. Device allocations never appear in RSS, so a CUDA run that fills 20 GiB of
@@ -343,7 +383,8 @@ them in-repo so a run is reproducible from the dataset alone.
 | `--timeout SEC` | kill a run that overruns; the job is launched in its own process group so the signal reaches the JVM |
 | `--fresh` | rerun arms whose output tree already exists (default is to reuse and only re-score) |
 | `--no-build` | skip `build.sh`; **only** when `build/` already matches the checked-out branch |
-| `--sample-interval` | memory sampling period, default 1.0 s; `0` disables sampling and every GPU figure |
+| `--sample-interval` | host memory sampling period; default 50 ms with `/proc`, 1.0 s without; `0` disables sampling and every GPU figure |
+| `--gpu-sample-interval` | GPU memory sampling period, default 1.0 s |
 
 `--no-build` is off by default on purpose. A stale `build/` silently runs the
 wrong code: the tree in `build/` at the time this harness was written predated
@@ -394,6 +435,20 @@ identically through the RF path in both ASTRAL's default annotated form and
 under `-u 0`, so no output option is forced. The missing-binary path was
 exercised with `--astral-exe /nonexistent`, which fails that arm with the build
 instruction and leaves the others running.
+
+The `/proc` readers cannot run on the machine this was written on, so — as with
+the cgroup and cpuinfo parsers — they take their root path as an argument and
+were unit-tested against a fixture tree rather than shipped unrun. A fake
+`/proc` with `run.sh` → `java` → `astral (pro) 3` plus one unrelated process
+confirmed: the subtree walk returns exactly the three related pids, the summed
+RSS matches the page arithmetic, `VmHWM` sums to the three processes' peaks
+while the unrelated process's much larger `VmHWM` is excluded, `VmSwap` sums
+correctly, a `comm` field containing spaces *and* parentheses parses (the
+fields are taken from after the last `)`), and a missing pid or root yields
+`None`/`{}` rather than an exception. The GPU-rate decoupling was verified by
+counting invocations of a stub `nvidia-smi`: 25 host samples over 4 s produced
+4 GPU polls and 8 calls, against the 50 calls an undecoupled sampler would have
+made.
 
 The phase parser was checked against real logs from both arms, which recovered
 8 phases each with times and RAM peaks, and against fixtures for the cases real

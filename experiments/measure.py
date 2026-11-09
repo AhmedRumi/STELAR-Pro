@@ -114,6 +114,16 @@ _RU_MAXRSS_TO_BYTES = 1 if sys.platform == "darwin" else 1024
 
 _MIB = 1024 * 1024
 _NVIDIA_SMI = shutil.which("nvidia-smi")
+_PAGE_SIZE = resource.getpagesize()
+# /proc lets the sampler read memory without spawning anything, which is what
+# makes a 50 ms interval affordable: `ps` costs about 11 ms of CPU per spawn,
+# so polling it 20 times a second would burn minutes of CPU over a long run and
+# perturb the measurement it is taking.
+_HAVE_PROC = os.path.isdir("/proc/self")
+# 50 ms matches STELAR-Pro's own poller and is affordable only on the /proc
+# path. Where `ps` has to be spawned instead, that rate would cost more CPU
+# than the job it is watching, so the default stays slow there.
+_DEFAULT_INTERVAL = 0.05 if _HAVE_PROC else 1.0
 
 
 def _cpu_budget() -> tuple[float, str]:
@@ -185,9 +195,74 @@ def _physical_cores(path: str = "/proc/cpuinfo") -> int | None:
 def _process_table() -> dict[int, tuple[int, int]]:
     """Map pid -> (ppid, rss_bytes) for every visible process.
 
-    ``ps`` reports RSS in kibibytes on both darwin and Linux. Returns an empty
-    map rather than raising if ``ps`` is unavailable, so sampling can never be
-    the reason a measured run fails.
+    Uses /proc where it exists and ``ps`` otherwise, so the fast path is taken
+    on Linux and macOS still works. Returns an empty map rather than raising if
+    neither is available, so sampling can never be the reason a run fails.
+    """
+    if _HAVE_PROC:
+        return _proc_table()
+    return _ps_table()
+
+
+def _proc_table(root: str = "/proc") -> dict[int, tuple[int, int]]:
+    """/proc implementation: one small read per process, no subprocesses.
+
+    ``/proc/<pid>/stat`` holds ppid and RSS on a single line. The comm field is
+    parenthesised and may itself contain spaces and parentheses, so the fields
+    are taken from after the *last* ``)``: index 0 is then field 3 (state), so
+    field N is at index N - 3 -- ppid (4) at 1, rss in pages (24) at 21.
+    """
+    table: dict[int, tuple[int, int]] = {}
+    try:
+        entries = os.listdir(root)
+    except OSError:
+        return table
+    for name in entries:
+        if not name.isdigit():
+            continue
+        try:
+            with open(f"{root}/{name}/stat", "rb") as handle:
+                line = handle.read()
+        except OSError:
+            continue        # the process exited between listdir and open
+        cut = line.rfind(b")")
+        if cut < 0:
+            continue
+        fields = line[cut + 2:].split()
+        if len(fields) < 22:
+            continue
+        try:
+            table[int(name)] = (int(fields[1]), int(fields[21]) * _PAGE_SIZE)
+        except ValueError:
+            continue
+    return table
+
+
+def _proc_memory(pid: int, root: str = "/proc") -> tuple[int, int] | None:
+    """``(VmHWM, VmSwap)`` in bytes for one pid, or None if unreadable.
+
+    ``VmHWM`` is the kernel's own peak-RSS high-water mark for that process, so
+    it cannot miss a spike between samples the way a sampled RSS can. ``VmSwap``
+    is the gap in RSS itself: resident pages are all RSS counts, so a job pushed
+    into swap looks *cheaper* in RSS while running slower.
+    """
+    hwm = swap = 0
+    try:
+        with open(f"{root}/{pid}/status", "rb") as handle:
+            for raw in handle:
+                if raw.startswith(b"VmHWM:"):
+                    hwm = int(raw.split()[1]) * 1024
+                elif raw.startswith(b"VmSwap:"):
+                    swap = int(raw.split()[1]) * 1024
+    except (OSError, ValueError, IndexError):
+        return None
+    return hwm, swap
+
+
+def _ps_table() -> dict[int, tuple[int, int]]:
+    """``ps`` implementation, for platforms without /proc.
+
+    ``ps`` reports RSS in kibibytes on both darwin and Linux.
     """
     try:
         out = subprocess.run(
@@ -222,11 +297,6 @@ def _subtree_pids(root: int, table: dict[int, tuple[int, int]]) -> set[int]:
         seen.add(pid)
         stack.extend(children.get(pid, ()))
     return seen
-
-
-def _subtree_rss(root: int, table: dict[int, tuple[int, int]]) -> int:
-    """Sum the RSS of ``root`` and every descendant present in ``table``."""
-    return sum(table[pid][1] for pid in _subtree_pids(root, table) if pid in table)
 
 
 def _nvidia_smi(fields: str, kind: str) -> list[str] | None:
@@ -290,7 +360,7 @@ def _gpu_device_used() -> tuple[int, int] | None:
 
 
 class _Sampler:
-    """Poll the subtree's host RSS and its GPU memory until told to stop.
+    """Poll the subtree's host memory and its GPU memory until told to stop.
 
     This deliberately *owns* a thread rather than subclassing ``Thread``. A
     subclass shares its namespace with ``Thread``'s own private attributes, and
@@ -301,11 +371,23 @@ class _Sampler:
     pass on one machine and fail on another. Composition cannot collide.
     """
 
-    def __init__(self, pid: int, interval: float, trace: bool = False):
+    def __init__(self, pid: int, interval: float, trace: bool = False,
+                 gpu_interval: float = 1.0):
         self.pid = pid
         self.interval = interval
+        # nvidia-smi is the one expensive probe left, so it keeps its own, much
+        # slower cadence: RSS can be sampled 20 times a second for free, VRAM
+        # cannot.
+        self.gpu_interval = max(gpu_interval, interval)
         self.peak = 0
         self.samples = 0
+        self.gpu_samples = 0
+        # pid -> highest VmHWM seen for it. Accumulated per pid rather than
+        # summed on the fly because a process that exits takes its VmHWM with
+        # it, and the preprocessing subprocesses are exactly the short-lived
+        # ones worth catching.
+        self.hwm: dict[int, int] = {}
+        self.swap_peak = 0
         self.gpu_visible = False
         self.gpu_attributed = False
         self.gpu_peak = 0
@@ -316,6 +398,8 @@ class _Sampler:
         # never answered: one busy nvidia-smi should not blind the whole run.
         self._gpu_blind = _NVIDIA_SMI is None
         self._gpu_failures = 0
+        self._gpu_last = (0, 0)
+        self._gpu_due = 0.0
         self._origin = time.perf_counter()
         self._halt = threading.Event()
         self._thread = threading.Thread(target=self._loop, daemon=True,
@@ -345,15 +429,36 @@ class _Sampler:
                 self.gpu_device_peak = device
         return ours, device
 
+    def _sample_proc(self, pids: set[int]) -> None:
+        """Fold this tick's VmHWM and VmSwap for the subtree into the peaks."""
+        swap_total = 0
+        for pid in pids:
+            reading = _proc_memory(pid)
+            if reading is None:
+                continue
+            hwm, swapped = reading
+            if hwm > self.hwm.get(pid, 0):
+                self.hwm[pid] = hwm
+            swap_total += swapped
+        if swap_total > self.swap_peak:
+            self.swap_peak = swap_total
+
     def _loop(self) -> None:
         while not self._halt.is_set():
+            now = time.perf_counter()
             table = _process_table()
-            rss = _subtree_rss(self.pid, table)
+            pids = _subtree_pids(self.pid, table)
+            rss = sum(table[pid][1] for pid in pids if pid in table)
             if rss > self.peak:
                 self.peak = rss
-            ours = device = 0
-            if not self._gpu_blind:
+            if _HAVE_PROC:
+                self._sample_proc(pids)
+            ours, device = self._gpu_last
+            if not self._gpu_blind and now >= self._gpu_due:
                 ours, device = self._sample_gpu(table)
+                self._gpu_last = (ours, device)
+                self._gpu_due = now + self.gpu_interval
+                self.gpu_samples += 1
             self.samples += 1
             if self.trace is not None:
                 self.trace.append(
@@ -447,9 +552,20 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--label", default="", help="free-form tag copied into the record")
     parser.add_argument("--timeout", type=float,
                         help="kill the job after this many seconds")
-    parser.add_argument("--sample-interval", type=float, default=1.0,
-                        help="memory sampling period in seconds; 0 disables "
-                             "sampling, and with it every GPU figure (default: 1.0)")
+    parser.add_argument("--sample-interval", type=float,
+                        default=_DEFAULT_INTERVAL,
+                        help="host memory sampling period in seconds; 0 "
+                             "disables sampling, and with it every GPU figure "
+                             f"(default: {_DEFAULT_INTERVAL}, "
+                             + ("matching STELAR-Pro's own internal poller"
+                                if _HAVE_PROC else
+                                "raised because this platform has no /proc and "
+                                "must spawn ps")
+                             + ")")
+    parser.add_argument("--gpu-sample-interval", type=float, default=1.0,
+                        help="GPU memory sampling period in seconds, kept "
+                             "separate because nvidia-smi is far more "
+                             "expensive than a /proc read (default: 1.0)")
     parser.add_argument("--trace",
                         help="also write every sample to this TSV, so the shape "
                              "of memory use over the run can be inspected")
@@ -500,7 +616,8 @@ def main(argv: list[str] | None = None) -> int:
     try:
         if args.sample_interval > 0:
             sampler = _Sampler(process.pid, args.sample_interval,
-                               trace=bool(args.trace))
+                               trace=bool(args.trace),
+                               gpu_interval=args.gpu_sample_interval)
             sampler.start()
         exit_code, usage = _reap(process, timeout=args.timeout)
         if exit_code is None:            # still running, so the timeout fired
@@ -563,7 +680,16 @@ def main(argv: list[str] | None = None) -> int:
         sampled_peak_bytes=sampled_peak,
         peak_rss_bytes=max(rusage_peak, sampled_peak),
         rss_samples=sampler.samples if sampler is not None else 0,
+        gpu_samples=sampler.gpu_samples if sampler is not None else 0,
         sample_interval_seconds=args.sample_interval,
+        gpu_sample_interval_seconds=args.gpu_sample_interval,
+        memory_source="proc" if _HAVE_PROC else "ps",
+        # Sum of each process's own kernel-maintained peak. An upper bound on
+        # the simultaneous total, since the peaks need not coincide -- but
+        # gap-free, where the sampled sum can miss a spike between ticks.
+        hwm_sum_bytes=sum(sampler.hwm.values()) if sampler is not None else 0,
+        hwm_max_bytes=max(sampler.hwm.values(), default=0) if sampler is not None else 0,
+        peak_swap_bytes=sampler.swap_peak if sampler is not None else 0,
         gpu_visible=sampler.gpu_visible if sampler is not None else False,
         gpu_peak_bytes=sampler.gpu_peak if sampler is not None else 0,
         gpu_peak_attributed=sampler.gpu_attributed if sampler is not None else False,
@@ -586,6 +712,10 @@ def main(argv: list[str] | None = None) -> int:
             if efficiency is not None:
                 summary += f" = {efficiency * 100:.0f}% busy"
     summary += f", peak RSS {record['peak_rss_bytes'] / _MIB:.1f} MiB"
+    if sampler is not None and sampler.hwm:
+        summary += f" (HWM sum {sum(sampler.hwm.values()) / _MIB:.1f} MiB)"
+    if sampler is not None and sampler.swap_peak:
+        summary += f", swap {sampler.swap_peak / _MIB:.1f} MiB"
     if sampler is not None and sampler.gpu_visible:
         summary += f", peak GPU {sampler.gpu_peak / _MIB:.1f} MiB"
         if not sampler.gpu_attributed:
