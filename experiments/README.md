@@ -1,6 +1,7 @@
-# Experiment harness: S4 versus S6 `--subsetlocal`
+# Experiment harness: S4, S6 `--subsetlocal`, ASTRAL-Pro3
 
-Runs STELAR-Pro's `S4` and `S6 --subsetlocal` arms over a GDL dataset tree,
+Runs STELAR-Pro's `S4` and `S6 --subsetlocal` arms, and ASTRAL-Pro3 as an
+external baseline, over a GDL dataset tree,
 recording **elapsed wall time**, **CPU time**, **peak host memory**, **peak GPU
 memory** and **normalized unrooted RF** for every replicate.
 
@@ -36,6 +37,53 @@ dataset read-only, mirror the `<condition>/<replicate>/` structure elsewhere:
 python3 experiments/run_s4_s6.py --data-dir /path/to/data \
     --out-dir ~/results/s4-vs-s6 --threads 8 --xmx 32g
 ```
+
+## Arms
+
+`--arms` is ordered, and the first entry is the baseline every other arm is
+compared against in the paired tables. The default is
+`S4,S6-subsetlocal`; ASTRAL-Pro3 is opt-in so an existing command's behaviour
+does not change:
+
+```bash
+python3 experiments/run_s4_s6.py --data-dir /path/to/data \
+    --arms S4,S6-subsetlocal,astral-pro3 --threads 32 --xmx 128g
+```
+
+| Arm | Program | Defining options |
+|---|---|---|
+| `S4` | `./run.sh` | `--search-space S4` |
+| `S6-subsetlocal` | `./run.sh` | `--search-space S6 --subsetlocal` |
+| `S6` | `./run.sh` | `--search-space S6` |
+| `astral-pro3` | `ASTER-Linux/bin/astral-pro3` | — |
+
+**ASTRAL-Pro3 reads the same prepared input file** as the STELAR-Pro arms, so
+the comparison cannot differ because of its input: copies already sit as
+separate leaves labelled with their species name, which is exactly what
+ASTRAL-Pro expects, so no `-a` mapping file is needed. Its `-t` is passed
+explicitly because it defaults to **1 thread**, which would otherwise make the
+arm look far more expensive than it is.
+
+Two options do not apply to it and are recorded as such rather than
+misreported: `--xmx` (no JVM, so the `xmx` column is empty for its rows) and
+`--backend` (no GPU support at all, so the `backend` column records `cpu` and
+no GPU figure is collected). The GPU fallback warning is likewise suppressed
+for it. It also has no `PhaseLogger`, so `internal_total_ms`, `phase_count`,
+the `log_peak_*` columns and the phase table are empty for its rows — the
+wall/CPU/memory columns, which are measured from outside, are fully populated.
+
+Its own objective goes in a **separate** `quartet_score` column, never in
+STELAR-Pro's `triplet_score`: they are different objectives over different
+units and a shared column would invite comparing numbers that are not
+comparable.
+
+The binary is built per machine by `ensure_backends.sh` and is not tracked by
+git, so a fresh checkout needs `./ensure_backends.sh --cpu-only` once. If it is
+missing, that arm fails with a message saying exactly that rather than a bare
+`FileNotFoundError`.
+
+> The script is still called `run_s4_s6.py`, which is now historical — it runs
+> whatever `--arms` names. Renaming it would break existing commands.
 
 ## Expected dataset layout
 
@@ -263,7 +311,9 @@ them in-repo so a run is reproducible from the dataset alone.
 |---|---|
 | `--dry-run` | print the plan and every command, write nothing |
 | `--genetrees estimated\|true` | which gene-tree set to infer from (default `estimated`) |
-| `--arms` | any of `S4`, `S6-subsetlocal`, `S6`; a bare `S6` arm is defined for a later three-way |
+| `--arms` | any of `S4`, `S6-subsetlocal`, `S6`, `astral-pro3`; the **first listed is the baseline** every other arm is paired against |
+| `--astral-exe` | ASTRAL-Pro3 binary (default `ASTER-Linux/bin/astral-pro3`) |
+| `--astral-opts` | extra options for that arm, e.g. `"-u 0"` for a topology-only output tree |
 | `--threads`, `--xmx` | worker threads and JVM heap; raise both for large taxon counts |
 | `--backend cpu\|gpu\|auto` | default `cpu` |
 | `--timeout SEC` | kill a run that overruns; the job is launched in its own process group so the signal reaches the JVM |
@@ -310,6 +360,16 @@ an argument and were unit-tested against fixtures instead of shipped unrun:
 sockets → `2`, an ARM-style file with no `core id` → `None`; `cpu.max` of
 `400000 100000` → `4.0`, `max 100000` → `None`, unparseable → `None`, missing
 → `None`.
+
+The ASTRAL-Pro3 arm was verified end to end on the same synthetic set: three
+arms in one run produced two paired tables, both against the `S4` baseline, and
+its rows carried wall time, CPU time, per-CPU figures and peak RSS (5 MiB
+against the JVM arms' ~70 MiB) with `xmx` empty, `backend` `cpu`,
+`triplet_score` empty and `quartet_score` `54463`. Its output tree scored
+identically through the RF path in both ASTRAL's default annotated form and
+under `-u 0`, so no output option is forced. The missing-binary path was
+exercised with `--astral-exe /nonexistent`, which fails that arm with the build
+instruction and leaves the others running.
 
 The phase parser was checked against real logs from both arms, which recovered
 8 phases each with times and RAM peaks, and against fixtures for the cases real

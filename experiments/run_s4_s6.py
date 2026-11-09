@@ -58,6 +58,7 @@ import shlex
 import subprocess
 import sys
 import time
+from dataclasses import dataclass
 
 ROOT = Path(__file__).resolve().parent.parent
 SCRIPTS = ROOT / "scripts"
@@ -69,17 +70,32 @@ from calculate_rf_rate import compare_newicks, read_tree  # noqa: E402
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 from parse_phases import parse_log  # noqa: E402
 
-# Arm name -> the STELAR-Pro options that define it. Everything shared between
-# arms (threads, heap, CPU/GPU) is added per run, so these stay purely about the
-# search space under test.
-ARMS: dict[str, list[str]] = {
-    "S4": ["--search-space", "S4"],
-    "S6-subsetlocal": ["--search-space", "S6", "--subsetlocal"],
+@dataclass(frozen=True)
+class Arm:
+    """How to run one arm.
+
+    ``kind`` picks the command builder, because the arms are no longer all the
+    same program: ``stelar`` goes through ``./run.sh``, ``astral`` invokes the
+    ASTRAL-Pro3 binary directly. ``options`` is only ever what distinguishes
+    this arm from its siblings -- threads, heap and backend are added per run.
+    """
+    kind: str
+    options: tuple[str, ...] = ()
+
+
+ARMS: dict[str, Arm] = {
+    "S4": Arm("stelar", ("--search-space", "S4")),
+    "S6-subsetlocal": Arm("stelar", ("--search-space", "S6", "--subsetlocal")),
     # Available for a later three-way comparison; not run unless asked for.
-    "S6": ["--search-space", "S6"],
+    "S6": Arm("stelar", ("--search-space", "S6")),
+    # ASTRAL-Pro3 reads the same prepared input, so the comparison cannot differ
+    # because of its input. It has no GPU support, so --backend does not reach
+    # it, and no JVM, so --xmx does not either.
+    "astral-pro3": Arm("astral"),
 }
 
 DEFAULT_ARMS = ["S4", "S6-subsetlocal"]
+ASTRAL_DEFAULT = ROOT / "ASTER-Linux" / "bin" / "astral-pro3"
 
 GENETREE_SOURCES = {
     "estimated": Path("estimated-genetrees") / "all_gt.trees",
@@ -95,8 +111,8 @@ RESULT_FIELDS = [
     "elapsed_seconds", "cpu_seconds", "cpu_utilization",
     "cpu_seconds_per_core", "cpu_efficiency", "cpu_count",
     "peak_rss_mib", "peak_gpu_mib", "peak_gpu_device_mib",
-    "genetrees", "threads", "xmx", "exit_code",
-    "internal_total_ms", "triplet_score",
+    "genetrees", "threads", "xmx", "backend", "exit_code",
+    "internal_total_ms", "triplet_score", "quartet_score",
     "log_peak_ram_mib", "log_peak_vram_mib",
     "phase_count", "slowest_phase", "slowest_phase_ms", "unfinished_phase",
     "output_tree", "measurement_json", "finished_at",
@@ -319,36 +335,104 @@ def absorb_log(row: dict[str, object], condition: str, replicate: str, arm: str,
     ]
 
 
+ASTRAL_SCORE = re.compile(r"^\s*Score:\s*(?P<value>-?\d+(?:\.\d+)?)\s*$")
+
+
+def absorb_astral_log(row: dict[str, object], stderr_log: Path) -> None:
+    """Recover ASTRAL-Pro3's own objective from its stderr.
+
+    Deliberately a *separate* column from STELAR-Pro's ``triplet_score``: this
+    is a quartet score over a different objective, and putting the two in one
+    column would invite comparing numbers that are not comparable.
+    """
+    try:
+        text = stderr_log.read_text(encoding="utf-8", errors="replace")
+    except OSError:
+        return
+    # The last Score: line is the final one; earlier ones are search rounds.
+    for line in reversed(text.splitlines()):
+        found = ASTRAL_SCORE.match(line)
+        if found:
+            row["quartet_score"] = found.group("value")
+            return
+
+
+def build_inference(args: argparse.Namespace, arm: str, prepared: Path,
+                    tree: Path, destination: Path) -> tuple[list[str], Path | None]:
+    """The command for one arm, plus its own log file if it writes one."""
+    spec = ARMS[arm]
+    if spec.kind == "astral":
+        astral = Path(args.astral_exe).expanduser()
+        if not astral.is_file() or not os.access(astral, os.X_OK):
+            raise FileNotFoundError(
+                f"ASTRAL-Pro3 not found or not executable: {astral}\n"
+                "It is built per machine and not tracked by git, so a fresh\n"
+                "checkout has to build it once:\n"
+                "    ./ensure_backends.sh --cpu-only\n"
+                "or pass --astral-exe PATH to use one you already have.")
+        # -t is needed explicitly: ASTRAL-Pro3 defaults to 1 thread, which
+        # would quietly make the arm look far more expensive than it is.
+        command = [str(astral), "-i", str(prepared), "-o", str(tree),
+                   "-t", str(args.threads), *spec.options]
+        if args.astral_opts:
+            command.extend(shlex.split(args.astral_opts))
+        return command, None
+
+    stelar_log = destination / f"{arm}.stelar-pro.log"
+    command = [
+        "./run.sh", "--input", str(prepared), "--output", str(tree),
+        "--threads", str(args.threads), "--xmx", args.xmx,
+        *spec.options, f"--{args.backend}",
+        "--log-file", str(stelar_log),
+    ]
+    if args.no_build:
+        command.append("--no-build")
+    if args.extra_opts:
+        command.extend(shlex.split(args.extra_opts))
+    return command, stelar_log
+
+
 def run_arm(args: argparse.Namespace, condition: str, replicate: str, arm: str,
             prepared: Path, destination: Path) -> dict[str, object]:
     """Run one arm under measure.py and score the tree it produced."""
+    spec = ARMS[arm]
     tree = destination / f"{arm}.tre"
     measurement = destination / f"{arm}.measure.json"
-    stelar_log = destination / f"{arm}.stelar-pro.log"
+    stderr_log = destination / f"{arm}.stderr.log"
     row: dict[str, object] = {
         "condition": condition, "replicate": replicate, "arm": arm,
-        "genetrees": args.genetrees, "threads": args.threads, "xmx": args.xmx,
+        "genetrees": args.genetrees, "threads": args.threads,
+        # Neither heap nor backend applies to ASTRAL-Pro3; recording the
+        # harness's values against it would misreport how it was run.
+        "xmx": args.xmx if spec.kind == "stelar" else "",
+        "backend": args.backend if spec.kind == "stelar" else "cpu",
         "output_tree": str(tree), "measurement_json": str(measurement),
         "finished_at": "", "status": "pending",
     }
+
+    def absorb_own_log() -> None:
+        """Pull in whatever instrumentation this kind of arm leaves behind."""
+        if spec.kind == "astral":
+            absorb_astral_log(row, stderr_log)
+        else:
+            row["_phases"] = absorb_log(
+                row, condition, replicate, arm,
+                destination / f"{arm}.stelar-pro.log")
 
     if tree.is_file() and tree.stat().st_size > 0 and not args.fresh:
         print(f"  {arm}: output exists, scoring only (use --fresh to rerun)")
         row["status"] = "reused"
         absorb_measurement(row, measurement)
-        row["_phases"] = absorb_log(row, condition, replicate, arm, stelar_log)
+        absorb_own_log()
         return score(args, condition, replicate, tree, row)
 
-    stelar = [
-        "./run.sh", "--input", str(prepared), "--output", str(tree),
-        "--threads", str(args.threads), "--xmx", args.xmx,
-        *ARMS[arm], f"--{args.backend}",
-        "--log-file", str(stelar_log),
-    ]
-    if args.no_build:
-        stelar.append("--no-build")
-    if args.extra_opts:
-        stelar.extend(shlex.split(args.extra_opts))
+    try:
+        inference, stelar_log = build_inference(
+            args, arm, prepared, tree, destination)
+    except FileNotFoundError as error:
+        row["status"] = "failed"
+        print(f"  {arm}: {error}", file=sys.stderr)
+        return row
 
     command = [
         sys.executable, str(MEASURE),
@@ -363,23 +447,25 @@ def run_arm(args: argparse.Namespace, condition: str, replicate: str, arm: str,
     if args.timeout:
         command.extend(["--timeout", str(args.timeout)])
     command.append("--")
-    command.extend(stelar)
+    command.extend(inference)
 
-    print(f"  {arm}: {shlex.join(stelar)}")
+    print(f"  {arm}: {shlex.join(inference)}")
     if args.dry_run:
         row["status"] = "dry-run"
         return row
 
     destination.mkdir(parents=True, exist_ok=True)
-    # run.sh realpaths both --output and --log-file, which fails on a path that
-    # does not exist yet, so both files are created empty before it starts.
-    tree.touch(exist_ok=True)
-    stelar_log.touch(exist_ok=True)
+    if stelar_log is not None:
+        # run.sh realpaths both --output and --log-file, which fails on a path
+        # that does not exist yet, so both are created empty before it starts.
+        # ASTRAL-Pro3 does neither, so it needs no pre-touching.
+        tree.touch(exist_ok=True)
+        stelar_log.touch(exist_ok=True)
     result = subprocess.run(command)
     row["finished_at"] = time.strftime("%Y-%m-%dT%H:%M:%S%z")
 
     saved = absorb_measurement(row, measurement)
-    row["_phases"] = absorb_log(row, condition, replicate, arm, stelar_log)
+    absorb_own_log()
     if row.get("unfinished_phase"):
         print(f"  {arm}: STELAR-Pro's log ends inside "
               f"{row['unfinished_phase']!r}", file=sys.stderr)
@@ -391,7 +477,8 @@ def run_arm(args: argparse.Namespace, condition: str, replicate: str, arm: str,
         # A GPU that was there but held nothing for us is the signature of a
         # silent fallback to a CPU backend, which would otherwise be reported
         # as a clean GPU timing.
-        if (args.backend in ("gpu", "auto") and saved.get("gpu_visible")
+        if (spec.kind == "stelar" and args.backend in ("gpu", "auto")
+                and saved.get("gpu_visible")
                 and not saved.get("gpu_peak_attributed")):
             print(f"  {arm}: warning: a GPU was visible but no device memory "
                   f"was attributable to this run -- check "
@@ -529,11 +616,19 @@ def summarise(rows: list[dict[str, object]], arms: list[str]) -> None:
         print(line)
     print("-" * width)
 
-    if len(arms) != 2:
+    if len(arms) < 2:
         return
-    left, right = arms
+    # Every other arm is compared against the first, which is the baseline by
+    # construction: --arms is ordered, so the baseline is whatever is listed
+    # first. Previously anything other than exactly two arms printed nothing.
     index = {(row["condition"], row["replicate"], row["arm"]): row for row in scored}
     pairs = sorted({(row["condition"], row["replicate"]) for row in scored})
+    for other in arms[1:]:
+        paired_table(index, pairs, arms[0], other)
+
+
+def paired_table(index: dict, pairs: list, left: str, right: str) -> None:
+    """One per-replicate table of ``right`` against ``left``."""
     complete = [key for key in pairs
                 if (key[0], key[1], left) in index and (key[0], key[1], right) in index]
     if not complete:
@@ -584,7 +679,9 @@ def main(argv: list[str] | None = None) -> int:
                         help="R1-R5, R1,R3 or all (default: all present)")
     parser.add_argument("--arms", default=",".join(DEFAULT_ARMS),
                         help="comma-separated arms from " + ", ".join(ARMS)
-                             + f" (default: {','.join(DEFAULT_ARMS)})")
+                             + f" (default: {','.join(DEFAULT_ARMS)}); the "
+                             "first listed is the baseline every other arm is "
+                             "compared against in the paired tables")
     parser.add_argument("--genetrees", choices=sorted(GENETREE_SOURCES), default="estimated",
                         help="which gene-tree set to infer from (default: estimated)")
     parser.add_argument("--out-dir",
@@ -596,7 +693,14 @@ def main(argv: list[str] | None = None) -> int:
                         help="STELAR-Pro worker threads (default: all cores)")
     parser.add_argument("--xmx", default="16g", help="JVM max heap (default: 16g)")
     parser.add_argument("--backend", choices=["cpu", "gpu", "auto"], default="cpu",
-                        help="compute backend (default: cpu)")
+                        help="compute backend for the STELAR-Pro arms; "
+                             "ASTRAL-Pro3 has no GPU support and ignores it "
+                             "(default: cpu)")
+    parser.add_argument("--astral-exe", default=str(ASTRAL_DEFAULT),
+                        help=f"ASTRAL-Pro3 binary (default: {ASTRAL_DEFAULT})")
+    parser.add_argument("--astral-opts", default="",
+                        help="extra options for the astral-pro3 arm, e.g. "
+                             "\"-u 0\" for a topology-only output tree")
     parser.add_argument("--timeout", type=float,
                         help="per-run timeout in seconds (default: none)")
     parser.add_argument("--sample-interval", type=float, default=1.0,
