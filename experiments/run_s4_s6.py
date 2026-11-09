@@ -69,6 +69,20 @@ from calculate_rf_rate import compare_newicks, read_tree  # noqa: E402
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 from parse_phases import parse_log  # noqa: E402
+from measure import _cpu_budget  # noqa: E402
+
+
+def default_threads() -> tuple[int, str]:
+    """How many threads to use when --threads is not given, and why.
+
+    Shares measure.py's denominator rather than calling ``os.cpu_count()``, so
+    "all cores" means the cores actually available: a node that pinned this job
+    to 8 of its 128 CPUs, or a container with a cgroup quota, would otherwise
+    be oversubscribed by 16x while the efficiency columns divided by the
+    smaller figure.
+    """
+    budget, source = _cpu_budget()
+    return max(1, int(budget)), source
 
 @dataclass(frozen=True)
 class Arm:
@@ -689,8 +703,12 @@ def main(argv: list[str] | None = None) -> int:
                              "writing into each replicate's stelar-pro/ directory")
     parser.add_argument("--results",
                         help="results TSV path (default: <out-dir or data-dir>/results.tsv)")
-    parser.add_argument("--threads", type=int, default=os.cpu_count() or 4,
-                        help="STELAR-Pro worker threads (default: all cores)")
+    threads_default, threads_source = default_threads()
+    parser.add_argument("--threads", type=int, default=threads_default,
+                        help="worker threads for every arm, including "
+                             "ASTRAL-Pro3's -t, which defaults to 1 on its own "
+                             f"(default: {threads_default}, all available cores "
+                             f"by {threads_source})")
     parser.add_argument("--xmx", default="16g", help="JVM max heap (default: 16g)")
     parser.add_argument("--backend", choices=["cpu", "gpu", "auto"], default="cpu",
                         help="compute backend for the STELAR-Pro arms; "
@@ -743,7 +761,9 @@ def main(argv: list[str] | None = None) -> int:
     print(f"  outputs           {args.out_dir or 'in each replicate: stelar-pro/'}")
     print(f"  results           {results_path}")
     print(f"  phase table       {results_path.stem}-phases{results_path.suffix}")
-    print(f"  backend/threads   {args.backend}, {args.threads} thread(s), heap {args.xmx}")
+    print(f"  backend/threads   {args.backend}, {args.threads} thread(s)"
+          f"{'' if args.threads != threads_default else f' [all cores by {threads_source}]'}"
+          f", heap {args.xmx}")
     print(f"  timeout           {args.timeout or 'none'}")
     print(f"  jobs              {len(jobs)} replicate(s) x {len(arms)} arm(s) "
           f"= {len(jobs) * len(arms)} run(s)")

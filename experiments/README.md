@@ -60,9 +60,33 @@ python3 experiments/run_s4_s6.py --data-dir /path/to/data \
 **ASTRAL-Pro3 reads the same prepared input file** as the STELAR-Pro arms, so
 the comparison cannot differ because of its input: copies already sit as
 separate leaves labelled with their species name, which is exactly what
-ASTRAL-Pro expects, so no `-a` mapping file is needed. Its `-t` is passed
-explicitly because it defaults to **1 thread**, which would otherwise make the
-arm look far more expensive than it is.
+ASTRAL-Pro expects, so no `-a` mapping file is needed.
+
+**It is given every available core by default.** `-t` is passed explicitly
+because ASTRAL-Pro3 defaults to **1 thread** on its own, which would otherwise
+make the arm look far more expensive than it is. It does genuinely parallelize —
+measured on 6000 gene trees, 14 taxa:
+
+| `-t` | wall s | CPU s | utilization | speedup |
+|---:|---:|---:|---:|---:|
+| 1 | 6.02 | 5.90 | 0.98x | 1.00x |
+| 2 | 3.64 | 6.78 | 1.86x | 1.65x |
+| 4 | 2.29 | 7.67 | 3.35x | 2.62x |
+| 8 | 2.20 | 9.96 | 4.53x | 2.74x |
+
+Two things to read off that. Scaling is real but sublinear, flattening past 4
+threads on an 8-core machine with 4 performance and 4 efficiency cores. And
+**total CPU time rises with thread count** — 5.90 s to 9.96 s — so more threads
+buys wall time at the cost of CPU, which is why both are recorded.
+
+`--threads` sets this for every arm, and its default is the number of cores
+*actually available*: it shares `measure.py`'s denominator, so
+`sched_getaffinity` and a cgroup `cpu.max` quota are both respected rather than
+`os.cpu_count()` being taken at face value. A node that pinned the job to 8 of
+its 128 CPUs would otherwise be oversubscribed 16-fold while the efficiency
+columns divided by the smaller figure. The plan banner names the source
+(`affinity`, `cgroup-quota`, or `cpu_count` off Linux) whenever the default is
+in use.
 
 Two options do not apply to it and are recorded as such rather than
 misreported: `--xmx` (no JVM, so the `xmx` column is empty for its rows) and
