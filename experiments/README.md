@@ -1,13 +1,13 @@
 # Experiment harness: S4 versus S6 `--subsetlocal`
 
 Runs STELAR-Pro's `S4` and `S6 --subsetlocal` arms over a GDL dataset tree,
-recording **elapsed wall time**, **peak host memory**, **peak GPU memory** and
-**normalized unrooted RF** for every replicate.
+recording **elapsed wall time**, **CPU time**, **peak host memory**, **peak GPU
+memory** and **normalized unrooted RF** for every replicate.
 
 - `run_s4_s6.py` — the driver: discovers replicates, prepares input, runs each
   arm, scores it, writes `results.tsv` plus a per-run JSON record.
-- `measure.py` — runs one command and reports its time and peak memory, host
-  and GPU. Usable on its own for any single run.
+- `measure.py` — runs one command and reports its wall time, CPU time and peak
+  memory, host and GPU. Usable on its own for any single run.
 
 ## Quick start
 
@@ -59,15 +59,15 @@ Per replicate directory:
 | `input-<set>-species-labelled.trees` | gene trees with copy labels normalized to species |
 | `input-<set>-species-labelled.json` | preparation metadata, with SHA-256 input IDs |
 | `<arm>.tre` | the inferred species tree |
-| `<arm>.measure.json` | time and memory record for that run |
+| `<arm>.measure.json` | time, CPU and memory record for that run |
 | `<arm>.memory-trace.tsv` | every memory sample: `seconds`, `rss_mib`, `gpu_mib`, `gpu_device_mib` |
 | `<arm>.stelar-pro.log` | STELAR-Pro's own log |
 | `<arm>.stdout.log`, `<arm>.stderr.log` | captured streams |
 
 And one `results.tsv` at the root of the output location, appended to across
 invocations, with `rf_rate`, `raw_rf`/`max_rf`, `elapsed_seconds`,
-`peak_rss_mib`, `peak_gpu_mib`, `peak_gpu_device_mib`, and the settings each row
-was produced under. The two GPU columns are left **empty**, not zero, when no
+`cpu_seconds`, `cpu_utilization`, `peak_rss_mib`, `peak_gpu_mib`,
+`peak_gpu_device_mib`, and the settings each row was produced under. The two GPU columns are left **empty**, not zero, when no
 GPU was visible — "this run used no device memory" and "nobody looked" must not
 read the same.
 
@@ -80,10 +80,40 @@ trees over the same taxa, `raw_rf / 2` is the number of true bipartitions
 missed, so the paired table's `splits` column is `(raw_rf_b - raw_rf_a) / 2`.
 
 **Elapsed time** is `time.perf_counter()` around the whole `run.sh` invocation,
-so it includes JVM startup. This is the honest number for a cost comparison.
-STELAR-Pro's own `Total time: N ms` log line is *not* used: it was measured in
-earlier sweeps to be non-monotonic across arms under varying background load,
-which makes it useless for cross-arm cost.
+so it includes JVM startup. `perf_counter` is monotonic, so an NTP step cannot
+make a long run report a negative duration. This is the honest number for a
+cost comparison. STELAR-Pro's own `Total time: N ms` log line is *not* used: it
+was measured in earlier sweeps to be non-monotonic across arms under varying
+background load, which makes it useless for cross-arm cost.
+
+**CPU time** is `ru_utime + ru_stime` — the time the job was actually scheduled
+on a CPU, summed over every thread, as the kernel accounts it. Wall time and
+CPU time answer different questions: wall time is what you wait, CPU time is
+what you spent, and `cpu_utilization` (CPU / wall) is the average number of
+cores kept busy. That ratio is the useful one for comparing search spaces, since
+an arm that is slower in wall time but far below `--threads` in utilization is
+losing to a serial section, not to raw work.
+
+Two things CPU time does **not** measure. It excludes time spent blocked, so a
+job starved of I/O or descheduled behind other load looks cheap — which is
+exactly why both numbers are kept. And it excludes GPU kernel execution: under
+`--backend gpu`, work moved onto the device leaves wall time unchanged while CPU
+time falls, so CPU time understates the cost of a GPU run rather than measuring
+it. Pair it with `peak_gpu_mib` there, not with wall time alone.
+
+Both figures come from **`os.wait4` on the job's own pid**, not from
+`getrusage(RUSAGE_CHILDREN)`. That distinction is not pedantry: the
+`RUSAGE_CHILDREN` bucket accumulates every child the process reaps, which
+includes each `ps` and `nvidia-smi` the sampler spawns — of the order of 30,000
+processes over a multi-hour run at the default 1 s interval. A *max* like
+`ru_maxrss` shrugs that off, since those helpers are tiny beside a JVM; a *sum*
+like CPU time does not, and would have billed minutes of sampling overhead to
+the job. `wait4` counts the child and the descendants *it* reaped, and nothing
+else, so the JVM's time rolls up through `run.sh` while the sampler's does not.
+
+One caveat on a timed-out run: the job is killed by process group, so a shell
+that dies without reaping its own JVM loses that JVM's accounting. CPU time for
+a row with `status` `timeout` is a lower bound.
 
 **Peak host memory** is taken two independent ways, because neither alone is
 trustworthy, and the larger is reported as `peak_rss_bytes`:
@@ -120,7 +150,8 @@ appears under a container whose pid namespace differs from the host's, where
 `peak_gpu_device_mib` is the only usable figure.
 
 Both GPU figures depend on sampling, so `--sample-interval 0` disables them
-along with `sampled_peak_bytes`. GPU sampling costs two extra `nvidia-smi`
+along with `sampled_peak_bytes`. Wall time, CPU time and `rusage_peak_bytes`
+come from `wait4` and are unaffected. GPU sampling costs two extra `nvidia-smi`
 calls per tick; at the default 1 s that is negligible beside a multi-hour
 inference, but raise the interval if a run is very long and the shape of the
 curve does not matter.
@@ -189,6 +220,18 @@ perturbation. Both arms recovered the true tree exactly on one replicate
 memory, the TSV, the reuse path, and the replicate and arm selectors were all
 exercised. Accuracy figures from that synthetic set mean nothing; only the
 plumbing was under test.
+
+CPU accounting was verified three ways. A single-threaded burner reported
+`0.44 s` CPU against `0.51 s` wall, the gap being process startup. Four burners
+launched in parallel by a shell and reaped by `wait` — the same shape as
+`run.sh` launching a JVM — reported `1.59 s` CPU against `0.45 s` wall,
+`3.49x`, which is what confirms that descendant accounting rolls up at all.
+And the measurement that justifies using `wait4`: a 3-second `sleep` watched at
+a 10 ms interval, so the sampler spawned 118 helper processes, reported
+**`0.01 s`** of CPU — while 300 bare `ps` spawns on their own cost **`3.43 s`**
+in `RUSAGE_CHILDREN`. The timeout, nonzero-exit and killed-by-signal paths were
+re-exercised after the reaping rewrite, including confirming no process survives
+the process-group kill.
 
 GPU accounting was verified against a **stub `nvidia-smi`**, since the machine
 this was written on has no NVIDIA card and an untested parser is worth nothing.

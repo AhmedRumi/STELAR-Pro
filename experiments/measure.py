@@ -1,5 +1,19 @@
 #!/usr/bin/env python3
-"""Run one command and report its elapsed time and peak memory, host and GPU.
+"""Run one command and report its time and peak memory, host and GPU.
+
+Two kinds of time are reported, and they answer different questions:
+
+``elapsed_seconds``
+    Wall-clock, from just before the child starts to just after it is reaped.
+    What a user waits. Includes JVM startup, and includes time the job spent
+    descheduled behind other load.
+
+``cpu_seconds`` (``cpu_user_seconds`` + ``cpu_system_seconds``)
+    Time the job was actually scheduled on a CPU, summed over every thread, as
+    the kernel accounts it. On a 32-thread JVM this routinely exceeds wall time
+    several times over; ``cpu_utilization`` is the ratio, which is the average
+    number of cores kept busy and the honest way to compare how well two search
+    spaces parallelize.
 
 Why this exists instead of ``run-stelar-pro-with-monitor.sh``: that wrapper calls
 ``/usr/bin/time -v``, which is GNU-only. On macOS ``/usr/bin/time`` is the BSD
@@ -13,9 +27,9 @@ Host memory is measured two independent ways, because neither alone is
 trustworthy:
 
 ``rusage_peak_bytes``
-    ``getrusage(RUSAGE_CHILDREN).ru_maxrss`` after the child is reaped. This is
-    the high-water mark of the single largest child process, not a sum. The unit
-    is platform-dependent (bytes on darwin, kibibytes on Linux) and is normalized
+    ``ru_maxrss`` from ``os.wait4`` on the job itself. This is the high-water
+    mark of the single largest process in the job, not a sum. The unit is
+    platform-dependent (bytes on darwin, kibibytes on Linux) and is normalized
     here. Exact, but blind to concurrent siblings.
 
 ``sampled_peak_bytes``
@@ -45,10 +59,22 @@ polled in the same loop via ``nvidia-smi``:
 Both GPU figures require sampling, so ``--sample-interval 0`` disables them
 along with ``sampled_peak_bytes``.
 
-Each invocation of this script is a fresh process, so ``RUSAGE_CHILDREN`` covers
-exactly one job. Calling ``getrusage`` repeatedly inside a long-lived driver
-would instead return a monotonic high-water mark shared by every job that driver
-had ever run -- the reason the measurement is isolated in a subprocess at all.
+Both the memory and the CPU figures come from ``os.wait4`` on the job's own pid
+rather than from ``getrusage(RUSAGE_CHILDREN)``, which cannot be scoped: that
+bucket accumulates *every* child this process reaps, including each ``ps`` and
+``nvidia-smi`` the sampler spawns -- of the order of 30,000 processes over a
+multi-hour run at the default interval. A max like ``ru_maxrss`` shrugs that off
+(they are tiny beside a JVM); a sum like CPU time does not, and would silently
+bill minutes of sampling overhead to the job. ``wait4`` counts the child and the
+descendants *it* reaped, and nothing else.
+
+Each invocation of this script is also a fresh process, so nothing from a
+previous job can leak in either -- the reason the measurement is isolated in a
+subprocess at all rather than done inside the long-lived driver.
+
+One caveat on a timed-out run: the job is killed by process group, so a shell
+that dies without reaping its own JVM loses that JVM's accounting. CPU time for
+a run with ``timed_out`` set is therefore a lower bound.
 
 Usage:
     measure.py --json-out run.json [options] -- command [args ...]
@@ -263,8 +289,51 @@ class _Sampler:
         self._thread.join(timeout=timeout)
 
 
-def _terminate(process: subprocess.Popen, grace: float = 20.0) -> None:
-    """Stop the whole job: signal its process group, escalating to SIGKILL.
+def _exit_code(status: int) -> int:
+    """Translate a raw wait status into Popen's returncode convention."""
+    if os.WIFSIGNALED(status):
+        return -os.WTERMSIG(status)
+    if os.WIFEXITED(status):
+        return os.WEXITSTATUS(status)
+    return 1
+
+
+def _reap(process: subprocess.Popen,
+          timeout: float | None = None) -> tuple[int | None, object | None]:
+    """Wait for ``process``, returning ``(exit_code, rusage)`` for it alone.
+
+    ``(None, None)`` means it is still running and ``timeout`` expired.
+
+    This replaces ``Popen.wait`` so the rusage can be scoped to this one child;
+    ``Popen`` reaps through ``waitpid`` and discards it. ``returncode`` is set
+    by hand afterwards, which is what tells ``Popen`` the child is already
+    reaped and stops it waiting on a pid that no longer exists.
+
+    The poll interval ramps from 1 ms to 50 ms so a short command is still
+    timed tightly while a multi-hour one costs almost nothing to watch.
+    """
+    deadline = None if timeout is None else time.monotonic() + timeout
+    delay = 0.001
+    while True:
+        try:
+            pid, status, usage = os.wait4(process.pid, os.WNOHANG)
+        except ChildProcessError:
+            # Reaped by someone else; its accounting is gone with it.
+            if process.returncode is None:
+                process.returncode = 1
+            return process.returncode, None
+        if pid:
+            process.returncode = _exit_code(status)
+            return process.returncode, usage
+        if deadline is not None and time.monotonic() >= deadline:
+            return None, None
+        time.sleep(delay)
+        delay = min(delay * 1.5, 0.05)
+
+
+def _terminate(process: subprocess.Popen,
+               grace: float = 20.0) -> tuple[int | None, object | None]:
+    """Stop the whole job and reap it, returning ``(exit_code, rusage)``.
 
     The command is launched in its own process group precisely so a timeout can
     reach the JVM, not just the shell that wrapped it.
@@ -277,12 +346,11 @@ def _terminate(process: subprocess.Popen, grace: float = 20.0) -> None:
                 process.kill()
             except OSError:
                 pass
-            return
-        try:
-            process.wait(timeout=grace)
-            return
-        except subprocess.TimeoutExpired:
-            continue
+            return _reap(process, timeout=grace)
+        exit_code, usage = _reap(process, timeout=grace)
+        if exit_code is not None:
+            return exit_code, usage
+    return _reap(process, timeout=grace)
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -345,18 +413,18 @@ def main(argv: list[str] | None = None) -> int:
         print(f"measure: could not start command: {error}", file=sys.stderr)
         return 127
 
+    usage = None
+    exit_code = None
+    timed_out = False
     try:
         if args.sample_interval > 0:
             sampler = _Sampler(process.pid, args.sample_interval,
                                trace=bool(args.trace))
             sampler.start()
-        timed_out = False
-        try:
-            exit_code = process.wait(timeout=args.timeout)
-        except subprocess.TimeoutExpired:
+        exit_code, usage = _reap(process, timeout=args.timeout)
+        if exit_code is None:            # still running, so the timeout fired
             timed_out = True
-            _terminate(process)
-            exit_code = process.returncode
+            exit_code, usage = _terminate(process)
     finally:
         # Teardown must never lose the measurement of a run that already
         # finished, so each step is isolated and its failure only noted.
@@ -375,14 +443,33 @@ def main(argv: list[str] | None = None) -> int:
                     pass
 
     elapsed = time.perf_counter() - started
-    rusage_peak = resource.getrusage(resource.RUSAGE_CHILDREN).ru_maxrss \
-        * _RU_MAXRSS_TO_BYTES
+    if usage is not None:
+        rusage_scope = "child"
+        rusage_peak = usage.ru_maxrss * _RU_MAXRSS_TO_BYTES
+        cpu_user: float | None = usage.ru_utime
+        cpu_system: float | None = usage.ru_stime
+    else:
+        # The child could not be reaped for its own accounting. Fall back to the
+        # process-wide bucket for memory, where the sampler's helpers are too
+        # small to matter -- but report no CPU time at all rather than a figure
+        # inflated by tens of thousands of ps and nvidia-smi invocations.
+        rusage_scope = "children-bucket"
+        rusage_peak = resource.getrusage(resource.RUSAGE_CHILDREN).ru_maxrss \
+            * _RU_MAXRSS_TO_BYTES
+        cpu_user = cpu_system = None
+    cpu_total = None if cpu_user is None else cpu_user + cpu_system
+    utilization = None if not cpu_total or elapsed <= 0 else cpu_total / elapsed
     sampled_peak = sampler.peak if sampler is not None else 0
 
     record.update(
         exit_code=exit_code,
         timed_out=timed_out,
         elapsed_seconds=elapsed,
+        cpu_user_seconds=cpu_user,
+        cpu_system_seconds=cpu_system,
+        cpu_seconds=cpu_total,
+        cpu_utilization=utilization,
+        rusage_scope=rusage_scope,
         rusage_peak_bytes=rusage_peak,
         sampled_peak_bytes=sampled_peak,
         peak_rss_bytes=max(rusage_peak, sampled_peak),
@@ -400,8 +487,12 @@ def main(argv: list[str] | None = None) -> int:
     if args.trace and sampler is not None and sampler.trace is not None:
         _write_trace(args.trace, sampler.trace)
 
-    summary = (f"measure: elapsed {elapsed:.2f} s, "
-               f"peak RSS {record['peak_rss_bytes'] / _MIB:.1f} MiB")
+    summary = f"measure: elapsed {elapsed:.2f} s"
+    if cpu_total is not None:
+        summary += f", CPU {cpu_total:.2f} s"
+        if utilization:
+            summary += f" ({utilization:.1f}x cores)"
+    summary += f", peak RSS {record['peak_rss_bytes'] / _MIB:.1f} MiB"
     if sampler is not None and sampler.gpu_visible:
         summary += f", peak GPU {sampler.gpu_peak / _MIB:.1f} MiB"
         if not sampler.gpu_attributed:

@@ -7,7 +7,7 @@ For every selected replicate this driver:
      (``45_0_0`` -> ``45``; copies stay separate leaves, source data untouched),
      once per replicate and shared by both arms so the arms see identical input;
   2. runs each arm through ``experiments/measure.py``, recording elapsed wall
-     time, peak host memory and -- on a GPU run -- peak device memory;
+     time, CPU time, peak host memory and -- on a GPU run -- peak device memory;
   3. scores the result against ``species-tree/s_tree.trees`` with
      ``scripts/calculate_rf_rate.py`` (normalized unrooted RF);
   4. appends one row to ``results.tsv`` and writes a per-job JSON record.
@@ -89,7 +89,8 @@ RESULT_FIELDS = [
     "condition", "replicate", "arm", "status",
     "rf_rate", "raw_rf", "max_rf", "taxa",
     "output_splits", "true_splits", "shared_splits",
-    "elapsed_seconds", "peak_rss_mib", "peak_gpu_mib", "peak_gpu_device_mib",
+    "elapsed_seconds", "cpu_seconds", "cpu_utilization",
+    "peak_rss_mib", "peak_gpu_mib", "peak_gpu_device_mib",
     "genetrees", "threads", "xmx", "exit_code",
     "output_tree", "measurement_json", "finished_at",
 ]
@@ -250,6 +251,10 @@ def absorb_measurement(row: dict[str, object], measurement: Path) -> dict | None
         return None if value is None else value / (1024 * 1024)
 
     row["elapsed_seconds"] = saved.get("elapsed_seconds")
+    # CPU time comes from wait4 on the job itself, so it is present even when
+    # sampling is off; it is absent only if the child could not be reaped.
+    row["cpu_seconds"] = saved.get("cpu_seconds")
+    row["cpu_utilization"] = saved.get("cpu_utilization")
     row["peak_rss_mib"] = mib("peak_rss_bytes")
     row["exit_code"] = saved.get("exit_code")
     # GPU columns stay empty rather than 0 when no GPU was visible: "this run
@@ -370,11 +375,15 @@ def score(args: argparse.Namespace, condition: str, replicate: str,
         true_splits=result.true_splits, shared_splits=result.shared_splits,
     )
     elapsed = row.get("elapsed_seconds")
+    cpu = row.get("cpu_seconds")
+    cores = row.get("cpu_utilization")
     peak = row.get("peak_rss_mib")
     gpu = row.get("peak_gpu_mib")
     print(f"  {row['arm']}: RF {result.rf_rate:.6f} "
           f"({result.raw_rf}/{result.max_rf})"
-          + (f", {elapsed:.1f} s" if isinstance(elapsed, (int, float)) else "")
+          + (f", {elapsed:.1f} s wall" if isinstance(elapsed, (int, float)) else "")
+          + (f", {cpu:.1f} s CPU" if isinstance(cpu, (int, float)) else "")
+          + (f" ({cores:.1f}x)" if isinstance(cores, (int, float)) else "")
           + (f", {peak:.0f} MiB host" if isinstance(peak, (int, float)) else "")
           + (f", {gpu:.0f} MiB GPU" if isinstance(gpu, (int, float)) else ""))
     return row
@@ -414,9 +423,10 @@ def summarise(rows: list[dict[str, object]], arms: list[str]) -> None:
     # Show the GPU column only when a run actually measured device memory, so
     # a CPU sweep is not padded with a column of zeros.
     show_gpu = any(isinstance(row.get("peak_gpu_mib"), (int, float)) for row in scored)
-    header = f"{'arm':<18}{'n':>4}{'mean RF':>12}{'mean sec':>12}{'mean host MiB':>16}"
+    header = (f"{'arm':<18}{'n':>4}{'mean RF':>12}{'wall s':>11}"
+              f"{'CPU s':>11}{'cores':>8}{'host MiB':>11}")
     if show_gpu:
-        header += f"{'mean GPU MiB':>16}"
+        header += f"{'GPU MiB':>11}"
     width = len(header)
     print(header)
     print("-" * width)
@@ -428,9 +438,10 @@ def summarise(rows: list[dict[str, object]], arms: list[str]) -> None:
             sum(float(row[key]) for row in group if isinstance(row.get(key), (int, float)))
             / max(1, sum(1 for row in group if isinstance(row.get(key), (int, float)))))
         line = (f"{arm:<18}{len(group):>4}{mean('rf_rate'):>12.6f}"
-                f"{mean('elapsed_seconds'):>12.1f}{mean('peak_rss_mib'):>16.0f}")
+                f"{mean('elapsed_seconds'):>11.1f}{mean('cpu_seconds'):>11.1f}"
+                f"{mean('cpu_utilization'):>8.1f}{mean('peak_rss_mib'):>11.0f}")
         if show_gpu:
-            line += f"{mean('peak_gpu_mib'):>16.0f}"
+            line += f"{mean('peak_gpu_mib'):>11.0f}"
         print(line)
     print("-" * width)
 
