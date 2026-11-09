@@ -281,23 +281,30 @@ trustworthy, and the larger is reported as `peak_rss_bytes`:
 ### Sampling rate
 
 The host sampler reads `/proc` directly where it exists, so no subprocess is
-spawned per tick and the default interval is **50 ms**, matching STELAR-Pro's
-own internal poller. On a platform without `/proc` it must spawn `ps`, which
-costs about **11 ms of CPU per spawn** — 20 times a second that would burn more
-CPU than it measures — so the default there stays at **1.0 s**. The record says
-which applied in `memory_source`.
+spawned per tick and the default interval is **500 ms**. On a platform without
+`/proc` it must spawn `ps`, which costs about **11 ms of CPU per spawn**, so the
+default there stays at **1.0 s**. The record says which applied in
+`memory_source`.
+
+500 ms rather than something finer on purpose. The sampled series does not have
+to catch the peak — `hwm_sum_bytes` and `hwm_max_bytes` come from the kernel's
+own `VmHWM` and are gap-free at any interval — so the only job left for the
+samples is showing the *shape* of memory use over the run, which half-second
+resolution does perfectly well over a run of minutes. Going to 50 ms would
+multiply the trace file and the sampler's CPU by ten for no gain in the figures
+that get reported.
 
 Measured cost of one `/proc` tick, which is one small read per process:
 
-| processes on the box | per tick | at 20 Hz |
+| processes on the box | per tick | at 2 Hz |
 |---:|---:|---:|
-| 100 | 1.2 ms | 2.5% of one core |
-| 400 | 5.1 ms | 10.3% of one core |
-| 1000 | 13.8 ms | 27.6% of one core |
+| 100 | 1.2 ms | 0.25% of one core |
+| 400 | 5.1 ms | 1.0% of one core |
+| 1000 | 13.8 ms | 2.8% of one core |
 
-Negligible beside a 32-thread job, and a conservative over-estimate since real
-procfs is kernel-generated rather than read from disk. Raise
-`--sample-interval` if a box is unusually crowded.
+A conservative over-estimate, since real procfs is kernel-generated rather than
+read from disk. Pass `--sample-interval` to go finer if a short run needs it, or
+coarser on an unusually crowded box.
 
 **`nvidia-smi` keeps its own, slower cadence** (`--gpu-sample-interval`,
 default 1.0 s). It is the one expensive probe left — tens to hundreds of
@@ -383,7 +390,7 @@ them in-repo so a run is reproducible from the dataset alone.
 | `--timeout SEC` | kill a run that overruns; the job is launched in its own process group so the signal reaches the JVM |
 | `--fresh` | rerun arms whose output tree already exists (default is to reuse and only re-score) |
 | `--no-build` | skip `build.sh`; **only** when `build/` already matches the checked-out branch |
-| `--sample-interval` | host memory sampling period; default 50 ms with `/proc`, 1.0 s without; `0` disables sampling and every GPU figure |
+| `--sample-interval` | host memory sampling period; default 500 ms with `/proc`, 1.0 s without; `0` disables sampling and every GPU figure |
 | `--gpu-sample-interval` | GPU memory sampling period, default 1.0 s |
 
 `--no-build` is off by default on purpose. A stale `build/` silently runs the

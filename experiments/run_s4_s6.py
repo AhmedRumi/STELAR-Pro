@@ -742,7 +742,8 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--sample-interval", type=float, default=None,
                         help="host memory sampling period in seconds "
                              f"(default: {_DEFAULT_INTERVAL} on this host, set "
-                             "by whether /proc is available)")
+                             "by whether /proc is available; the reported peak "
+                             "comes from VmHWM and is gap-free regardless)")
     parser.add_argument("--gpu-sample-interval", type=float, default=None,
                         help="GPU memory sampling period in seconds, separate "
                              "because nvidia-smi is far costlier than a /proc "

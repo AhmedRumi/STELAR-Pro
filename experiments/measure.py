@@ -120,10 +120,12 @@ _PAGE_SIZE = resource.getpagesize()
 # so polling it 20 times a second would burn minutes of CPU over a long run and
 # perturb the measurement it is taking.
 _HAVE_PROC = os.path.isdir("/proc/self")
-# 50 ms matches STELAR-Pro's own poller and is affordable only on the /proc
-# path. Where `ps` has to be spawned instead, that rate would cost more CPU
-# than the job it is watching, so the default stays slow there.
-_DEFAULT_INTERVAL = 0.05 if _HAVE_PROC else 1.0
+# 500 ms on the /proc path. Finer is affordable there -- a tick is one small
+# read per process -- but it buys little, because the peak itself is covered
+# gap-free by VmHWM; the sampled series only has to show the *shape* of memory
+# use over the run. Where `ps` has to be spawned instead, even this rate costs
+# about 11 ms of CPU per tick, so the default stays slower.
+_DEFAULT_INTERVAL = 0.5 if _HAVE_PROC else 1.0
 
 
 def _cpu_budget() -> tuple[float, str]:
@@ -557,7 +559,8 @@ def main(argv: list[str] | None = None) -> int:
                         help="host memory sampling period in seconds; 0 "
                              "disables sampling, and with it every GPU figure "
                              f"(default: {_DEFAULT_INTERVAL}, "
-                             + ("matching STELAR-Pro's own internal poller"
+                             + ("fine enough for the shape of the curve, "
+                                "with VmHWM covering the peak itself"
                                 if _HAVE_PROC else
                                 "raised because this platform has no /proc and "
                                 "must spawn ps")
