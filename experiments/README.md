@@ -66,8 +66,9 @@ Per replicate directory:
 
 And one `results.tsv` at the root of the output location, appended to across
 invocations, with `rf_rate`, `raw_rf`/`max_rf`, `elapsed_seconds`,
-`cpu_seconds`, `cpu_utilization`, `peak_rss_mib`, `peak_gpu_mib`,
-`peak_gpu_device_mib`, and the settings each row was produced under. The two GPU columns are left **empty**, not zero, when no
+`cpu_seconds`, `cpu_utilization`, `cpu_seconds_per_core`, `cpu_efficiency`,
+`cpu_count`, `peak_rss_mib`, `peak_gpu_mib`, `peak_gpu_device_mib`, and the
+settings each row was produced under. The two GPU columns are left **empty**, not zero, when no
 GPU was visible — "this run used no device memory" and "nobody looked" must not
 read the same.
 
@@ -93,6 +94,28 @@ what you spent, and `cpu_utilization` (CPU / wall) is the average number of
 cores kept busy. That ratio is the useful one for comparing search spaces, since
 an arm that is slower in wall time but far below `--threads` in utilization is
 losing to a serial section, not to raw work.
+
+**CPU time per CPU** is `cpu_seconds / cpu_count`, and `cpu_efficiency` is the
+same thing as a fraction (`cpu_utilization / cpu_count`, 1.0 = every available
+CPU busy for the whole run). Nothing has to be summed to get there:
+`ru_utime + ru_stime` is *already* aggregated over every core and thread, so it
+is one division. `cpu_seconds_per_core` is the wall time the job would take on
+a perfect parallel machine, which makes it directly comparable to
+`elapsed_seconds` — the gap between the two is the headroom lost to serial
+sections.
+
+Read it as **normalized, not as what any one core did**: 3 CPUs fully busy and
+32 CPUs each 9% busy give the same figure.
+
+The denominator matters enough to be recorded. `cpu_count` comes from
+`sched_getaffinity`, not `os.cpu_count()`, so a 128-core node that pinned the
+job to 8 CPUs does not make it look 6% efficient; a cgroup v2 `cpu.max` quota is
+tighter still and wins when set, which is what makes the figure meaningful
+inside a container. `cpu_count_source` says which applied (`affinity`,
+`cgroup-quota`, or `cpu_count` off Linux). `physical_cores` is recorded
+separately, from `/proc/cpuinfo`, because on a 16-core/32-thread box the choice
+of denominator moves the per-CPU figure by 2x and which one is wanted depends
+on the question — `cpu_count` counts *logical* CPUs.
 
 Two things CPU time does **not** measure. It excludes time spent blocked, so a
 job starved of I/O or descheduled behind other load looks cheap — which is
@@ -232,6 +255,17 @@ a 10 ms interval, so the sampler spawned 118 helper processes, reported
 in `RUSAGE_CHILDREN`. The timeout, nonzero-exit and killed-by-signal paths were
 re-exercised after the reaping rewrite, including confirming no process survives
 the process-group kill.
+
+The per-CPU figures were checked against a known workload: four parallel burners
+on an 8-CPU machine reported `3.56x` utilization and `45% busy`, against the
+`50%` that four of eight CPUs predicts, the shortfall being process startup; one
+burner reported `11%` against a predicted `12.5%`. Both Linux-only denominators
+are unreachable on the machine this was written on, so they take their path as
+an argument and were unit-tested against fixtures instead of shipped unrun:
+`/proc/cpuinfo` with 4 logical CPUs over 2 SMT cores → `2`, two single-core
+sockets → `2`, an ARM-style file with no `core id` → `None`; `cpu.max` of
+`400000 100000` → `4.0`, `max 100000` → `None`, unparseable → `None`, missing
+→ `None`.
 
 GPU accounting was verified against a **stub `nvidia-smi`**, since the machine
 this was written on has no NVIDIA card and an untested parser is worth nothing.

@@ -15,6 +15,21 @@ Two kinds of time are reported, and they answer different questions:
     number of cores kept busy and the honest way to compare how well two search
     spaces parallelize.
 
+``cpu_seconds_per_core``
+    ``cpu_seconds`` divided by the number of CPUs available. Nothing needs
+    summing to get there: ``ru_utime + ru_stime`` is *already* aggregated over
+    every core and thread, so this is one division. It is the wall time the job
+    would take on a perfect parallel machine, which makes it directly
+    comparable to ``elapsed_seconds``: the gap between them is the headroom
+    lost to serial sections. ``cpu_efficiency`` is the same thing as a fraction
+    (``cpu_utilization / cpu_count``), 1.0 meaning every available CPU was busy
+    for the whole run.
+
+    Read it as *normalized*, not as what any one core did: 3 cores fully busy
+    and 32 cores each 9% busy give the same figure. The denominator is recorded
+    as ``cpu_count`` with its ``cpu_count_source``, since dividing by the wrong
+    one is the easy way to be wrong by 2x.
+
 Why this exists instead of ``run-stelar-pro-with-monitor.sh``: that wrapper calls
 ``/usr/bin/time -v``, which is GNU-only. On macOS ``/usr/bin/time`` is the BSD
 build, which rejects ``-v`` outright ("illegal option -- v") and spells the field
@@ -99,6 +114,72 @@ _RU_MAXRSS_TO_BYTES = 1 if sys.platform == "darwin" else 1024
 
 _MIB = 1024 * 1024
 _NVIDIA_SMI = shutil.which("nvidia-smi")
+
+
+def _cpu_budget() -> tuple[float, str]:
+    """How many CPUs this job may actually use, and where the figure came from.
+
+    ``sched_getaffinity`` rather than ``os.cpu_count()``, because a 128-core
+    node that pinned us to 8 CPUs must not make a job look 6% efficient. A
+    cgroup v2 quota is tighter still and wins when set, which is what makes the
+    figure meaningful inside a container.
+    """
+    try:
+        count = float(len(os.sched_getaffinity(0)))
+        source = "affinity"
+    except AttributeError:          # not Linux
+        count = float(os.cpu_count() or 1)
+        source = "cpu_count"
+    quota = _cgroup_cpu_quota()
+    if quota is not None and 0 < quota < count:
+        return quota, "cgroup-quota"
+    return count, source
+
+
+def _cgroup_cpu_quota(path: str = "/sys/fs/cgroup/cpu.max") -> float | None:
+    """CPU limit in whole CPUs from a cgroup v2 quota, or None if unlimited."""
+    try:
+        with open(path, encoding="utf-8") as handle:
+            quota, period = handle.read().split()[:2]
+    except (OSError, ValueError):
+        return None
+    if quota == "max":
+        return None
+    try:
+        return int(quota) / int(period)
+    except (ValueError, ZeroDivisionError):
+        return None
+
+
+def _physical_cores(path: str = "/proc/cpuinfo") -> int | None:
+    """Physical cores from /proc/cpuinfo, so SMT does not halve the figure.
+
+    Recorded alongside ``cpu_count`` only so the per-core number can be
+    reinterpreted: on a 16-core/32-thread box the choice of denominator moves
+    it by 2x, and which one is wanted depends on the question.
+    """
+    pairs: set[tuple[str, str]] = set()
+    package: str | None = None
+    core: str | None = None
+    try:
+        with open(path, encoding="utf-8") as handle:
+            for line in handle:
+                if ":" not in line:                 # blank line ends a block
+                    if package is not None and core is not None:
+                        pairs.add((package, core))
+                    package = core = None
+                    continue
+                key, _, value = line.partition(":")
+                key = key.strip()
+                if key == "physical id":
+                    package = value.strip()
+                elif key == "core id":
+                    core = value.strip()
+        if package is not None and core is not None:
+            pairs.add((package, core))
+    except OSError:
+        return None
+    return len(pairs) or None
 
 
 def _process_table() -> dict[int, tuple[int, int]]:
@@ -459,6 +540,9 @@ def main(argv: list[str] | None = None) -> int:
         cpu_user = cpu_system = None
     cpu_total = None if cpu_user is None else cpu_user + cpu_system
     utilization = None if not cpu_total or elapsed <= 0 else cpu_total / elapsed
+    cpu_count, cpu_count_source = _cpu_budget()
+    per_core = None if cpu_total is None or cpu_count <= 0 else cpu_total / cpu_count
+    efficiency = None if utilization is None or cpu_count <= 0 else utilization / cpu_count
     sampled_peak = sampler.peak if sampler is not None else 0
 
     record.update(
@@ -469,6 +553,11 @@ def main(argv: list[str] | None = None) -> int:
         cpu_system_seconds=cpu_system,
         cpu_seconds=cpu_total,
         cpu_utilization=utilization,
+        cpu_seconds_per_core=per_core,
+        cpu_efficiency=efficiency,
+        cpu_count=cpu_count,
+        cpu_count_source=cpu_count_source,
+        physical_cores=_physical_cores(),
         rusage_scope=rusage_scope,
         rusage_peak_bytes=rusage_peak,
         sampled_peak_bytes=sampled_peak,
@@ -491,7 +580,11 @@ def main(argv: list[str] | None = None) -> int:
     if cpu_total is not None:
         summary += f", CPU {cpu_total:.2f} s"
         if utilization:
-            summary += f" ({utilization:.1f}x cores)"
+            summary += f" ({utilization:.1f}x)"
+        if per_core is not None:
+            summary += f", {per_core:.2f} s/CPU over {cpu_count:g} CPUs"
+            if efficiency is not None:
+                summary += f" = {efficiency * 100:.0f}% busy"
     summary += f", peak RSS {record['peak_rss_bytes'] / _MIB:.1f} MiB"
     if sampler is not None and sampler.gpu_visible:
         summary += f", peak GPU {sampler.gpu_peak / _MIB:.1f} MiB"

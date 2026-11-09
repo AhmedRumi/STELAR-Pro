@@ -90,6 +90,7 @@ RESULT_FIELDS = [
     "rf_rate", "raw_rf", "max_rf", "taxa",
     "output_splits", "true_splits", "shared_splits",
     "elapsed_seconds", "cpu_seconds", "cpu_utilization",
+    "cpu_seconds_per_core", "cpu_efficiency", "cpu_count",
     "peak_rss_mib", "peak_gpu_mib", "peak_gpu_device_mib",
     "genetrees", "threads", "xmx", "exit_code",
     "output_tree", "measurement_json", "finished_at",
@@ -255,6 +256,9 @@ def absorb_measurement(row: dict[str, object], measurement: Path) -> dict | None
     # sampling is off; it is absent only if the child could not be reaped.
     row["cpu_seconds"] = saved.get("cpu_seconds")
     row["cpu_utilization"] = saved.get("cpu_utilization")
+    row["cpu_seconds_per_core"] = saved.get("cpu_seconds_per_core")
+    row["cpu_efficiency"] = saved.get("cpu_efficiency")
+    row["cpu_count"] = saved.get("cpu_count")
     row["peak_rss_mib"] = mib("peak_rss_bytes")
     row["exit_code"] = saved.get("exit_code")
     # GPU columns stay empty rather than 0 when no GPU was visible: "this run
@@ -377,6 +381,8 @@ def score(args: argparse.Namespace, condition: str, replicate: str,
     elapsed = row.get("elapsed_seconds")
     cpu = row.get("cpu_seconds")
     cores = row.get("cpu_utilization")
+    per_core = row.get("cpu_seconds_per_core")
+    eff = row.get("cpu_efficiency")
     peak = row.get("peak_rss_mib")
     gpu = row.get("peak_gpu_mib")
     print(f"  {row['arm']}: RF {result.rf_rate:.6f} "
@@ -384,6 +390,8 @@ def score(args: argparse.Namespace, condition: str, replicate: str,
           + (f", {elapsed:.1f} s wall" if isinstance(elapsed, (int, float)) else "")
           + (f", {cpu:.1f} s CPU" if isinstance(cpu, (int, float)) else "")
           + (f" ({cores:.1f}x)" if isinstance(cores, (int, float)) else "")
+          + (f", {per_core:.1f} s/CPU" if isinstance(per_core, (int, float)) else "")
+          + (f" = {eff * 100:.0f}% busy" if isinstance(eff, (int, float)) else "")
           + (f", {peak:.0f} MiB host" if isinstance(peak, (int, float)) else "")
           + (f", {gpu:.0f} MiB GPU" if isinstance(gpu, (int, float)) else ""))
     return row
@@ -424,7 +432,8 @@ def summarise(rows: list[dict[str, object]], arms: list[str]) -> None:
     # a CPU sweep is not padded with a column of zeros.
     show_gpu = any(isinstance(row.get("peak_gpu_mib"), (int, float)) for row in scored)
     header = (f"{'arm':<18}{'n':>4}{'mean RF':>12}{'wall s':>11}"
-              f"{'CPU s':>11}{'cores':>8}{'host MiB':>11}")
+              f"{'CPU s':>11}{'s/CPU':>9}{'cores':>8}{'busy%':>8}"
+              f"{'host MiB':>11}")
     if show_gpu:
         header += f"{'GPU MiB':>11}"
     width = len(header)
@@ -439,7 +448,10 @@ def summarise(rows: list[dict[str, object]], arms: list[str]) -> None:
             / max(1, sum(1 for row in group if isinstance(row.get(key), (int, float)))))
         line = (f"{arm:<18}{len(group):>4}{mean('rf_rate'):>12.6f}"
                 f"{mean('elapsed_seconds'):>11.1f}{mean('cpu_seconds'):>11.1f}"
-                f"{mean('cpu_utilization'):>8.1f}{mean('peak_rss_mib'):>11.0f}")
+                f"{mean('cpu_seconds_per_core'):>9.1f}"
+                f"{mean('cpu_utilization'):>8.1f}"
+                f"{mean('cpu_efficiency') * 100:>8.0f}"
+                f"{mean('peak_rss_mib'):>11.0f}")
         if show_gpu:
             line += f"{mean('peak_gpu_mib'):>11.0f}"
         print(line)
