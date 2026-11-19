@@ -58,7 +58,7 @@ public final class S6GreedySearch {
             firstIndex, seed, rounds, previousTree, null);
     }
 
-    /** Shared guide data supplies S4-style backbones and UPGMA partitions. */
+    /** Subset-local DISCO data supplies STELAR backbones and UPGMA partitions. */
     public static List<Tree> generate(S6ScoreSource support, List<Tree> originalGenes,
                                       String taggedInput, TaxonRegistry registry,
                                       int firstIndex, long seed, int rounds,
@@ -364,18 +364,16 @@ public final class S6GreedySearch {
                 backboneTaxa).node;
             groups.get(edgeId.get(edge)).add(taxon);
         }
-        SimilarityMatrix[] local = guideData.localMatrices()
-            ? guideData.partitionMatrices(groups) : null;
+        SimilarityMatrix[] local = guideData.partitionMatrices(groups);
         int nonempty = 0;
         for (int i = 0; i < edges.size(); i++) {
             if (groups.get(i).isEmpty()) continue;
             nonempty++;
             Node edge = edges.get(i);
             Node parent = edge.parent;
-            Node partition = upgmaGroup(groups.get(i),
-                local == null ? guideData.matrix() : local[i], local != null);
+            Node partition = upgmaGroup(groups.get(i), local[i]);
             // Each disjoint group's matrix has no readers after its UPGMA tree.
-            if (local != null) local[i] = null;
+            local[i] = null;
             Node joined = new Node(edge, partition);
             joined.parent = parent;
             if (parent == null) root = joined;
@@ -389,9 +387,8 @@ public final class S6GreedySearch {
         return root;
     }
 
-    /** Group-sized scratch only; the packed global similarity stays read-only. */
-    private static Node upgmaGroup(List<Integer> group, SimilarityMatrix matrix,
-                                   boolean local) {
+    /** Each partition owns group-sized similarity scratch until its UPGMA finishes. */
+    private static Node upgmaGroup(List<Integer> group, SimilarityMatrix matrix) {
         int m = group.size();
         if (m == 1) return new Node(group.get(0));
         if (m == 2)
@@ -412,9 +409,7 @@ public final class S6GreedySearch {
             sizes[a] = 1;
             active[a] = true;
             for (int b = 0; b < a; b++) {
-                double score = local
-                    ? matrix.getSim(a, b)
-                    : matrix.getSim(group.get(a), group.get(b));
+                double score = matrix.getSim(a, b);
                 sim[a][b] = sim[b][a] = score;
                 nearest.add(new GroupPair(score, b, a));
             }

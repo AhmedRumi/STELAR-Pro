@@ -1,0 +1,141 @@
+[
+  {
+    "replicate": "01",
+    "reference": "S6-subset-duplication",
+    "topology_rf": 0,
+    "scored_splits_per_call": [
+      5708,
+      5803,
+      5793,
+      5860,
+      211
+    ],
+    "triplet_score": 433606852
+  },
+  {
+    "replicate": "02",
+    "reference": "S6-subset-duplication",
+    "topology_rf": 0,
+    "scored_splits_per_call": [
+      6780,
+      7633,
+      7341,
+      7735,
+      212
+    ],
+    "triplet_score": 475551319
+  },
+  {
+    "replicate": "03",
+    "reference": "S6-subset-duplication",
+    "topology_rf": 0,
+    "scored_splits_per_call": [
+      7374,
+      7516,
+      6352,
+      7431,
+      203
+    ],
+    "triplet_score": 549216265
+  },
+  {
+    "replicate": "04",
+    "reference": "S6-subset-duplication",
+    "topology_rf": 0,
+    "scored_splits_per_call": [
+      4870,
+      5083,
+      4856,
+      4603,
+      205
+    ],
+    "triplet_score": 524448630
+  },
+  {
+    "replicate": "05",
+    "reference": "S6-subset-duplication",
+    "topology_rf": 0,
+    "scored_splits_per_call": [
+      7806,
+      8029,
+      7919,
+      7343,
+      203
+    ],
+    "triplet_score": 452231351
+  },
+  {
+    "replicate": "06",
+    "reference": "S6-subset-duplication",
+    "topology_rf": 0,
+    "scored_splits_per_call": [
+      6648,
+      6411,
+      5419,
+      6518,
+      200
+    ],
+    "triplet_score": 437563497
+  },
+  {
+    "replicate": "07",
+    "reference": "S6-subset-duplication",
+    "topology_rf": 0,
+    "scored_splits_per_call": [
+      7117,
+      7621,
+      7479,
+      7508,
+      203
+    ],
+    "triplet_score": 472216237
+  },
+  {
+    "replicate": "08",
+    "reference": "S6-subset-duplication",
+    "topology_rf": 0,
+    "scored_splits_per_call": [
+      7447,
+      7784,
+      6245,
+      6597,
+      200
+    ],
+    "triplet_score": 558928845
+  },
+  {
+    "replicate": "09",
+    "reference": "S6-subset-duplication",
+    "topology_rf": 0,
+    "scored_splits_per_call": [
+      7611,
+      8244,
+      7856,
+      7244,
+      213
+    ],
+    "triplet_score": 462800614
+  },
+  {
+    "replicate": "10",
+    "reference": "S6-subset-duplication",
+    "topology_rf": 0,
+    "scored_splits_per_call": [
+      6495,
+      5923,
+      6481,
+      6661,
+      200
+    ],
+    "triplet_score": 464284080
+  },
+  {
+    "replicate": "01",
+    "reference": "S4-strict",
+    "topology_rf": 0,
+    "scored_splits_per_call": [
+      57513
+    ],
+    "triplet_score": 433588088
+  }
+]

@@ -1,0 +1,20 @@
+[
+  "java",
+  "-Xms256m",
+  "-Xmx6g",
+  "-Dstelarpro.home=/home/rumi/Documents/STELAR-Pro-all/STELAR-Pro",
+  "-Djava.library.path=/home/rumi/Documents/STELAR-Pro-all/STELAR-Pro/native",
+  "-cp",
+  "/home/rumi/Documents/STELAR-Pro-all/STELAR-Pro/build",
+  "stelarx.Main",
+  "--gpu-strict",
+  "--threads",
+  "28",
+  "--search-space",
+  "S4",
+  "--no-cross-tree-splits",
+  "--input",
+  "/home/rumi/Documents/STELAR-Pro-all/data/sim200_500/sim200_dup1_loss1/stelar-astral-first10-20261020/01/input_species_labels.tre",
+  "--output",
+  "/tmp/stelar-s6-promotion.YytCp6/replay/01/S4-strict/species_tree.tre"
+]

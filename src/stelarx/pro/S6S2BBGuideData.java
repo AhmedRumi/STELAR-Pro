@@ -18,87 +18,38 @@ import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 
-/** S6 guides: shared global pool by default, or subset-local data when opted in. */
+/** S6 subset-local guides with duplication-vertex completion scopes. */
 public final class S6S2BBGuideData {
-    private final SimilarityMatrix matrix;
-    private final List<Tree> completed;
-    private final Tree upgma;
     private final TaxonRegistry global;
     private final List<Tree> uncompleted;
 
-    private S6S2BBGuideData(SimilarityMatrix matrix, List<Tree> completed,
-                            Tree upgma, TaxonRegistry global,
+    private S6S2BBGuideData(TaxonRegistry global,
                             List<Tree> uncompleted) {
-        this.matrix = matrix;
-        this.completed = completed;
-        this.upgma = upgma;
         this.global = global;
         this.uncompleted = uncompleted;
     }
 
-    public static S6S2BBGuideData prepare(List<Tree> genes, TaxonRegistry taxa,
-                                          int upgmaIndex, boolean subsetLocal) {
-        long start = System.nanoTime();
+    public static S6S2BBGuideData prepare(List<Tree> genes, TaxonRegistry taxa) {
         List<Tree> disco = DiscoDecomposer.decomposeAll(
-            genes, taxa.size(), 0, 4, true).trees();
+            genes, taxa.size(), 0, 4, DiscoDecomposer.CompletionScope.DUPLICATION).trees();
         if (disco.isEmpty())
             throw new IllegalStateException("S6-S2BB needs at least one DISCO component");
-        if (subsetLocal) {
-            Logging.info("S6-local: retaining %d uncompleted DISCO components; "
-                + "no global similarity, completion, or UPGMA", disco.size());
-            return new S6S2BBGuideData(null, null, null, taxa, disco);
-        }
-        boolean gpu = Config.getInstance().getComputeMode() == Config.ComputeMode.GPU
-            && GPUSimilarityMatrix.tryLoad();
-        // S4 uses rooted-triplet sister frequencies for both completion and
-        // UPGMA; reuse its bounded JNI/GPU host batches for this shared pool.
-        SimilarityMatrix matrix = gpu
-            ? SimilarityMatrixBuilder.buildTripletGPU(disco, taxa.size())
-            : SimilarityMatrixBuilder.buildTripletCPU(disco, taxa.size());
-        SortedRows rows = ScopedTreeCompleter.anyMissing(disco)
-            ? SortedRowsBuilder.build(matrix) : null;
-        List<Tree> completed = ScopedTreeCompleter.prepare(rows, disco, taxa.size())
-            .completeBatch(disco);
-        // UPGMA receives a private triangle; the packed global matrix remains
-        // read-only for group-sized UPGMA partition trees in all four rounds.
-        Tree upgma = UPGMAClusterer.build(matrix, upgmaIndex, false);
-        markCandidate(upgma.root);
-        Logging.info("S6-S2BB shared S4 guide pool: %d strict-lineage DISCO trees, "
-            + "%d taxa, %s rooted-triplet similarity, one UPGMA tree in %d ms",
-            completed.size(), taxa.size(), gpu ? "GPU" : "CPU",
-            (System.nanoTime() - start) / 1_000_000);
-        return new S6S2BBGuideData(matrix, completed, upgma, taxa, null);
+        Logging.info("S6-local: retaining %d uncompleted DISCO components; "
+            + "duplication-vertex scope; no global similarity, completion, or UPGMA",
+            disco.size());
+        return new S6S2BBGuideData(taxa, disco);
     }
 
-    public boolean localMatrices() { return uncompleted != null; }
-    public SimilarityMatrix matrix() { return matrix; }
-    public Tree upgmaTree() { return upgma; }
-
-    /** Induce completed DISCO/UPGMA proposals on one random backbone subset. */
+    /** Restrict first, then complete and build UPGMA only inside this subset. */
     public List<Tree> restrict(TaxonRegistry subset) {
-        if (localMatrices()) return restrictCompleteLocally(subset);
-        int[] map = new int[global.size()];
-        Arrays.fill(map, -1);
-        for (int i = 0; i < subset.size(); i++)
-            map[global.getId(subset.getName(i))] = i;
-        List<Tree> guides = new ArrayList<>(completed.size() + 1);
-        for (Tree source : completed) {
-            Tree induced = restrictOne(source, map, guides.size(), subset.size());
-            if (induced != null && induced.leafCount >= 3) guides.add(induced);
-        }
-        Tree inducedUpgma = restrictOne(upgma, map, guides.size(), subset.size());
-        if (inducedUpgma == null || !inducedUpgma.isComplete)
-            throw new IllegalStateException("S6-S2BB subset UPGMA is incomplete");
-        guides.add(inducedUpgma);
-        Logging.info("S6-S2BB backbone: %d taxa, %d restricted DISCO + 1 UPGMA proposals",
-            subset.size(), guides.size() - 1);
-        return guides;
+        return restrictCompleteLocally(subset);
     }
 
     /**
      * Restrict uncompleted components before computing the subset's triplet
-     * similarity. Missing species are intersected with the original lineage
-     * scope; taxa absent from that scope are never invented by completion.
+     * similarity. Missing species are intersected with the pre-cut duplication
+     * scope; taxa above that duplication are excluded. Scoping affects candidate
+     * completion only; original tagged genes supply all triplet weights.
      */
     private List<Tree> restrictCompleteLocally(TaxonRegistry subset) {
         int n = subset.size();
@@ -174,8 +125,6 @@ public final class S6S2BBGuideData {
      * (small-to-large maps), then build one small matrix per nontrivial group.
      */
     public SimilarityMatrix[] partitionMatrices(List<List<Integer>> groups) {
-        if (!localMatrices())
-            throw new IllegalStateException("Partition matrices require S6-local mode");
         int count = groups.size();
         int[] groupOf = new int[global.size()];
         int[] localOf = new int[global.size()];
@@ -248,23 +197,6 @@ public final class S6S2BBGuideData {
         return large;
     }
 
-    private static Tree restrictOne(Tree source, int[] map, int index, int n) {
-        TreeNode root = prune(source.root, map);
-        if (root == null) return null;
-        int[] order = new int[n];
-        int[] count = {0};
-        assignRanges(root, order, count);
-        int[] leaves = Arrays.copyOf(order, count[0]);
-        int[] position = new int[n];
-        Arrays.fill(position, -1);
-        for (int i = 0; i < leaves.length; i++) {
-            if (position[leaves[i]] != -1)
-                throw new IllegalStateException("S6-S2BB subset duplicated a taxon");
-            position[leaves[i]] = i;
-        }
-        return new Tree(index, root, leaves, position, leaves.length, n);
-    }
-
     private static TreeNode prune(TreeNode node, int[] map) {
         if (node.isLeaf()) {
             int id = map[node.taxonId];
@@ -274,7 +206,7 @@ public final class S6S2BBGuideData {
             return leaf;
         }
         if (node.isPolytomous())
-            throw new IllegalStateException("S6-S2BB requires binary completed DISCO trees");
+            throw new IllegalStateException("S6-S2BB requires binary DISCO components");
         TreeNode left = prune(node.left, map);
         TreeNode right = prune(node.right, map);
         if (left == null) return right;
@@ -286,16 +218,6 @@ public final class S6S2BBGuideData {
         parent.isSpeciationNode = true;
         parent.isDuplicationNode = false;
         return parent;
-    }
-
-    private static void assignRanges(TreeNode node, int[] order, int[] cursor) {
-        node.rangeStart = cursor[0];
-        if (node.isLeaf()) order[cursor[0]++] = node.taxonId;
-        else {
-            assignRanges(node.left, order, cursor);
-            assignRanges(node.right, order, cursor);
-        }
-        node.rangeEnd = cursor[0];
     }
 
     private static void markCandidate(TreeNode node) {

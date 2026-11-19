@@ -1,0 +1,415 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="2400" height="1720" viewBox="0 0 2400 1720">
+<defs><marker id="arr-navy" markerWidth="9" markerHeight="9" refX="7" refY="4.5" orient="auto"><path d="M0,0 L9,4.5 L0,9 Z" fill="#18263F"/></marker><marker id="arr-muted" markerWidth="9" markerHeight="9" refX="7" refY="4.5" orient="auto"><path d="M0,0 L9,4.5 L0,9 Z" fill="#61748B"/></marker><marker id="arr-purple" markerWidth="9" markerHeight="9" refX="7" refY="4.5" orient="auto"><path d="M0,0 L9,4.5 L0,9 Z" fill="#8150AD"/></marker><marker id="arr-teal" markerWidth="9" markerHeight="9" refX="7" refY="4.5" orient="auto"><path d="M0,0 L9,4.5 L0,9 Z" fill="#168A79"/></marker><marker id="arr-blue" markerWidth="9" markerHeight="9" refX="7" refY="4.5" orient="auto"><path d="M0,0 L9,4.5 L0,9 Z" fill="#3476CB"/></marker><marker id="arr-green" markerWidth="9" markerHeight="9" refX="7" refY="4.5" orient="auto"><path d="M0,0 L9,4.5 L0,9 Z" fill="#329B5B"/></marker><marker id="arr-orange" markerWidth="9" markerHeight="9" refX="7" refY="4.5" orient="auto"><path d="M0,0 L9,4.5 L0,9 Z" fill="#DC8426"/></marker><marker id="arr-rose" markerWidth="9" markerHeight="9" refX="7" refY="4.5" orient="auto"><path d="M0,0 L9,4.5 L0,9 Z" fill="#D95874"/></marker></defs>
+<rect x="0" y="0" width="2400" height="1720" rx="0" fill="#FCFDFE" stroke="#FCFDFE" stroke-width="0"/>
+<rect x="0" y="0" width="2400" height="126" rx="0" fill="#18263F" stroke="#18263F" stroke-width="0"/>
+<rect x="0" y="123" width="2400" height="4" rx="0" fill="#8150AD" stroke="#8150AD" stroke-width="0"/>
+<rect x="0" y="546" width="2400" height="8" rx="0" fill="#F4F7FB" stroke="#F4F7FB" stroke-width="0"/>
+<rect x="0" y="1190" width="2400" height="8" rx="0" fill="#F4F7FB" stroke="#F4F7FB" stroke-width="0"/>
+<polyline points="257.3125,253 172.375,303" fill="none" stroke="#8150AD" stroke-width="2.7" stroke-linejoin="round"/>
+<polyline points="172.375,303 115.75,433" fill="none" stroke="#8150AD" stroke-width="2.7" stroke-linejoin="round"/>
+<polyline points="172.375,303 229,353" fill="none" stroke="#DC8426" stroke-width="4" stroke-linejoin="round" stroke-dasharray="7 5"/>
+<polyline points="229,353 191.25,433" fill="none" stroke="#8150AD" stroke-width="2.7" stroke-linejoin="round"/>
+<polyline points="229,353 266.75,433" fill="none" stroke="#DC8426" stroke-width="4" stroke-linejoin="round" stroke-dasharray="7 5"/>
+<polyline points="257.3125,253 342.25,433" fill="none" stroke="#8150AD" stroke-width="2.7" stroke-linejoin="round"/>
+<polyline points="542,267 500,319" fill="none" stroke="#8150AD" stroke-width="2.7" stroke-linejoin="round"/>
+<polyline points="500,319 472,433" fill="none" stroke="#8150AD" stroke-width="2.7" stroke-linejoin="round"/>
+<polyline points="500,319 528,433" fill="none" stroke="#DC8426" stroke-width="4" stroke-linejoin="round" stroke-dasharray="7 5"/>
+<polyline points="542,267 584,433" fill="none" stroke="#8150AD" stroke-width="2.7" stroke-linejoin="round"/>
+<polyline points="758.5833333333333,267 716.3333333333333,319" fill="none" stroke="#8150AD" stroke-width="2.7" stroke-linejoin="round"/>
+<polyline points="716.3333333333333,319 688.1666666666666,433" fill="none" stroke="#8150AD" stroke-width="2.7" stroke-linejoin="round"/>
+<polyline points="716.3333333333333,319 744.5,433" fill="none" stroke="#DC8426" stroke-width="4" stroke-linejoin="round" stroke-dasharray="7 5"/>
+<polyline points="758.5833333333333,267 800.8333333333334,433" fill="none" stroke="#8150AD" stroke-width="2.7" stroke-linejoin="round"/>
+<polyline points="831,359 899,359" fill="none" stroke="#8150AD" stroke-width="5" stroke-linejoin="round" marker-end="url(#arr-purple)"/>
+<polyline points="1039,359 1134,359" fill="none" stroke="#168A79" stroke-width="5" stroke-linejoin="round" marker-end="url(#arr-teal)"/>
+<polyline points="1301.25,267 1245,317" fill="none" stroke="#168A79" stroke-width="2.7" stroke-linejoin="round"/>
+<polyline points="1245,317 1207.5,433" fill="none" stroke="#168A79" stroke-width="2.7" stroke-linejoin="round"/>
+<polyline points="1245,317 1282.5,433" fill="none" stroke="#168A79" stroke-width="2.7" stroke-linejoin="round"/>
+<polyline points="1301.25,267 1357.5,433" fill="none" stroke="#168A79" stroke-width="2.7" stroke-linejoin="round"/>
+<polyline points="1570,267 1510,317" fill="none" stroke="#168A79" stroke-width="2.7" stroke-linejoin="round"/>
+<polyline points="1510,317 1480,433" fill="none" stroke="#168A79" stroke-width="2.7" stroke-linejoin="round"/>
+<polyline points="1510,317 1540,433" fill="none" stroke="#168A79" stroke-width="2.7" stroke-linejoin="round"/>
+<polyline points="1570,267 1630,317" fill="none" stroke="#168A79" stroke-width="2.7" stroke-linejoin="round"/>
+<polyline points="1630,317 1600,433" fill="none" stroke="#168A79" stroke-width="2.7" stroke-linejoin="round"/>
+<polyline points="1630,317 1660,433" fill="none" stroke="#168A79" stroke-width="2.7" stroke-linejoin="round"/>
+<polyline points="1857,267 1797,317" fill="none" stroke="#168A79" stroke-width="2.7" stroke-linejoin="round"/>
+<polyline points="1797,317 1767,433" fill="none" stroke="#168A79" stroke-width="2.7" stroke-linejoin="round"/>
+<polyline points="1797,317 1827,433" fill="none" stroke="#168A79" stroke-width="2.7" stroke-linejoin="round"/>
+<polyline points="1857,267 1917,317" fill="none" stroke="#168A79" stroke-width="2.7" stroke-linejoin="round"/>
+<polyline points="1917,317 1887,433" fill="none" stroke="#168A79" stroke-width="2.7" stroke-linejoin="round"/>
+<polyline points="1917,317 1947,433" fill="none" stroke="#168A79" stroke-width="2.7" stroke-linejoin="round"/>
+<polyline points="2166,264 2102,390" fill="none" stroke="#168A79" stroke-width="2.7" stroke-linejoin="round"/>
+<polyline points="2166,264 2230,390" fill="none" stroke="#168A79" stroke-width="2.7" stroke-linejoin="round"/>
+<polyline points="2166,444 2102,476" fill="none" stroke="#168A79" stroke-width="2.7" stroke-linejoin="round"/>
+<polyline points="2166,444 2230,476" fill="none" stroke="#168A79" stroke-width="2.7" stroke-linejoin="round"/>
+<polyline points="1300,537 1300,560 345,560 345,682" fill="none" stroke="#168A79" stroke-width="3" stroke-linejoin="round" marker-end="url(#arr-teal)"/>
+<polyline points="438,834 650,834" fill="none" stroke="#3476CB" stroke-width="4" stroke-linejoin="round" marker-end="url(#arr-blue)"/>
+<polyline points="390,682 390,658 2040,658 2040,703" fill="none" stroke="#3476CB" stroke-width="3" stroke-linejoin="round" marker-end="url(#arr-blue)"/>
+<polyline points="863.5,716 772.75,774" fill="none" stroke="#168A79" stroke-width="2.7" stroke-linejoin="round"/>
+<polyline points="772.75,774 727.375,902" fill="none" stroke="#168A79" stroke-width="2.7" stroke-linejoin="round"/>
+<polyline points="772.75,774 818.125,902" fill="none" stroke="#168A79" stroke-width="2.7" stroke-linejoin="round"/>
+<polyline points="863.5,716 954.25,774" fill="none" stroke="#168A79" stroke-width="2.7" stroke-linejoin="round"/>
+<polyline points="954.25,774 908.875,902" fill="none" stroke="#168A79" stroke-width="2.7" stroke-linejoin="round"/>
+<polyline points="954.25,774 999.625,902" fill="none" stroke="#168A79" stroke-width="2.7" stroke-linejoin="round"/>
+<polyline points="1051,822 1165,822" fill="none" stroke="#DC8426" stroke-width="5" stroke-linejoin="round" marker-end="url(#arr-orange)"/>
+<polyline points="1398.2857142857142,700 1269.7142857142858,749" fill="none" stroke="#168A79" stroke-width="2.7" stroke-linejoin="round"/>
+<polyline points="1269.7142857142858,749 1218.2857142857142,902" fill="none" stroke="#168A79" stroke-width="2.7" stroke-linejoin="round"/>
+<polyline points="1269.7142857142858,749 1321.142857142857,798" fill="none" stroke="#168A79" stroke-width="2.7" stroke-linejoin="round"/>
+<polyline points="1321.142857142857,798 1286.857142857143,902" fill="none" stroke="#168A79" stroke-width="2.7" stroke-linejoin="round"/>
+<polyline points="1321.142857142857,798 1355.4285714285713,902" fill="none" stroke="#168A79" stroke-width="2.7" stroke-linejoin="round"/>
+<polyline points="1398.2857142857142,700 1526.857142857143,749" fill="none" stroke="#168A79" stroke-width="2.7" stroke-linejoin="round"/>
+<polyline points="1526.857142857143,749 1458.2857142857142,798" fill="none" stroke="#168A79" stroke-width="2.7" stroke-linejoin="round"/>
+<polyline points="1458.2857142857142,798 1424,902" fill="none" stroke="#168A79" stroke-width="2.7" stroke-linejoin="round"/>
+<polyline points="1458.2857142857142,798 1492.5714285714284,902" fill="none" stroke="#168A79" stroke-width="2.7" stroke-linejoin="round"/>
+<polyline points="1526.857142857143,749 1595.4285714285716,798" fill="none" stroke="#168A79" stroke-width="2.7" stroke-linejoin="round"/>
+<polyline points="1595.4285714285716,798 1561.142857142857,902" fill="none" stroke="#168A79" stroke-width="2.7" stroke-linejoin="round"/>
+<polyline points="1595.4285714285716,798 1629.7142857142858,902" fill="none" stroke="#168A79" stroke-width="2.7" stroke-linejoin="round"/>
+<polyline points="2029.892857142857,710 1911.5,756" fill="none" stroke="#329B5B" stroke-width="2.7" stroke-linejoin="round"/>
+<polyline points="1911.5,756 1856.8571428571427,802" fill="none" stroke="#329B5B" stroke-width="2.7" stroke-linejoin="round"/>
+<polyline points="1856.8571428571427,802 1820.4285714285713,902" fill="none" stroke="#329B5B" stroke-width="2.7" stroke-linejoin="round"/>
+<polyline points="1856.8571428571427,802 1893.2857142857142,902" fill="none" stroke="#329B5B" stroke-width="2.7" stroke-linejoin="round"/>
+<polyline points="1911.5,756 1966.142857142857,902" fill="none" stroke="#329B5B" stroke-width="2.7" stroke-linejoin="round"/>
+<polyline points="2029.892857142857,710 2148.285714285714,756" fill="none" stroke="#329B5B" stroke-width="2.7" stroke-linejoin="round"/>
+<polyline points="2148.285714285714,756 2075.4285714285716,802" fill="none" stroke="#329B5B" stroke-width="2.7" stroke-linejoin="round"/>
+<polyline points="2075.4285714285716,802 2039,902" fill="none" stroke="#329B5B" stroke-width="2.7" stroke-linejoin="round"/>
+<polyline points="2075.4285714285716,802 2111.8571428571427,902" fill="none" stroke="#329B5B" stroke-width="2.7" stroke-linejoin="round"/>
+<polyline points="2148.285714285714,756 2221.142857142857,802" fill="none" stroke="#329B5B" stroke-width="2.7" stroke-linejoin="round"/>
+<polyline points="2221.142857142857,802 2184.714285714286,902" fill="none" stroke="#329B5B" stroke-width="2.7" stroke-linejoin="round"/>
+<polyline points="2221.142857142857,802 2257.5714285714284,902" fill="none" stroke="#329B5B" stroke-width="2.7" stroke-linejoin="round"/>
+<polyline points="783,1084 1684,1084" fill="none" stroke="#168A79" stroke-width="2" stroke-linejoin="round" stroke-dasharray="7 5"/>
+<polyline points="202,1331 148,1371" fill="none" stroke="#D95874" stroke-width="2.7" stroke-linejoin="round"/>
+<polyline points="148,1371 121,1488" fill="none" stroke="#D95874" stroke-width="2.7" stroke-linejoin="round"/>
+<polyline points="148,1371 175,1488" fill="none" stroke="#D95874" stroke-width="2.7" stroke-linejoin="round"/>
+<polyline points="202,1331 256,1371" fill="none" stroke="#D95874" stroke-width="2.7" stroke-linejoin="round"/>
+<polyline points="256,1371 229,1488" fill="none" stroke="#D95874" stroke-width="2.7" stroke-linejoin="round"/>
+<polyline points="256,1371 283,1488" fill="none" stroke="#D95874" stroke-width="2.7" stroke-linejoin="round"/>
+<polyline points="451.6666666666667,1331 396.6666666666667,1488" fill="none" stroke="#D95874" stroke-width="2.7" stroke-linejoin="round"/>
+<polyline points="451.6666666666667,1331 506.6666666666667,1371" fill="none" stroke="#D95874" stroke-width="2.7" stroke-linejoin="round"/>
+<polyline points="506.6666666666667,1371 470,1488" fill="none" stroke="#D95874" stroke-width="2.7" stroke-linejoin="round"/>
+<polyline points="506.6666666666667,1371 543.3333333333334,1488" fill="none" stroke="#D95874" stroke-width="2.7" stroke-linejoin="round"/>
+<polyline points="758,1331 703,1371" fill="none" stroke="#329B5B" stroke-width="2.7" stroke-linejoin="round"/>
+<polyline points="703,1371 675.5,1488" fill="none" stroke="#329B5B" stroke-width="2.7" stroke-linejoin="round"/>
+<polyline points="703,1371 730.5,1488" fill="none" stroke="#329B5B" stroke-width="2.7" stroke-linejoin="round"/>
+<polyline points="758,1331 813,1371" fill="none" stroke="#329B5B" stroke-width="2.7" stroke-linejoin="round"/>
+<polyline points="813,1371 785.5,1488" fill="none" stroke="#329B5B" stroke-width="2.7" stroke-linejoin="round"/>
+<polyline points="813,1371 840.5,1488" fill="none" stroke="#329B5B" stroke-width="2.7" stroke-linejoin="round"/>
+<polyline points="914,1421 1105,1421" fill="none" stroke="#D95874" stroke-width="5" stroke-linejoin="round" marker-end="url(#arr-rose)"/>
+<polyline points="1439,1421 1727,1421" fill="none" stroke="#329B5B" stroke-width="5" stroke-linejoin="round" marker-end="url(#arr-green)"/>
+<polyline points="83,495 54,495 54,1647 1150,1647 1150,1560" fill="none" stroke="#DC8426" stroke-width="3" stroke-linejoin="round" stroke-dasharray="7 5" marker-end="url(#arr-orange)"/>
+<polyline points="2009.4642857142856,1331 1856.7857142857142,1373" fill="none" stroke="#329B5B" stroke-width="2.7" stroke-linejoin="round"/>
+<polyline points="1856.7857142857142,1373 1795.7142857142858,1515" fill="none" stroke="#329B5B" stroke-width="2.7" stroke-linejoin="round"/>
+<polyline points="1856.7857142857142,1373 1917.857142857143,1415" fill="none" stroke="#329B5B" stroke-width="2.7" stroke-linejoin="round"/>
+<polyline points="1917.857142857143,1415 1877.142857142857,1515" fill="none" stroke="#329B5B" stroke-width="2.7" stroke-linejoin="round"/>
+<polyline points="1917.857142857143,1415 1958.5714285714287,1515" fill="none" stroke="#329B5B" stroke-width="2.7" stroke-linejoin="round"/>
+<polyline points="2009.4642857142856,1331 2162.142857142857,1373" fill="none" stroke="#329B5B" stroke-width="2.7" stroke-linejoin="round"/>
+<polyline points="2162.142857142857,1373 2080.714285714286,1415" fill="none" stroke="#329B5B" stroke-width="2.7" stroke-linejoin="round"/>
+<polyline points="2080.714285714286,1415 2040,1515" fill="none" stroke="#329B5B" stroke-width="2.7" stroke-linejoin="round"/>
+<polyline points="2080.714285714286,1415 2121.4285714285716,1515" fill="none" stroke="#329B5B" stroke-width="2.7" stroke-linejoin="round"/>
+<polyline points="2162.142857142857,1373 2243.5714285714284,1415" fill="none" stroke="#329B5B" stroke-width="2.7" stroke-linejoin="round"/>
+<polyline points="2243.5714285714284,1415 2202.8571428571427,1515" fill="none" stroke="#329B5B" stroke-width="2.7" stroke-linejoin="round"/>
+<polyline points="2243.5714285714284,1415 2284.285714285714,1515" fill="none" stroke="#329B5B" stroke-width="2.7" stroke-linejoin="round"/>
+<polyline points="60,1689 2340,1689" fill="none" stroke="#D8E2EC" stroke-width="2" stroke-linejoin="round"/>
+<ellipse cx="81" cy="168" rx="21" ry="21" fill="#8150AD" stroke="#8150AD" stroke-width="1"/>
+<polygon points="115.75,418.5 100.75,447.5 130.75,447.5" fill="#E1F6F1" stroke="#168A79" stroke-width="1.6"/>
+<polygon points="191.25,418.5 176.25,447.5 206.25,447.5" fill="#E1F6F1" stroke="#168A79" stroke-width="1.6"/>
+<polygon points="266.75,418.5 251.75,447.5 281.75,447.5" fill="#FBE5EA" stroke="#D95874" stroke-width="1.6"/>
+<ellipse cx="229" cy="353" rx="12" ry="12" fill="#F2E9FA" stroke="#8150AD" stroke-width="2"/>
+<ellipse cx="172.375" cy="303" rx="12" ry="12" fill="#F2E9FA" stroke="#8150AD" stroke-width="2"/>
+<polygon points="342.25,418.5 327.25,447.5 357.25,447.5" fill="#E1F6F1" stroke="#168A79" stroke-width="1.6"/>
+<ellipse cx="257.3125" cy="253" rx="12" ry="12" fill="#E8F2FF" stroke="#3476CB" stroke-width="2"/>
+<polygon points="472,418.5 457,447.5 487,447.5" fill="#E1F6F1" stroke="#168A79" stroke-width="1.6"/>
+<polygon points="528,418.5 513,447.5 543,447.5" fill="#E1F6F1" stroke="#168A79" stroke-width="1.6"/>
+<ellipse cx="500" cy="319" rx="12" ry="12" fill="#F2E9FA" stroke="#8150AD" stroke-width="2"/>
+<polygon points="584,418.5 569,447.5 599,447.5" fill="#E1F6F1" stroke="#168A79" stroke-width="1.6"/>
+<ellipse cx="542" cy="267" rx="12" ry="12" fill="#E8F2FF" stroke="#3476CB" stroke-width="2"/>
+<polygon points="688.1666666666666,418.5 673.1666666666666,447.5 703.1666666666666,447.5" fill="#E1F6F1" stroke="#168A79" stroke-width="1.6"/>
+<polygon points="744.5,418.5 729.5,447.5 759.5,447.5" fill="#E1F6F1" stroke="#168A79" stroke-width="1.6"/>
+<ellipse cx="716.3333333333333" cy="319" rx="12" ry="12" fill="#F2E9FA" stroke="#8150AD" stroke-width="2"/>
+<polygon points="800.8333333333334,418.5 785.8333333333334,447.5 815.8333333333334,447.5" fill="#E1F6F1" stroke="#168A79" stroke-width="1.6"/>
+<ellipse cx="758.5833333333333" cy="267" rx="12" ry="12" fill="#E8F2FF" stroke="#3476CB" stroke-width="2"/>
+<ellipse cx="970.5" cy="369.5" rx="66.5" ry="66.5" fill="#FFF1DA" stroke="#DC8426" stroke-width="3"/>
+<polygon points="1207.5,418.5 1192.5,447.5 1222.5,447.5" fill="#E1F6F1" stroke="#168A79" stroke-width="1.6"/>
+<ellipse cx="1282.5" cy="433" rx="7" ry="7" fill="#FFFFFF" stroke="#168A79" stroke-width="2"/>
+<ellipse cx="1245" cy="317" rx="12" ry="12" fill="#E7F7EA" stroke="#168A79" stroke-width="2"/>
+<ellipse cx="1357.5" cy="433" rx="7" ry="7" fill="#FFFFFF" stroke="#168A79" stroke-width="2"/>
+<ellipse cx="1301.25" cy="267" rx="12" ry="12" fill="#E8F2FF" stroke="#3476CB" stroke-width="2"/>
+<ellipse cx="1480" cy="433" rx="7" ry="7" fill="#FFFFFF" stroke="#168A79" stroke-width="2"/>
+<ellipse cx="1540" cy="433" rx="7" ry="7" fill="#FFFFFF" stroke="#168A79" stroke-width="2"/>
+<ellipse cx="1510" cy="317" rx="12" ry="12" fill="#E7F7EA" stroke="#168A79" stroke-width="2"/>
+<ellipse cx="1600" cy="433" rx="7" ry="7" fill="#FFFFFF" stroke="#168A79" stroke-width="2"/>
+<ellipse cx="1660" cy="433" rx="7" ry="7" fill="#FFFFFF" stroke="#168A79" stroke-width="2"/>
+<ellipse cx="1630" cy="317" rx="12" ry="12" fill="#E7F7EA" stroke="#168A79" stroke-width="2"/>
+<ellipse cx="1570" cy="267" rx="12" ry="12" fill="#E8F2FF" stroke="#3476CB" stroke-width="2"/>
+<ellipse cx="1767" cy="433" rx="7" ry="7" fill="#FFFFFF" stroke="#168A79" stroke-width="2"/>
+<ellipse cx="1827" cy="433" rx="7" ry="7" fill="#FFFFFF" stroke="#168A79" stroke-width="2"/>
+<ellipse cx="1797" cy="317" rx="12" ry="12" fill="#E7F7EA" stroke="#168A79" stroke-width="2"/>
+<ellipse cx="1887" cy="433" rx="7" ry="7" fill="#FFFFFF" stroke="#168A79" stroke-width="2"/>
+<ellipse cx="1947" cy="433" rx="7" ry="7" fill="#FFFFFF" stroke="#168A79" stroke-width="2"/>
+<ellipse cx="1917" cy="317" rx="12" ry="12" fill="#E7F7EA" stroke="#168A79" stroke-width="2"/>
+<ellipse cx="1857" cy="267" rx="12" ry="12" fill="#E8F2FF" stroke="#3476CB" stroke-width="2"/>
+<polygon points="2102,375.5 2087,404.5 2117,404.5" fill="#E1F6F1" stroke="#168A79" stroke-width="1.6"/>
+<polygon points="2230,375.5 2215,404.5 2245,404.5" fill="#E1F6F1" stroke="#168A79" stroke-width="1.6"/>
+<ellipse cx="2166" cy="264" rx="12" ry="12" fill="#E7F7EA" stroke="#168A79" stroke-width="2"/>
+<polygon points="2102,461.5 2087,490.5 2117,490.5" fill="#E1F6F1" stroke="#168A79" stroke-width="1.6"/>
+<polygon points="2230,461.5 2215,490.5 2245,490.5" fill="#E1F6F1" stroke="#168A79" stroke-width="1.6"/>
+<ellipse cx="2166" cy="444" rx="12" ry="12" fill="#E7F7EA" stroke="#168A79" stroke-width="2"/>
+<ellipse cx="81" cy="599" rx="21" ry="21" fill="#3476CB" stroke="#3476CB" stroke-width="1"/>
+<rect x="140" y="696" width="38" height="38" rx="5" fill="#2f6cc8" stroke="#FFFFFF" stroke-width="1"/>
+<rect x="180" y="696" width="38" height="38" rx="5" fill="#759fdd" stroke="#FFFFFF" stroke-width="1"/>
+<rect x="220" y="696" width="38" height="38" rx="5" fill="#a1bfea" stroke="#FFFFFF" stroke-width="1"/>
+<rect x="260" y="696" width="38" height="38" rx="5" fill="#a7c3ec" stroke="#FFFFFF" stroke-width="1"/>
+<rect x="300" y="696" width="38" height="38" rx="5" fill="#9cbbe8" stroke="#FFFFFF" stroke-width="1"/>
+<rect x="340" y="696" width="38" height="38" rx="5" fill="#b2cbef" stroke="#FFFFFF" stroke-width="1"/>
+<rect x="380" y="696" width="38" height="38" rx="5" fill="#b0caef" stroke="#FFFFFF" stroke-width="1"/>
+<rect x="140" y="736" width="38" height="38" rx="5" fill="#759fdd" stroke="#FFFFFF" stroke-width="1"/>
+<rect x="180" y="736" width="38" height="38" rx="5" fill="#2f6cc8" stroke="#FFFFFF" stroke-width="1"/>
+<rect x="220" y="736" width="38" height="38" rx="5" fill="#92b4e6" stroke="#FFFFFF" stroke-width="1"/>
+<rect x="260" y="736" width="38" height="38" rx="5" fill="#aac6ed" stroke="#FFFFFF" stroke-width="1"/>
+<rect x="300" y="736" width="38" height="38" rx="5" fill="#5084d2" stroke="#FFFFFF" stroke-width="1"/>
+<rect x="340" y="736" width="38" height="38" rx="5" fill="#a7c3ec" stroke="#FFFFFF" stroke-width="1"/>
+<rect x="380" y="736" width="38" height="38" rx="5" fill="#a5c2eb" stroke="#FFFFFF" stroke-width="1"/>
+<rect x="140" y="776" width="38" height="38" rx="5" fill="#a1bfea" stroke="#FFFFFF" stroke-width="1"/>
+<rect x="180" y="776" width="38" height="38" rx="5" fill="#92b4e6" stroke="#FFFFFF" stroke-width="1"/>
+<rect x="220" y="776" width="38" height="38" rx="5" fill="#2f6cc8" stroke="#FFFFFF" stroke-width="1"/>
+<rect x="260" y="776" width="38" height="38" rx="5" fill="#89aee3" stroke="#FFFFFF" stroke-width="1"/>
+<rect x="300" y="776" width="38" height="38" rx="5" fill="#9dbce9" stroke="#FFFFFF" stroke-width="1"/>
+<rect x="340" y="776" width="38" height="38" rx="5" fill="#598bd5" stroke="#FFFFFF" stroke-width="1"/>
+<rect x="380" y="776" width="38" height="38" rx="5" fill="#94b6e6" stroke="#FFFFFF" stroke-width="1"/>
+<rect x="140" y="816" width="38" height="38" rx="5" fill="#a7c3ec" stroke="#FFFFFF" stroke-width="1"/>
+<rect x="180" y="816" width="38" height="38" rx="5" fill="#aac6ed" stroke="#FFFFFF" stroke-width="1"/>
+<rect x="220" y="816" width="38" height="38" rx="5" fill="#89aee3" stroke="#FFFFFF" stroke-width="1"/>
+<rect x="260" y="816" width="38" height="38" rx="5" fill="#2f6cc8" stroke="#FFFFFF" stroke-width="1"/>
+<rect x="300" y="816" width="38" height="38" rx="5" fill="#aec8ee" stroke="#FFFFFF" stroke-width="1"/>
+<rect x="340" y="816" width="38" height="38" rx="5" fill="#9abae8" stroke="#FFFFFF" stroke-width="1"/>
+<rect x="380" y="816" width="38" height="38" rx="5" fill="#6190d7" stroke="#FFFFFF" stroke-width="1"/>
+<rect x="140" y="856" width="38" height="38" rx="5" fill="#9cbbe8" stroke="#FFFFFF" stroke-width="1"/>
+<rect x="180" y="856" width="38" height="38" rx="5" fill="#5084d2" stroke="#FFFFFF" stroke-width="1"/>
+<rect x="220" y="856" width="38" height="38" rx="5" fill="#9dbce9" stroke="#FFFFFF" stroke-width="1"/>
+<rect x="260" y="856" width="38" height="38" rx="5" fill="#aec8ee" stroke="#FFFFFF" stroke-width="1"/>
+<rect x="300" y="856" width="38" height="38" rx="5" fill="#2f6cc8" stroke="#FFFFFF" stroke-width="1"/>
+<rect x="340" y="856" width="38" height="38" rx="5" fill="#9fbeea" stroke="#FFFFFF" stroke-width="1"/>
+<rect x="380" y="856" width="38" height="38" rx="5" fill="#b0caef" stroke="#FFFFFF" stroke-width="1"/>
+<rect x="140" y="896" width="38" height="38" rx="5" fill="#b2cbef" stroke="#FFFFFF" stroke-width="1"/>
+<rect x="180" y="896" width="38" height="38" rx="5" fill="#a7c3ec" stroke="#FFFFFF" stroke-width="1"/>
+<rect x="220" y="896" width="38" height="38" rx="5" fill="#598bd5" stroke="#FFFFFF" stroke-width="1"/>
+<rect x="260" y="896" width="38" height="38" rx="5" fill="#9abae8" stroke="#FFFFFF" stroke-width="1"/>
+<rect x="300" y="896" width="38" height="38" rx="5" fill="#9fbeea" stroke="#FFFFFF" stroke-width="1"/>
+<rect x="340" y="896" width="38" height="38" rx="5" fill="#2f6cc8" stroke="#FFFFFF" stroke-width="1"/>
+<rect x="380" y="896" width="38" height="38" rx="5" fill="#8fb2e5" stroke="#FFFFFF" stroke-width="1"/>
+<rect x="140" y="936" width="38" height="38" rx="5" fill="#b0caef" stroke="#FFFFFF" stroke-width="1"/>
+<rect x="180" y="936" width="38" height="38" rx="5" fill="#a5c2eb" stroke="#FFFFFF" stroke-width="1"/>
+<rect x="220" y="936" width="38" height="38" rx="5" fill="#94b6e6" stroke="#FFFFFF" stroke-width="1"/>
+<rect x="260" y="936" width="38" height="38" rx="5" fill="#6190d7" stroke="#FFFFFF" stroke-width="1"/>
+<rect x="300" y="936" width="38" height="38" rx="5" fill="#b0caef" stroke="#FFFFFF" stroke-width="1"/>
+<rect x="340" y="936" width="38" height="38" rx="5" fill="#8fb2e5" stroke="#FFFFFF" stroke-width="1"/>
+<rect x="380" y="936" width="38" height="38" rx="5" fill="#2f6cc8" stroke="#FFFFFF" stroke-width="1"/>
+<ellipse cx="727.375" cy="902" rx="7" ry="7" fill="#FFFFFF" stroke="#168A79" stroke-width="2"/>
+<ellipse cx="818.125" cy="902" rx="7" ry="7" fill="#FFFFFF" stroke="#168A79" stroke-width="2"/>
+<ellipse cx="772.75" cy="774" rx="12" ry="12" fill="#E7F7EA" stroke="#168A79" stroke-width="2"/>
+<ellipse cx="908.875" cy="902" rx="7" ry="7" fill="#FFFFFF" stroke="#168A79" stroke-width="2"/>
+<ellipse cx="999.625" cy="902" rx="7" ry="7" fill="#FFFFFF" stroke="#168A79" stroke-width="2"/>
+<ellipse cx="954.25" cy="774" rx="12" ry="12" fill="#E7F7EA" stroke="#168A79" stroke-width="2"/>
+<ellipse cx="863.5" cy="716" rx="12" ry="12" fill="#E7F7EA" stroke="#168A79" stroke-width="2"/>
+<ellipse cx="1218.2857142857142" cy="902" rx="7" ry="7" fill="#FFFFFF" stroke="#168A79" stroke-width="2"/>
+<ellipse cx="1286.857142857143" cy="902" rx="7" ry="7" fill="#FFFFFF" stroke="#168A79" stroke-width="2"/>
+<ellipse cx="1355.4285714285713" cy="902" rx="7" ry="7" fill="#FFF1DA" stroke="#DC8426" stroke-width="2"/>
+<ellipse cx="1321.142857142857" cy="798" rx="12" ry="12" fill="#E7F7EA" stroke="#168A79" stroke-width="2"/>
+<ellipse cx="1269.7142857142858" cy="749" rx="12" ry="12" fill="#E7F7EA" stroke="#168A79" stroke-width="2"/>
+<ellipse cx="1424" cy="902" rx="7" ry="7" fill="#FFFFFF" stroke="#168A79" stroke-width="2"/>
+<ellipse cx="1492.5714285714284" cy="902" rx="7" ry="7" fill="#FFF1DA" stroke="#DC8426" stroke-width="2"/>
+<ellipse cx="1458.2857142857142" cy="798" rx="12" ry="12" fill="#E7F7EA" stroke="#168A79" stroke-width="2"/>
+<ellipse cx="1561.142857142857" cy="902" rx="7" ry="7" fill="#FFFFFF" stroke="#168A79" stroke-width="2"/>
+<ellipse cx="1629.7142857142858" cy="902" rx="7" ry="7" fill="#FFF1DA" stroke="#DC8426" stroke-width="2"/>
+<ellipse cx="1595.4285714285716" cy="798" rx="12" ry="12" fill="#E7F7EA" stroke="#168A79" stroke-width="2"/>
+<ellipse cx="1526.857142857143" cy="749" rx="12" ry="12" fill="#E7F7EA" stroke="#168A79" stroke-width="2"/>
+<ellipse cx="1398.2857142857142" cy="700" rx="12" ry="12" fill="#E7F7EA" stroke="#168A79" stroke-width="2"/>
+<ellipse cx="1820.4285714285713" cy="902" rx="7" ry="7" fill="#FFFFFF" stroke="#168A79" stroke-width="2"/>
+<ellipse cx="1893.2857142857142" cy="902" rx="7" ry="7" fill="#FFFFFF" stroke="#168A79" stroke-width="2"/>
+<ellipse cx="1856.8571428571427" cy="802" rx="12" ry="12" fill="#E7F7EA" stroke="#329B5B" stroke-width="2"/>
+<ellipse cx="1966.142857142857" cy="902" rx="7" ry="7" fill="#FFFFFF" stroke="#168A79" stroke-width="2"/>
+<ellipse cx="1911.5" cy="756" rx="12" ry="12" fill="#E7F7EA" stroke="#329B5B" stroke-width="2"/>
+<ellipse cx="2039" cy="902" rx="7" ry="7" fill="#FFFFFF" stroke="#168A79" stroke-width="2"/>
+<ellipse cx="2111.8571428571427" cy="902" rx="7" ry="7" fill="#FFFFFF" stroke="#168A79" stroke-width="2"/>
+<ellipse cx="2075.4285714285716" cy="802" rx="12" ry="12" fill="#E7F7EA" stroke="#329B5B" stroke-width="2"/>
+<ellipse cx="2184.714285714286" cy="902" rx="7" ry="7" fill="#FFFFFF" stroke="#168A79" stroke-width="2"/>
+<ellipse cx="2257.5714285714284" cy="902" rx="7" ry="7" fill="#FFFFFF" stroke="#168A79" stroke-width="2"/>
+<ellipse cx="2221.142857142857" cy="802" rx="12" ry="12" fill="#E7F7EA" stroke="#329B5B" stroke-width="2"/>
+<ellipse cx="2148.285714285714" cy="756" rx="12" ry="12" fill="#E7F7EA" stroke="#329B5B" stroke-width="2"/>
+<ellipse cx="2029.892857142857" cy="710" rx="12" ry="12" fill="#E7F7EA" stroke="#329B5B" stroke-width="2"/>
+<ellipse cx="772" cy="1083" rx="40" ry="40" fill="#E1F6F1" stroke="#168A79" stroke-width="2"/>
+<ellipse cx="81" cy="1239" rx="21" ry="21" fill="#D95874" stroke="#D95874" stroke-width="1"/>
+<ellipse cx="121" cy="1488" rx="7" ry="7" fill="#FFFFFF" stroke="#168A79" stroke-width="2"/>
+<ellipse cx="175" cy="1488" rx="7" ry="7" fill="#FFFFFF" stroke="#168A79" stroke-width="2"/>
+<ellipse cx="148" cy="1371" rx="12" ry="12" fill="#E7F7EA" stroke="#D95874" stroke-width="2"/>
+<ellipse cx="229" cy="1488" rx="7" ry="7" fill="#FFFFFF" stroke="#168A79" stroke-width="2"/>
+<ellipse cx="283" cy="1488" rx="7" ry="7" fill="#FFFFFF" stroke="#168A79" stroke-width="2"/>
+<ellipse cx="256" cy="1371" rx="12" ry="12" fill="#E7F7EA" stroke="#D95874" stroke-width="2"/>
+<ellipse cx="202" cy="1331" rx="12" ry="12" fill="#E7F7EA" stroke="#D95874" stroke-width="2"/>
+<polygon points="396.6666666666667,1473.5 381.6666666666667,1502.5 411.6666666666667,1502.5" fill="#FCE9ED" stroke="#D95874" stroke-width="1.6"/>
+<ellipse cx="470" cy="1488" rx="7" ry="7" fill="#FFFFFF" stroke="#168A79" stroke-width="2"/>
+<ellipse cx="543.3333333333334" cy="1488" rx="7" ry="7" fill="#FFFFFF" stroke="#168A79" stroke-width="2"/>
+<ellipse cx="506.6666666666667" cy="1371" rx="12" ry="12" fill="#E7F7EA" stroke="#D95874" stroke-width="2"/>
+<ellipse cx="451.6666666666667" cy="1331" rx="12" ry="12" fill="#E7F7EA" stroke="#D95874" stroke-width="2"/>
+<ellipse cx="675.5" cy="1488" rx="7" ry="7" fill="#FFFFFF" stroke="#168A79" stroke-width="2"/>
+<ellipse cx="730.5" cy="1488" rx="7" ry="7" fill="#FFFFFF" stroke="#168A79" stroke-width="2"/>
+<ellipse cx="703" cy="1371" rx="12" ry="12" fill="#E7F7EA" stroke="#329B5B" stroke-width="2"/>
+<ellipse cx="785.5" cy="1488" rx="7" ry="7" fill="#FFFFFF" stroke="#168A79" stroke-width="2"/>
+<ellipse cx="840.5" cy="1488" rx="7" ry="7" fill="#FFFFFF" stroke="#168A79" stroke-width="2"/>
+<ellipse cx="813" cy="1371" rx="12" ry="12" fill="#E7F7EA" stroke="#329B5B" stroke-width="2"/>
+<ellipse cx="758" cy="1331" rx="12" ry="12" fill="#E7F7EA" stroke="#329B5B" stroke-width="2"/>
+<ellipse cx="1273" cy="1482" rx="163" ry="163" fill="#18263F" stroke="#18263F" stroke-width="1"/>
+<ellipse cx="1795.7142857142858" cy="1515" rx="7" ry="7" fill="#FFFFFF" stroke="#168A79" stroke-width="2"/>
+<ellipse cx="1877.142857142857" cy="1515" rx="7" ry="7" fill="#FFFFFF" stroke="#168A79" stroke-width="2"/>
+<ellipse cx="1958.5714285714287" cy="1515" rx="7" ry="7" fill="#FFFFFF" stroke="#168A79" stroke-width="2"/>
+<ellipse cx="1917.857142857143" cy="1415" rx="12" ry="12" fill="#E7F7EA" stroke="#329B5B" stroke-width="2"/>
+<ellipse cx="1856.7857142857142" cy="1373" rx="12" ry="12" fill="#E7F7EA" stroke="#329B5B" stroke-width="2"/>
+<ellipse cx="2040" cy="1515" rx="7" ry="7" fill="#FFFFFF" stroke="#168A79" stroke-width="2"/>
+<ellipse cx="2121.4285714285716" cy="1515" rx="7" ry="7" fill="#FFFFFF" stroke="#168A79" stroke-width="2"/>
+<ellipse cx="2080.714285714286" cy="1415" rx="12" ry="12" fill="#E7F7EA" stroke="#329B5B" stroke-width="2"/>
+<ellipse cx="2202.8571428571427" cy="1515" rx="7" ry="7" fill="#FFFFFF" stroke="#168A79" stroke-width="2"/>
+<ellipse cx="2284.285714285714" cy="1515" rx="7" ry="7" fill="#FFFFFF" stroke="#168A79" stroke-width="2"/>
+<ellipse cx="2243.5714285714284" cy="1415" rx="12" ry="12" fill="#E7F7EA" stroke="#329B5B" stroke-width="2"/>
+<ellipse cx="2162.142857142857" cy="1373" rx="12" ry="12" fill="#E7F7EA" stroke="#329B5B" stroke-width="2"/>
+<ellipse cx="2009.4642857142856" cy="1331" rx="12" ry="12" fill="#E7F7EA" stroke="#329B5B" stroke-width="2"/>
+<text x="58" y="58.2" text-anchor="start" font-family="Arial,sans-serif" font-size="32" font-weight="700" fill="#FFFFFF">S4 SEARCH SPACE  •  TREES, DISCO CUTS, AND TRIPLET-GUIDED COMPLETION</text>
+<text x="60" y="100.3" text-anchor="start" font-family="Arial,sans-serif" font-size="18" font-weight="400" fill="#D8E4F2">Rooted tree structures drive search; only the original tagged multicopy genes provide the final triplet score.</text>
+<text x="81" y="175.7" text-anchor="middle" font-family="Arial,sans-serif" font-size="22" font-weight="700" fill="#FFFFFF">1</text>
+<text x="119" y="177.75" text-anchor="start" font-family="Arial,sans-serif" font-size="25" font-weight="700" fill="#18263F">GENE-TREE FOREST  →  DISCO COMPONENT FOREST</text>
+<text x="75" y="226" text-anchor="start" font-family="Arial,sans-serif" font-size="20" font-weight="700" fill="#8150AD">Original rooted/tagged multicopy families</text>
+<text x="1208" y="226" text-anchor="start" font-family="Arial,sans-serif" font-size="20" font-weight="700" fill="#168A79">Retained single-copy DISCO components (≥4 leaves)</text>
+<text x="115.75" y="463.45" text-anchor="middle" font-family="Arial,sans-serif" font-size="17" font-weight="700" fill="#168A79">L₇</text>
+<text x="191.25" y="463.45" text-anchor="middle" font-family="Arial,sans-serif" font-size="17" font-weight="700" fill="#168A79">R₄</text>
+<text x="266.75" y="463.45" text-anchor="middle" font-family="Arial,sans-serif" font-size="17" font-weight="700" fill="#D95874">Q₄</text>
+<text x="229" y="357.55" text-anchor="middle" font-family="Arial,sans-serif" font-size="13" font-weight="700" fill="#8150AD">D</text>
+<text x="172.375" y="307.55" text-anchor="middle" font-family="Arial,sans-serif" font-size="13" font-weight="700" fill="#8150AD">D</text>
+<text x="342.25" y="463.45" text-anchor="middle" font-family="Arial,sans-serif" font-size="17" font-weight="700" fill="#168A79">H,I</text>
+<text x="257.3125" y="257.55" text-anchor="middle" font-family="Arial,sans-serif" font-size="13" font-weight="700" fill="#3476CB">S</text>
+<text x="75" y="495.6" text-anchor="start" font-family="Arial,sans-serif" font-size="16" font-weight="700" fill="#DC8426">G1: D2 tie cuts Q₄; D1 tie cuts R₇</text>
+<text x="472" y="463.1" text-anchor="middle" font-family="Arial,sans-serif" font-size="16" font-weight="700" fill="#168A79">U₄</text>
+<text x="528" y="463.1" text-anchor="middle" font-family="Arial,sans-serif" font-size="16" font-weight="700" fill="#168A79">V₅</text>
+<text x="500" y="323.55" text-anchor="middle" font-family="Arial,sans-serif" font-size="13" font-weight="700" fill="#8150AD">D</text>
+<text x="584" y="463.1" text-anchor="middle" font-family="Arial,sans-serif" font-size="16" font-weight="700" fill="#168A79">Z₄</text>
+<text x="542" y="271.55" text-anchor="middle" font-family="Arial,sans-serif" font-size="13" font-weight="700" fill="#3476CB">S</text>
+<text x="529" y="495.25" text-anchor="middle" font-family="Arial,sans-serif" font-size="15" font-weight="700" fill="#8150AD">G2: another D cut</text>
+<text x="688.1666666666666" y="463.1" text-anchor="middle" font-family="Arial,sans-serif" font-size="16" font-weight="700" fill="#168A79">P₆</text>
+<text x="744.5" y="463.1" text-anchor="middle" font-family="Arial,sans-serif" font-size="16" font-weight="700" fill="#168A79">Q₄</text>
+<text x="716.3333333333333" y="323.55" text-anchor="middle" font-family="Arial,sans-serif" font-size="13" font-weight="700" fill="#8150AD">D</text>
+<text x="800.8333333333334" y="463.1" text-anchor="middle" font-family="Arial,sans-serif" font-size="16" font-weight="700" fill="#168A79">W₄</text>
+<text x="758.5833333333333" y="271.55" text-anchor="middle" font-family="Arial,sans-serif" font-size="13" font-weight="700" fill="#3476CB">S</text>
+<text x="745" y="495.25" text-anchor="middle" font-family="Arial,sans-serif" font-size="15" font-weight="700" fill="#8150AD">G3: another D cut</text>
+<text x="971" y="355.8" text-anchor="middle" font-family="Arial,sans-serif" font-size="48" font-weight="700" fill="#DC8426">✂</text>
+<text x="972.5" y="464.05" text-anchor="middle" font-family="Arial,sans-serif" font-size="23" font-weight="700" fill="#DC8426">DISCO</text>
+<text x="974.5" y="501.1" text-anchor="middle" font-family="Arial,sans-serif" font-size="16" font-weight="400" fill="#61748B">Cut smaller D child; tie → right</text>
+<text x="1207.5" y="462.75" text-anchor="middle" font-family="Arial,sans-serif" font-size="15" font-weight="700" fill="#168A79">L₇</text>
+<text x="1282.5" y="462.75" text-anchor="middle" font-family="Arial,sans-serif" font-size="15" font-weight="700" fill="#168A79">H</text>
+<text x="1357.5" y="462.75" text-anchor="middle" font-family="Arial,sans-serif" font-size="15" font-weight="700" fill="#168A79">I</text>
+<text x="1301.25" y="271.55" text-anchor="middle" font-family="Arial,sans-serif" font-size="13" font-weight="700" fill="#3476CB">S</text>
+<text x="1282.5" y="494.6" text-anchor="middle" font-family="Arial,sans-serif" font-size="16" font-weight="700" fill="#168A79">Croot: observed A–I</text>
+<text x="1480" y="463.1" text-anchor="middle" font-family="Arial,sans-serif" font-size="16" font-weight="700" fill="#168A79">A</text>
+<text x="1540" y="463.1" text-anchor="middle" font-family="Arial,sans-serif" font-size="16" font-weight="700" fill="#168A79">E</text>
+<text x="1600" y="463.1" text-anchor="middle" font-family="Arial,sans-serif" font-size="16" font-weight="700" fill="#168A79">F</text>
+<text x="1660" y="463.1" text-anchor="middle" font-family="Arial,sans-serif" font-size="16" font-weight="700" fill="#168A79">G</text>
+<text x="1570" y="271.55" text-anchor="middle" font-family="Arial,sans-serif" font-size="13" font-weight="700" fill="#3476CB">S</text>
+<text x="1570" y="494.6" text-anchor="middle" font-family="Arial,sans-serif" font-size="16" font-weight="700" fill="#168A79">CR: A,E,F,G</text>
+<text x="1767" y="463.1" text-anchor="middle" font-family="Arial,sans-serif" font-size="16" font-weight="700" fill="#168A79">A</text>
+<text x="1827" y="463.1" text-anchor="middle" font-family="Arial,sans-serif" font-size="16" font-weight="700" fill="#168A79">K</text>
+<text x="1887" y="463.1" text-anchor="middle" font-family="Arial,sans-serif" font-size="16" font-weight="700" fill="#168A79">L</text>
+<text x="1947" y="463.1" text-anchor="middle" font-family="Arial,sans-serif" font-size="16" font-weight="700" fill="#168A79">M</text>
+<text x="1857" y="271.55" text-anchor="middle" font-family="Arial,sans-serif" font-size="13" font-weight="700" fill="#3476CB">S</text>
+<text x="1857" y="494.6" text-anchor="middle" font-family="Arial,sans-serif" font-size="16" font-weight="700" fill="#168A79">CQ: A,K,L,M</text>
+<text x="2102" y="420.1" text-anchor="middle" font-family="Arial,sans-serif" font-size="16" font-weight="700" fill="#168A79">C₄</text>
+<text x="2230" y="420.1" text-anchor="middle" font-family="Arial,sans-serif" font-size="16" font-weight="700" fill="#168A79">C₅</text>
+<text x="2167.5" y="435.1" text-anchor="middle" font-family="Arial,sans-serif" font-size="16" font-weight="700" fill="#168A79">G2 → C₄, C₅, …</text>
+<text x="2102" y="505.75" text-anchor="middle" font-family="Arial,sans-serif" font-size="15" font-weight="700" fill="#168A79">C₆</text>
+<text x="2230" y="505.75" text-anchor="middle" font-family="Arial,sans-serif" font-size="15" font-weight="700" fill="#168A79">C₇</text>
+<text x="2167.5" y="527.6" text-anchor="middle" font-family="Arial,sans-serif" font-size="16" font-weight="700" fill="#168A79">G3 → C₆, C₇, …</text>
+<text x="81" y="606.7" text-anchor="middle" font-family="Arial,sans-serif" font-size="22" font-weight="700" fill="#FFFFFF">2</text>
+<text x="119" y="608.75" text-anchor="start" font-family="Arial,sans-serif" font-size="25" font-weight="700" fill="#18263F">ONE TRIPLET SIMILARITY MATRIX  →  TWO GUIDE CONSTRUCTIONS</text>
+<text x="75" y="661.85" text-anchor="start" font-family="Arial,sans-serif" font-size="21" font-weight="700" fill="#3476CB">M  from DISCO single-copy trees</text>
+<text x="160" y="675.95" text-anchor="middle" font-family="Arial,sans-serif" font-size="17" font-weight="700" fill="#3476CB">A</text>
+<text x="114" y="721.95" text-anchor="middle" font-family="Arial,sans-serif" font-size="17" font-weight="700" fill="#3476CB">A</text>
+<text x="200" y="675.95" text-anchor="middle" font-family="Arial,sans-serif" font-size="17" font-weight="700" fill="#3476CB">E</text>
+<text x="114" y="761.95" text-anchor="middle" font-family="Arial,sans-serif" font-size="17" font-weight="700" fill="#3476CB">E</text>
+<text x="240" y="675.95" text-anchor="middle" font-family="Arial,sans-serif" font-size="17" font-weight="700" fill="#3476CB">F</text>
+<text x="114" y="801.95" text-anchor="middle" font-family="Arial,sans-serif" font-size="17" font-weight="700" fill="#3476CB">F</text>
+<text x="280" y="675.95" text-anchor="middle" font-family="Arial,sans-serif" font-size="17" font-weight="700" fill="#3476CB">G</text>
+<text x="114" y="841.95" text-anchor="middle" font-family="Arial,sans-serif" font-size="17" font-weight="700" fill="#3476CB">G</text>
+<text x="320" y="675.95" text-anchor="middle" font-family="Arial,sans-serif" font-size="17" font-weight="700" fill="#3476CB">K</text>
+<text x="114" y="881.95" text-anchor="middle" font-family="Arial,sans-serif" font-size="17" font-weight="700" fill="#3476CB">K</text>
+<text x="360" y="675.95" text-anchor="middle" font-family="Arial,sans-serif" font-size="17" font-weight="700" fill="#3476CB">L</text>
+<text x="114" y="921.95" text-anchor="middle" font-family="Arial,sans-serif" font-size="17" font-weight="700" fill="#3476CB">L</text>
+<text x="400" y="675.95" text-anchor="middle" font-family="Arial,sans-serif" font-size="17" font-weight="700" fill="#3476CB">M</text>
+<text x="114" y="961.95" text-anchor="middle" font-family="Arial,sans-serif" font-size="17" font-weight="700" fill="#3476CB">M</text>
+<text x="159" y="719.9" text-anchor="middle" font-family="Arial,sans-serif" font-size="14" font-weight="700" fill="#FFFFFF">1</text>
+<text x="199" y="759.9" text-anchor="middle" font-family="Arial,sans-serif" font-size="14" font-weight="700" fill="#FFFFFF">1</text>
+<text x="239" y="799.9" text-anchor="middle" font-family="Arial,sans-serif" font-size="14" font-weight="700" fill="#FFFFFF">1</text>
+<text x="279" y="839.9" text-anchor="middle" font-family="Arial,sans-serif" font-size="14" font-weight="700" fill="#FFFFFF">1</text>
+<text x="319" y="879.9" text-anchor="middle" font-family="Arial,sans-serif" font-size="14" font-weight="700" fill="#FFFFFF">1</text>
+<text x="359" y="919.9" text-anchor="middle" font-family="Arial,sans-serif" font-size="14" font-weight="700" fill="#FFFFFF">1</text>
+<text x="399" y="959.9" text-anchor="middle" font-family="Arial,sans-serif" font-size="14" font-weight="700" fill="#FFFFFF">1</text>
+<text x="89" y="1021.45" text-anchor="start" font-family="Arial,sans-serif" font-size="17" font-weight="700" fill="#3476CB">M[a,b] = Σₜ(kₜ − |desc LCAₜ(a,b)|) / Σₜ(kₜ − 2)</text>
+<text x="89" y="1051.6" text-anchor="start" font-family="Arial,sans-serif" font-size="16" font-weight="400" fill="#61748B">Pair affinity only—NOT the GDL optimization score.</text>
+<text x="700" y="657.2" text-anchor="start" font-family="Arial,sans-serif" font-size="22" font-weight="700" fill="#168A79">Scoped completion of CR</text>
+<text x="1193" y="657.2" text-anchor="start" font-family="Arial,sans-serif" font-size="22" font-weight="700" fill="#168A79">After inserting eligible taxa</text>
+<text x="727.375" y="932.45" text-anchor="middle" font-family="Arial,sans-serif" font-size="17" font-weight="700" fill="#168A79">A</text>
+<text x="818.125" y="932.45" text-anchor="middle" font-family="Arial,sans-serif" font-size="17" font-weight="700" fill="#168A79">E</text>
+<text x="908.875" y="932.45" text-anchor="middle" font-family="Arial,sans-serif" font-size="17" font-weight="700" fill="#168A79">F</text>
+<text x="999.625" y="932.45" text-anchor="middle" font-family="Arial,sans-serif" font-size="17" font-weight="700" fill="#168A79">G</text>
+<text x="1218.2857142857142" y="932.1" text-anchor="middle" font-family="Arial,sans-serif" font-size="16" font-weight="700" fill="#168A79">A</text>
+<text x="1286.857142857143" y="932.1" text-anchor="middle" font-family="Arial,sans-serif" font-size="16" font-weight="700" fill="#168A79">E</text>
+<text x="1355.4285714285713" y="932.1" text-anchor="middle" font-family="Arial,sans-serif" font-size="16" font-weight="700" fill="#DC8426">K</text>
+<text x="1424" y="932.1" text-anchor="middle" font-family="Arial,sans-serif" font-size="16" font-weight="700" fill="#168A79">F</text>
+<text x="1492.5714285714284" y="932.1" text-anchor="middle" font-family="Arial,sans-serif" font-size="16" font-weight="700" fill="#DC8426">L</text>
+<text x="1561.142857142857" y="932.1" text-anchor="middle" font-family="Arial,sans-serif" font-size="16" font-weight="700" fill="#168A79">G</text>
+<text x="1629.7142857142858" y="932.1" text-anchor="middle" font-family="Arial,sans-serif" font-size="16" font-weight="700" fill="#DC8426">M</text>
+<text x="1234" y="979.1" text-anchor="start" font-family="Arial,sans-serif" font-size="16" font-weight="700" fill="#DC8426">K→E 0.82   •   L→F 0.77   •   M→G 0.73</text>
+<text x="1235" y="1005.75" text-anchor="start" font-family="Arial,sans-serif" font-size="15" font-weight="400" fill="#61748B">Anchor scores shown here are illustrative.</text>
+<text x="1774" y="657.2" text-anchor="start" font-family="Arial,sans-serif" font-size="22" font-weight="700" fill="#329B5B">Global UPGMA(M) guide</text>
+<text x="1820.4285714285713" y="932.45" text-anchor="middle" font-family="Arial,sans-serif" font-size="17" font-weight="700" fill="#168A79">A</text>
+<text x="1893.2857142857142" y="932.45" text-anchor="middle" font-family="Arial,sans-serif" font-size="17" font-weight="700" fill="#168A79">B</text>
+<text x="1966.142857142857" y="932.45" text-anchor="middle" font-family="Arial,sans-serif" font-size="17" font-weight="700" fill="#168A79">C</text>
+<text x="2039" y="932.45" text-anchor="middle" font-family="Arial,sans-serif" font-size="17" font-weight="700" fill="#168A79">D</text>
+<text x="2111.8571428571427" y="932.45" text-anchor="middle" font-family="Arial,sans-serif" font-size="17" font-weight="700" fill="#168A79">E</text>
+<text x="2184.714285714286" y="932.45" text-anchor="middle" font-family="Arial,sans-serif" font-size="17" font-weight="700" fill="#168A79">F</text>
+<text x="2257.5714285714284" y="932.45" text-anchor="middle" font-family="Arial,sans-serif" font-size="17" font-weight="700" fill="#168A79">G</text>
+<text x="2039" y="981.6" text-anchor="middle" font-family="Arial,sans-serif" font-size="16" font-weight="700" fill="#329B5B">One rooted guide across all species</text>
+<text x="772" y="1088.95" text-anchor="middle" font-family="Arial,sans-serif" font-size="17" font-weight="700" fill="#168A79">scope</text>
+<text x="834" y="1058.65" text-anchor="start" font-family="Arial,sans-serif" font-size="19" font-weight="700" fill="#168A79">CR pre-cut scope = {A,E,F,G,K,L,M}</text>
+<text x="834" y="1096.95" text-anchor="start" font-family="Arial,sans-serif" font-size="17" font-weight="400" fill="#26384E">Observed A,E,F,G  +  missing K,L,M  →  insert only K,L,M</text>
+<text x="834" y="1135.45" text-anchor="start" font-family="Arial,sans-serif" font-size="17" font-weight="700" fill="#D95874">B,C,D,H,I are outside this lineage—never inserted into CR.</text>
+<text x="82" y="1145.25" text-anchor="start" font-family="Arial,sans-serif" font-size="15" font-weight="400" fill="#61748B">G1 also yields Croot and CQ; each piece is single-copy.</text>
+<text x="81" y="1246.7" text-anchor="middle" font-family="Arial,sans-serif" font-size="22" font-weight="700" fill="#FFFFFF">3</text>
+<text x="119" y="1248.75" text-anchor="start" font-family="Arial,sans-serif" font-size="25" font-weight="700" fill="#18263F">ROOTED CANDIDATES  →  STELAR DP  →  SPECIES TREE</text>
+<text x="92" y="1306.55" text-anchor="start" font-family="Arial,sans-serif" font-size="23" font-weight="700" fill="#D95874">Candidate forest  X</text>
+<text x="121" y="1517.75" text-anchor="middle" font-family="Arial,sans-serif" font-size="15" font-weight="700" fill="#168A79">A</text>
+<text x="175" y="1517.75" text-anchor="middle" font-family="Arial,sans-serif" font-size="15" font-weight="700" fill="#168A79">E</text>
+<text x="229" y="1517.75" text-anchor="middle" font-family="Arial,sans-serif" font-size="15" font-weight="700" fill="#168A79">F</text>
+<text x="283" y="1517.75" text-anchor="middle" font-family="Arial,sans-serif" font-size="15" font-weight="700" fill="#168A79">G</text>
+<text x="208" y="1541.25" text-anchor="middle" font-family="Arial,sans-serif" font-size="15" font-weight="700" fill="#D95874">completed DISCO clade</text>
+<text x="396.6666666666667" y="1517.75" text-anchor="middle" font-family="Arial,sans-serif" font-size="15" font-weight="700" fill="#D95874">L₇</text>
+<text x="470" y="1517.75" text-anchor="middle" font-family="Arial,sans-serif" font-size="15" font-weight="700" fill="#168A79">H</text>
+<text x="543.3333333333334" y="1517.75" text-anchor="middle" font-family="Arial,sans-serif" font-size="15" font-weight="700" fill="#168A79">I</text>
+<text x="472" y="1541.25" text-anchor="middle" font-family="Arial,sans-serif" font-size="15" font-weight="700" fill="#D95874">partial root clade</text>
+<text x="675.5" y="1517.75" text-anchor="middle" font-family="Arial,sans-serif" font-size="15" font-weight="700" fill="#168A79">A</text>
+<text x="730.5" y="1517.75" text-anchor="middle" font-family="Arial,sans-serif" font-size="15" font-weight="700" fill="#168A79">B</text>
+<text x="785.5" y="1517.75" text-anchor="middle" font-family="Arial,sans-serif" font-size="15" font-weight="700" fill="#168A79">C</text>
+<text x="840.5" y="1517.75" text-anchor="middle" font-family="Arial,sans-serif" font-size="15" font-weight="700" fill="#168A79">D</text>
+<text x="763.5" y="1541.25" text-anchor="middle" font-family="Arial,sans-serif" font-size="15" font-weight="700" fill="#329B5B">UPGMA clade</text>
+<text x="83" y="1590.6" text-anchor="start" font-family="Arial,sans-serif" font-size="16" font-weight="400" fill="#61748B">Default S4: no S1 clades; local transitions only.</text>
+<text x="1273" y="1402.65" text-anchor="middle" font-family="Arial,sans-serif" font-size="29" font-weight="700" fill="#FFFFFF">STELAR</text>
+<text x="1273" y="1437.05" text-anchor="middle" font-family="Arial,sans-serif" font-size="23" font-weight="700" fill="#FFFFFF">rooted DP</text>
+<text x="1273" y="1479.95" text-anchor="middle" font-family="Arial,sans-serif" font-size="17" font-weight="400" fill="#DBE7F4">maximize triplet score</text>
+<text x="1380" y="1679.95" text-anchor="middle" font-family="Arial,sans-serif" font-size="17" font-weight="700" fill="#DC8426">Score evidence: ORIGINAL rooted/tagged gene families</text>
+<text x="1157" y="1552.6" text-anchor="start" font-family="Arial,sans-serif" font-size="16" font-weight="700" fill="#DC8426">S-rooted triplets only</text>
+<text x="1157" y="1580.6" text-anchor="start" font-family="Arial,sans-serif" font-size="16" font-weight="700" fill="#DC8426">same-root duplicates counted once</text>
+<text x="1157" y="1608.6" text-anchor="start" font-family="Arial,sans-serif" font-size="16" font-weight="700" fill="#DC8426">D-rooted triplets ignored</text>
+<text x="1737" y="1306.55" text-anchor="start" font-family="Arial,sans-serif" font-size="23" font-weight="700" fill="#329B5B">Estimated rooted species tree  T*</text>
+<text x="1795.7142857142858" y="1545.45" text-anchor="middle" font-family="Arial,sans-serif" font-size="17" font-weight="700" fill="#168A79">A</text>
+<text x="1877.142857142857" y="1545.45" text-anchor="middle" font-family="Arial,sans-serif" font-size="17" font-weight="700" fill="#168A79">B</text>
+<text x="1958.5714285714287" y="1545.45" text-anchor="middle" font-family="Arial,sans-serif" font-size="17" font-weight="700" fill="#168A79">C</text>
+<text x="2040" y="1545.45" text-anchor="middle" font-family="Arial,sans-serif" font-size="17" font-weight="700" fill="#168A79">D</text>
+<text x="2121.4285714285716" y="1545.45" text-anchor="middle" font-family="Arial,sans-serif" font-size="17" font-weight="700" fill="#168A79">E</text>
+<text x="2202.8571428571427" y="1545.45" text-anchor="middle" font-family="Arial,sans-serif" font-size="17" font-weight="700" fill="#168A79">F</text>
+<text x="2284.285714285714" y="1545.45" text-anchor="middle" font-family="Arial,sans-serif" font-size="17" font-weight="700" fill="#168A79">G</text>
+<text x="1780" y="1590.1" text-anchor="start" font-family="Arial,sans-serif" font-size="16" font-weight="400" fill="#61748B">The guides propose clades; original genes choose the winner.</text>
+<text x="75" y="1708.25" text-anchor="start" font-family="Arial,sans-serif" font-size="15" font-weight="400" fill="#61748B">S4 default: strict-lineage DISCO, triplet similarity, scoped completion, UPGMA, and rooted local DP.  Optional --exhaustive / --cross-tree-splits alter the search space.</text>
+</svg>

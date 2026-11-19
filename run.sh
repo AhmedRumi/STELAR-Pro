@@ -74,7 +74,7 @@ Optional:
                      S3 (global DISCO + S1 + greedy consensus) |
                      S4 (S2 candidates with rooted-triplet similarity) |
                      S5 (S2-backbone A-Pro guides + UPGMA; triplet DP) |
-                     S6 (S4-backbone triplet guides + UPGMA; triplet DP)
+                     S6 (subset-local duplication-scope triplet guides; triplet DP)
   --search-mode      local | full
   --cross-tree-splits     Enable cross-tree splits for S2/S4/S5/S6/S7 (default: off)
   --no-cross-tree-splits  Disable cross-tree splits
@@ -86,8 +86,8 @@ Optional:
   --s6-rounds N      Number of independent S6 greedy searches (default: 4)
   --s6-seed N        S6 greedy-search random seed
   --s6-no-upgma-candidate
-                     Keep UPGMA for S6 guides, omit it from final DP candidates
-  --subsetlocal      S6 only: subset-local similarity/completion; guides-only final DP
+                     Compatibility alias: S6 final DP uses guides only
+  --subsetlocal      Compatibility alias: S6 is subset-local by default
   --no-prune-search-space  Disable the DP-reachability weight prune (default: on)
   --threads, --num-threads, -t
                      Thread count

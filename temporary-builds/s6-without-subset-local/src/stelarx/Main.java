@@ -1,0 +1,1875 @@
+package stelarx;
+
+import stelarx.cluster.ClusterTable;
+import stelarx.completion.DistanceMatrix;
+import stelarx.completion.DistanceMatrixBuilder;
+import stelarx.completion.SimilarityMatrix;
+import stelarx.completion.SimilarityMatrixBuilder;
+import stelarx.completion.SortedRows;
+import stelarx.completion.SortedRowsBuilder;
+import stelarx.completion.TreeCompleter;
+import stelarx.completion.UPGMAClusterer;
+import stelarx.gpu.GPUDistanceMatrix;
+import stelarx.gpu.GPUSimilarityMatrix;
+import stelarx.dp.DPTable;
+import stelarx.dp.Inference;
+import stelarx.greedy.EmissionBridge;
+import stelarx.greedy.GreedyConsensus;
+import stelarx.greedy.GreedyConsensusVerifier;
+import stelarx.gpu.GPUDPBuilder;
+import stelarx.gpu.GPUWeightCalculator;
+import stelarx.partition.PartitionTable;
+import stelarx.pro.DiscoDecomposer;
+import stelarx.pro.AProGreedySearch;
+import stelarx.pro.S5OverallSearch;
+import stelarx.pro.S6GreedySearch;
+import stelarx.pro.S6DynamicTripletSupport;
+import stelarx.pro.S6ScoreSource;
+import stelarx.pro.S6S2BBGuideData;
+import stelarx.pro.GeneTreeRooterTagger;
+import stelarx.pro.GeneTreePolytomyResolver;
+import stelarx.pro.UniqueTaxonSubtreeHashes;
+import stelarx.pro.S2CandidateStreamer;
+import stelarx.pro.ScopedTreeCompleter;
+import stelarx.weight.WeightTable;
+import stelarx.hash.PrefixHashArrays;
+import stelarx.hash.TaxonHasher;
+import stelarx.taxon.TaxonRegistry;
+import stelarx.tree.Tree;
+import stelarx.tree.TreeParser;
+import stelarx.tree.TreeRestrictor;
+import stelarx.tree.TreeTaxa;
+import stelarx.util.Threading;
+
+import stelarx.cluster.Cluster;
+
+import java.io.FileOutputStream;
+import java.io.IOException;
+import java.io.PrintStream;
+import java.nio.file.Files;
+import java.nio.file.Path;
+import java.util.ArrayList;
+import java.util.Collections;
+import java.util.List;
+
+public class Main {
+    public static final String VERSION = Version.current();
+
+    public static void main(String[] args) {
+        FatalReporter.prepareCrashDirectory();
+        TerminalLog terminalLog;
+        try {
+            terminalLog = TerminalLog.installFromArgs(args);
+        } catch (TerminalLog.SetupException e) {
+            System.err.println("Error: " + e.getMessage());
+            System.exit(2);
+            return;
+        }
+        try {
+            run(args);
+        } catch (Throwable t) {
+            FatalReporter.report(t, args);
+            System.exit(1);
+        } finally {
+            if (terminalLog != null) terminalLog.close();
+        }
+    }
+
+    private static void run(String[] args) throws Exception {
+        Config cfg = Config.getInstance();
+        if (!parseArgs(args, cfg)) { printUsage(); System.exit(1); }
+        validatePathCollisions(cfg);
+
+        Logging.setLevel(cfg.getVerbosity());
+        if (cfg.isTagOnly()) {
+            requireRootingBackend(cfg);
+            System.out.println("STELAR-Pro tag-only: rooting and tagging gene trees...");
+            GeneTreeRooterTagger.Result result = GeneTreeRooterTagger.run(
+                cfg.getInputFile(), cfg.getOutputFile(),
+                cfg.getAstralProExecutable(), cfg.getGeneSpeciesMapFile());
+            System.out.printf("STELAR-Pro tag-only: wrote %d rooted/tagged gene tree(s) to %s%n",
+                result.treeCount(), result.output());
+            return;
+        }
+
+        if (cfg.isAnchorOutgroup()) {
+            throw new IllegalArgumentException(
+                "--anchor-outgroup is an unrooted optimization and is not valid in STELAR-Pro");
+        }
+        if (cfg.isExtractTaxa()) {
+            runTaxaExtraction(cfg);
+            return;
+        }
+        if (cfg.isExhaustiveDiscoCandidates()
+                && cfg.getSearchSpace() != Config.SearchSpace.S2
+                && cfg.getSearchSpace() != Config.SearchSpace.S4) {
+            throw new IllegalArgumentException(
+                "--exhaustive applies only to S2 and S4");
+        }
+        resolveComputeMode(cfg);
+        Banner.print(cfg);
+
+        if (cfg.isDiagnose()) {
+            RuntimeDiagnostics.print(cfg);
+            return;
+        }
+        validateCurrentProScope(cfg);
+        requireRootingBackend(cfg);
+
+        long t0 = System.nanoTime();
+        String finalTripletScore = null;
+        boolean analysisCompleted = false;
+        boolean inferenceInputHasPolytomy = false;
+        String unrootedInputFile = cfg.getInputFile();
+        Path automaticResolvedInput = null;
+        Path automaticTaggedInput = null;
+        S6ScoreSource s6Support = null;
+
+        try {
+            String preprocessingInput = unrootedInputFile;
+            if (!cfg.isScoreOnly()) {
+                automaticResolvedInput = Files.createTempFile(
+                    "stelar-pro-polytomy-resolved-", ".tre");
+                Logging.info("STELAR-Pro preprocessing: uniquifying copies and "
+                    + "resolving input polytomies");
+                GeneTreePolytomyResolver.Result resolution = GeneTreePolytomyResolver.run(
+                    unrootedInputFile, automaticResolvedInput.toString());
+                preprocessingInput = resolution.output().toString();
+                Logging.info("STELAR-Pro preprocessing: %d gene tree(s) resolved",
+                    resolution.treeCount());
+            }
+
+            automaticTaggedInput = Files.createTempFile("stelar-pro-rooted-tagged-", ".tre");
+            Logging.info("STELAR-Pro preprocessing: rooting and tagging input gene trees");
+            GeneTreeRooterTagger.Result preprocessing = GeneTreeRooterTagger.run(
+                preprocessingInput, automaticTaggedInput.toString(),
+                cfg.getAstralProExecutable(), cfg.getGeneSpeciesMapFile());
+            cfg.setInputFile(preprocessing.output().toString());
+            Logging.info("STELAR-Pro preprocessing: %d rooted/tagged gene tree(s) ready",
+                preprocessing.treeCount());
+
+            if (cfg.getGeneSpeciesMapFile() != null) {
+                throw new UnsupportedOperationException(
+                    "STELAR-Pro gene-copy mapping ingestion is the next implementation stage");
+            }
+
+            Threading.start(cfg.getThreadCount());
+            if (cfg.isScoreOnly() && cfg.getTaxaFile() != null) {
+                finalTripletScore = runTaxonRestrictedScoreOnly(cfg);
+                analysisCompleted = true;
+                return;
+            }
+
+            // ── Phase 1: Parse gene trees ─────────────────────────────────────
+            long t1 = PhaseLogger.begin("Phase 1  Parse gene trees", false);
+            TaxonRegistry registry;
+            List<Tree> trees;
+            if (cfg.getTaxaFile() == null) {
+                registry = new TaxonRegistry();
+                boolean keepPolytomy = cfg.isScoreOnly()
+                    || cfg.isKeepPolytomyDuringInference();
+                TreeParser.ParsedGeneTrees parsed = TreeParser.parseGeneTreesDetailed(
+                    cfg.getInputFile(), registry, keepPolytomy);
+                trees = parsed.trees();
+                inferenceInputHasPolytomy = parsed.detectedPolytomyNodeCount() > 0;
+            } else {
+                RestrictedInferenceInput restricted =
+                    parseTaxonRestrictedInferenceInput(cfg);
+                registry = restricted.registry();
+                trees = restricted.trees();
+                inferenceInputHasPolytomy = restricted.hasPolytomy();
+            }
+            PhaseLogger.end("Phase 1  Parse gene trees", t1, false);
+
+            if (cfg.isVerifyParse()) {
+                Phase1Verifier.dump(trees, registry, cfg.getOutputFile());
+                return;
+            }
+
+            // ── Phase 1b: Optional candidate-tree enrichment ─────────────────
+            // S2-S4 and S7 decompose multicopy trees with DISCO, complete those
+            // single-copy trees, and add a UPGMA guide. Only S3 adds greedy
+            // consensus candidates; S4 uses triplet similarity for its guide.
+            // S5 uses S2 backbones, A-Pro quartet placements, and UPGMA;
+            // S6 uses S4 backbones and triplet placements. Neither adds S1
+            // candidate clusters. S7 adds greedy trees to S2 proposals.
+            // S2/S4 now use only lineage-scoped DISCO and UPGMA proposals by
+            // default. --exhaustive restores their older S1 plus
+            // globally completed DISCO search; S3/S7 retain their own paths.
+            //
+            // IMPORTANT: originalTrees is saved before enrichment and is used for
+            // rooted-partition extraction (Phase 4) and weights (Phase 6). Candidate
+            // trees may contain completed or guide-tree relationships, but those
+            // artificial relationships never become scoring observations.
+            List<Tree> originalTrees = trees; // always points to pre-completion trees
+            AProGreedySearch.GuideMatrix s5GuideMatrix = null;
+            boolean strictLineageDisco =
+                (cfg.getSearchSpace() == Config.SearchSpace.S2
+                    || cfg.getSearchSpace() == Config.SearchSpace.S4)
+                && !cfg.isExhaustiveDiscoCandidates();
+            int greedyProposalCount = 0;
+            // Verification modes that inspect completed node graphs keep the
+            // materialized route; normal S2/S4 inference streams proposals.
+            boolean streamDiscoCandidates =
+                (cfg.getSearchSpace() == Config.SearchSpace.S2
+                    || cfg.getSearchSpace() == Config.SearchSpace.S4
+                    || cfg.getSearchSpace() == Config.SearchSpace.S7)
+                && !cfg.isScoreOnly() && !cfg.isVerifyHash()
+                && !cfg.isVerifyClusters() && !cfg.isVerifyDPSpace()
+                && !cfg.isVerifyGreedyConsensus() && !cfg.isConsensusExperimental()
+                && !cfg.isResolveInputGeneTreePolytomies();
+            List<Tree> streamedDiscoTrees = List.of();
+            List<Tree> consensusSourceTrees = List.of(); // completed DISCO trees for S3
+            SimilarityMatrix similarityMatrix = null; // visible to Phase 3.5 (Step A)
+            // Nearest-neighbour order for completion anchors. It is derived from
+            // the similarity matrix before UPGMA may consume that matrix in
+            // place, and is the only matrix-derived input completion needs.
+            SortedRows completionRows = null;
+            // Whether similarity preprocessing used the overflow-streamed host
+            // batches; recorded at build time because UPGMA may consume (and
+            // the pipeline then drops) the matrix object itself.
+            boolean similarityUsedStreamedHostBatches = false;
+            Tree upgmaGuideTree = null; // DISCO-path candidate and optional guide
+            // S3 consensus (and the consensus verifiers/experiments) read similarity
+            // values after the UPGMA guide exists; every other path can let UPGMA
+            // consume the similarity triangle instead of copying it.
+            boolean discoConsensus = cfg.getSearchSpace() == Config.SearchSpace.S3
+                || (cfg.getSearchSpace() == Config.SearchSpace.S4
+                    && cfg.isVerifyGreedyConsensus());
+            boolean matrixNeededAfterUpgma = discoConsensus
+                || cfg.isVerifyGreedyConsensus() || cfg.isConsensusExperimental();
+            boolean discoSearch = cfg.getSearchSpace() == Config.SearchSpace.S2
+                || cfg.getSearchSpace() == Config.SearchSpace.S3
+                || cfg.getSearchSpace() == Config.SearchSpace.S4
+                || cfg.getSearchSpace() == Config.SearchSpace.S7;
+            if (cfg.getSearchSpace() == Config.SearchSpace.S6 && !cfg.isScoreOnly()) {
+                long t1b = PhaseLogger.begin("Phase 1b S6 rooted-triplet greedy proposals",
+                    cfg.getComputeMode() == Config.ComputeMode.GPU);
+                if (cfg.getMaxSearchPasses() != 1)
+                    throw new IllegalArgumentException(
+                        "S6 supports one outer DP pass; use --s6-rounds for independent guides");
+                S6S2BBGuideData guideData = S6S2BBGuideData.prepare(
+                    originalTrees, registry, cfg.getS6Rounds(), cfg.isS6SubsetLocal());
+                System.gc(); // release DISCO/matrix-build scratch
+                s6Support = S6DynamicTripletSupport.build(originalTrees, registry.size(),
+                    cfg.getThreadCount());
+                List<Tree> greedyTrees = S6GreedySearch.generate(s6Support,
+                    originalTrees, cfg.getInputFile(), registry,
+                    0,
+                    cfg.getS6Seed(), cfg.getS6Rounds(), null, guideData);
+                boolean includeUpgma = cfg.isS6IncludeUpgmaCandidate()
+                    && !guideData.localMatrices();
+                List<Tree> candidateTrees = new ArrayList<>(
+                    greedyTrees.size() + (includeUpgma ? 1 : 0));
+                candidateTrees.addAll(greedyTrees);
+                // UPGMA still builds backbones and partition trees; this flag
+                // changes only the trees admitted to the final candidate DP.
+                if (includeUpgma) candidateTrees.add(guideData.upgmaTree());
+                trees = candidateTrees;
+                Logging.info("S6 candidates: %d rooted triplet-greedy tree(s), "
+                    + "%d UPGMA tree(s), no S1 candidates; weights use original genes only",
+                    greedyTrees.size(), includeUpgma ? 1 : 0);
+                guideData = null; // completed DISCO guides and matrix no longer needed
+                PhaseLogger.end("Phase 1b S6 rooted-triplet greedy proposals", t1b,
+                    cfg.getComputeMode() == Config.ComputeMode.GPU);
+                // The one-pass search never reads greedy support again.
+                s6Support.close();
+                s6Support = null;
+                System.gc();
+            } else if ((cfg.getSearchSpace() == Config.SearchSpace.S5
+                    || cfg.getSearchSpace() == Config.SearchSpace.S7)
+                    && !cfg.isScoreOnly()) {
+                // A-Pro partitions gene families across native CPU workers. Keep
+                // GPU mode for STELAR's later triplet DP/weights, not this search.
+                String greedyPhase = "Phase 1b " + cfg.getSearchSpace()
+                    + " A-Pro greedy proposals";
+                long t1b = PhaseLogger.begin(greedyPhase, false);
+                // The resolved input is re-tagged by the in-process A-Pro scorer.
+                // Greedy trees provide root-invariant candidate clusters; only
+                // original rooted/tagged multicopy trees supply scoring data.
+                int rounds = cfg.getSearchSpace() == Config.SearchSpace.S7
+                    ? cfg.getS7Rounds() : cfg.getS5Rounds();
+                long seed = cfg.getSearchSpace() == Config.SearchSpace.S7
+                    ? cfg.getS7Seed() : cfg.getS5Seed();
+                if (cfg.getSearchSpace() == Config.SearchSpace.S5) {
+                    s5GuideMatrix = AProGreedySearch.prepareGuideMatrix(
+                        originalTrees, registry, rounds);
+                    // DISCO components and matrix-build scratch are not scoring data.
+                    System.gc();
+                }
+                int firstGreedyIndex = cfg.getSearchSpace() == Config.SearchSpace.S5
+                    ? 0 : originalTrees.size();
+                List<Tree> greedyTrees = AProGreedySearch.generate(
+                    preprocessingInput, cfg.getInputFile(), registry,
+                    firstGreedyIndex, cfg.getThreadCount(), seed, rounds,
+                    false, null, s5GuideMatrix);
+                greedyProposalCount = greedyTrees.size();
+                List<Tree> candidateTrees = new ArrayList<>(cfg.getSearchSpace()
+                    == Config.SearchSpace.S5 ? greedyTrees.size() + 1
+                    : originalTrees.size() + greedyTrees.size());
+                if (cfg.getSearchSpace() != Config.SearchSpace.S5)
+                    candidateTrees.addAll(originalTrees);
+                candidateTrees.addAll(greedyTrees);
+                if (s5GuideMatrix != null)
+                    candidateTrees.add(s5GuideMatrix.upgmaTree());
+                trees = candidateTrees;
+                // Default S5 has no later greedy pass: release the dense JNI
+                // placement buffer before candidate hashing and DP allocation.
+                if (cfg.getSearchSpace() == Config.SearchSpace.S5
+                        && cfg.getMaxSearchPasses() == 1)
+                    s5GuideMatrix = null;
+                Logging.info("%s candidates: %d A-Pro greedy proposal(s), %d UPGMA "
+                        + "guide(s), %d original candidate(s); original genes score triplets only",
+                    cfg.getSearchSpace(), greedyTrees.size(),
+                    cfg.getSearchSpace() == Config.SearchSpace.S5 ? 1 : 0,
+                    cfg.getSearchSpace() == Config.SearchSpace.S5
+                        ? 0 : originalTrees.size());
+                PhaseLogger.end(greedyPhase, t1b, false);
+            }
+            if (discoSearch && !cfg.isScoreOnly()) {
+                boolean gpuSim = cfg.getComputeMode() == Config.ComputeMode.GPU
+                    && GPUSimilarityMatrix.tryLoad();
+                long t1b = PhaseLogger.begin(
+                    "Phase 1b " + cfg.getSearchSpace()
+                        + " DISCO + completion + UPGMA guide", gpuSim);
+
+                // DISCO trees only propose extra candidates. Keep originalTrees
+                // untouched because Phase 4/6 must score the GDL triplet model
+                // against the rooted/tagged multicopy families themselves.
+                DiscoDecomposer.Result disco = DiscoDecomposer.decomposeAll(
+                    originalTrees, registry.size(), trees.size(), 4,
+                    strictLineageDisco);
+                List<Tree> completedDiscoTrees = disco.trees();
+                Logging.info("%s DISCO: %d rooted/tagged family tree(s) -> %d retained "
+                        + "single-copy tree(s); %d duplication cut(s), %d tree(s) below 4 leaves discarded",
+                    cfg.getSearchSpace(), originalTrees.size(), completedDiscoTrees.size(),
+                    disco.duplicationCuts(), disco.discardedSmallTrees());
+
+                if (!completedDiscoTrees.isEmpty()) {
+                    // S4 reuses one rooted-triplet matrix for completion and
+                    // UPGMA; S2/S3 retain their quartet matrix. These
+                    // guide matrices never contribute scoring evidence.
+                    if (cfg.getSearchSpace() == Config.SearchSpace.S4) {
+                        similarityMatrix = gpuSim
+                            ? SimilarityMatrixBuilder.buildTripletGPU(
+                                completedDiscoTrees, registry.size())
+                            : SimilarityMatrixBuilder.buildTripletCPU(
+                                completedDiscoTrees, registry.size());
+                        Logging.info("S4 similarity: one rooted-triplet matrix for "
+                            + "DISCO completion and UPGMA");
+                    } else {
+                        similarityMatrix = gpuSim
+                            ? SimilarityMatrixBuilder.buildGPU(
+                                completedDiscoTrees, registry.size())
+                            : SimilarityMatrixBuilder.buildCPU(
+                                completedDiscoTrees, registry.size());
+                    }
+                    similarityUsedStreamedHostBatches = similarityMatrix.usedStreamedHostBatches();
+                    // Completion only needs each taxon's nearest-neighbour order.
+                    // Build it now (read-only pass over the matrix) so UPGMA can
+                    // take the similarity triangle over without copying it.
+                    boolean needsCompletion = strictLineageDisco
+                        ? ScopedTreeCompleter.anyMissing(completedDiscoTrees)
+                        : TreeCompleter.anyIncomplete(completedDiscoTrees);
+                    if (needsCompletion) {
+                        completionRows = SortedRowsBuilder.build(similarityMatrix);
+                        Logging.info("%s completion anchors: nearest-neighbour rows for %d taxa (%.2f GiB)",
+                            cfg.getSearchSpace(), registry.size(),
+                            completionRows.bytes() / (double)(1L << 30));
+                    }
+                    if (streamDiscoCandidates) {
+                        // Mutable references let each raw DISCO component be
+                        // released immediately after its completion batch.
+                        streamedDiscoTrees = new ArrayList<>(completedDiscoTrees);
+                    } else {
+                        completedDiscoTrees = strictLineageDisco
+                            ? ScopedTreeCompleter.prepare(completionRows,
+                                completedDiscoTrees, registry.size())
+                                .completeBatch(completedDiscoTrees)
+                            : TreeCompleter.completeAll(
+                                completedDiscoTrees, completionRows, registry.size());
+                        for (Tree candidateTree : completedDiscoTrees) {
+                            markSyntheticCandidateNodes(candidateTree.root);
+                        }
+                        completionRows = null; // materialized path completed everything above
+                    }
+
+                    upgmaGuideTree = UPGMAClusterer.build(
+                        similarityMatrix, trees.size() + completedDiscoTrees.size(),
+                        /*consume=*/ !matrixNeededAfterUpgma);
+                    if (!matrixNeededAfterUpgma) similarityMatrix = null; // consumed by UPGMA
+                    markSyntheticCandidateNodes(upgmaGuideTree.root);
+                    if (!streamDiscoCandidates && cfg.getDumpCompletedTreesFile() != null) {
+                        dumpCompletedTrees(completedDiscoTrees, registry,
+                            cfg.getDumpCompletedTreesFile());
+                    }
+                } else {
+                    Logging.info("%s DISCO: no component has at least four leaves; "
+                        + "completion and UPGMA enrichment skipped", cfg.getSearchSpace());
+                }
+
+                // Keep a stable view of the completed single-copy sources. Their
+                // global treeIndex values refer to the full candidate list below.
+                if (!streamDiscoCandidates) consensusSourceTrees = List.copyOf(completedDiscoTrees);
+
+                if (!streamDiscoCandidates) {
+                    List<Tree> candidateTrees = new ArrayList<>(trees.size()
+                        + completedDiscoTrees.size() + (upgmaGuideTree == null ? 0 : 1));
+                    candidateTrees.addAll(trees);
+                    candidateTrees.addAll(completedDiscoTrees);
+                    if (upgmaGuideTree != null) candidateTrees.add(upgmaGuideTree);
+                    trees = candidateTrees;
+                }
+                Logging.info("%s candidate sources: %d original + %d greedy + %d completed DISCO + %d UPGMA tree",
+                    cfg.getSearchSpace(), originalTrees.size(), greedyProposalCount,
+                    completedDiscoTrees.size(),
+                    upgmaGuideTree == null ? 0 : 1);
+                if (streamDiscoCandidates) {
+                    Logging.info("%s candidate extraction will stream completed trees in bounded batches",
+                        cfg.getSearchSpace());
+                    // Only the mutable batch source should retain raw DISCO
+                    // components; it clears each processed entry in Phase 5.
+                    completedDiscoTrees = List.of();
+                    disco = null;
+                }
+                PhaseLogger.end("Phase 1b " + cfg.getSearchSpace()
+                    + " candidate enrichment", t1b, gpuSim);
+            } else if (cfg.isAutoCompleteIncompleteTrees() || cfg.isVerifyDistanceMatrix()
+                    || cfg.isVerifySimilarityMatrix() || cfg.isVerifyUpgma()) {
+                boolean gpuDist = (cfg.getComputeMode() == Config.ComputeMode.GPU)
+                                  && GPUDistanceMatrix.tryLoad();
+                boolean gpuSim  = (cfg.getComputeMode() == Config.ComputeMode.GPU)
+                                  && GPUSimilarityMatrix.tryLoad();
+
+                if (cfg.isVerifyDistanceMatrix()) {
+                    DistanceMatrix dm = gpuDist
+                        ? DistanceMatrixBuilder.buildGPU(trees, registry.size())
+                        : DistanceMatrixBuilder.buildCPU(trees, registry.size());
+                    dumpDistanceMatrix(dm, registry);
+                    return;
+                }
+
+                if (cfg.isVerifySimilarityMatrix()) {
+                    SimilarityMatrix sm = gpuSim
+                        ? SimilarityMatrixBuilder.buildGPU(trees, registry.size())
+                        : SimilarityMatrixBuilder.buildCPU(trees, registry.size());
+                    dumpSimilarityMatrix(sm, registry);
+                    return;
+                }
+
+                if (cfg.isVerifyUpgma()) {
+                    SimilarityMatrix sm = gpuSim
+                        ? SimilarityMatrixBuilder.buildGPU(trees, registry.size())
+                        : SimilarityMatrixBuilder.buildCPU(trees, registry.size());
+                    int n = registry.size();
+                    Tree upgmaTree = UPGMAClusterer.build(sm, trees.size());
+                    dumpUpgmaBipartitions(upgmaTree, registry);
+                    return;
+                }
+
+                long incompleteCount = trees.stream().filter(t -> !t.isComplete).count();
+                boolean useSim = cfg.getCompletionMethod() == Config.CompletionMethod.SIMILARITY;
+                boolean gpuActive = useSim ? gpuSim : gpuDist;
+                long t1b = PhaseLogger.begin("Phase 1b Auto-complete gene trees ("
+                    + (useSim ? "similarity" : "distance") + ") + UPGMA guide", gpuActive);
+
+                // Always build the similarity matrix: needed for UPGMA guide tree regardless of
+                // completion method or whether any trees are actually incomplete.
+                SimilarityMatrix smForUpgma = gpuSim
+                    ? SimilarityMatrixBuilder.buildGPU(trees, registry.size())
+                    : SimilarityMatrixBuilder.buildCPU(trees, registry.size());
+                similarityMatrix = smForUpgma; // retained for Phase 3.5 (greedy consensus Step A)
+                similarityUsedStreamedHostBatches = smForUpgma.usedStreamedHostBatches();
+
+                if (incompleteCount > 0) {
+                    // Completion only needs the nearest-neighbour order of each taxon:
+                    // from the similarity matrix (dist = 1 - sim) or, for
+                    // --completion-method distance, from the topological distance matrix.
+                    SortedRows rows;
+                    if (useSim) {
+                        rows = SortedRowsBuilder.build(smForUpgma);
+                    } else {
+                        DistanceMatrix dm = gpuDist
+                            ? DistanceMatrixBuilder.buildGPU(trees, registry.size())
+                            : DistanceMatrixBuilder.buildCPU(trees, registry.size());
+                        rows = SortedRowsBuilder.buildFromDense(dm.dist, registry.size());
+                    }
+                    trees = TreeCompleter.completeAll(trees, rows, registry.size());
+                    rows = null; // nothing after this reads the anchor order
+                    Logging.info("Phase 1b: using original incomplete trees for weight scoring, completed trees for X");
+
+                    if (cfg.getDumpCompletedTreesFile() != null) {
+                        dumpCompletedTrees(trees, registry, cfg.getDumpCompletedTreesFile());
+                    }
+                } else {
+                    Logging.info("Phase 1b: all gene trees already complete");
+                }
+
+                // Build UPGMA guide tree from similarity matrix and append to the completed
+                // trees list so Phase 2/3 include its bipartitions in the cluster set X.
+                // It is NOT added to originalTrees, so tripartition scoring (Phase 4/6)
+                // is unaffected.
+                int nTaxa = registry.size();
+                upgmaGuideTree = UPGMAClusterer.build(smForUpgma, trees.size(),
+                    /*consume=*/ !matrixNeededAfterUpgma);
+                if (!matrixNeededAfterUpgma) similarityMatrix = null; // consumed by UPGMA
+                trees = new ArrayList<>(trees);
+                trees.add(upgmaGuideTree);
+                Logging.info("Phase 1b: UPGMA guide tree (%d taxa) added to cluster search space", nTaxa);
+
+                PhaseLogger.end("Phase 1b Auto-complete gene trees", t1b, gpuActive);
+            }
+            // After Phase 1b, trees supplies candidate exemplars while
+            // originalTrees always remains the rooted/tagged scoring input.
+
+            // ── Phase 2: Taxon hashing + prefix arrays ────────────────────────
+            // pref     — built from candidate-source trees; used for ClusterTable and DPTable
+            // prefParts — built from original trees; used for PartitionTable (tripartition scoring)
+            // In S1 without auxiliary completion, prefParts == pref (same object).
+            long t2 = PhaseLogger.begin("Phase 2  Taxon hashing", false);
+            TaxonHasher hasher = new TaxonHasher(
+                registry.size(), cfg.getNumHashSeeds(), cfg.getBaseSeed());
+            PrefixHashArrays pref = new PrefixHashArrays(trees, hasher);
+            PrefixHashArrays prefParts = (originalTrees == trees)
+                ? pref
+                : new PrefixHashArrays(originalTrees, hasher);
+            PhaseLogger.end("Phase 2  Taxon hashing", t2, false);
+
+            if (cfg.isVerifyHash()) {
+                Phase2Verifier.dump(trees, registry, hasher, pref, cfg.getOutputFile());
+                return;
+            }
+            // hasher is retained — Phase 3.5 (greedy consensus) needs per-taxon
+            // hashes to build consensus-tree prefix arrays whose signatures
+            // match those derived from the gene-tree prefix arrays (cross-source
+            // signature parity, design §7.2 / verification §13.5).
+
+            if (cfg.isScoreOnly()) {
+                finalTripletScore = runScoreOnly(
+                    cfg, registry, originalTrees, prefParts, hasher);
+                analysisCompleted = true;
+                return;
+            }
+
+            // ── Phase 3: duplicate-invariant cluster extraction -> X ─────────
+            boolean anchorFreeX = cfg.isAnchorOutgroup();
+            long t3 = PhaseLogger.begin("Phase 3  Cluster extraction", false);
+            // Candidate ranges are only rooted subtrees, so postorder
+            // small-to-large set merging replaces arbitrary-range structures.
+            UniqueTaxonSubtreeHashes candidateHashes =
+                new UniqueTaxonSubtreeHashes(trees, hasher);
+            // Original genes always supply the partition/weight evidence, but
+            // default S2/S4 do not mine them for X or local DP transitions.
+            List<Tree> candidateSourceTrees = strictLineageDisco
+                ? trees.subList(originalTrees.size(), trees.size()) : trees;
+            if (strictLineageDisco) {
+                Logging.info("%s search: S1 candidates excluded; DISCO completion "
+                    + "restricted to each pre-cut lineage", cfg.getSearchSpace());
+            }
+            boolean aProGreedySearch = cfg.getSearchSpace() == Config.SearchSpace.S5
+                || cfg.getSearchSpace() == Config.SearchSpace.S7;
+            int firstS5GreedyTreeIndex = aProGreedySearch
+                ? (cfg.getSearchSpace() == Config.SearchSpace.S5
+                    ? 0 : originalTrees.size()) : Integer.MAX_VALUE;
+            int lastS5GreedyTreeIndex = aProGreedySearch
+                ? firstS5GreedyTreeIndex + greedyProposalCount : Integer.MAX_VALUE;
+            ClusterTable clusterTable = new ClusterTable(
+                candidateSourceTrees, pref, registry.size(), candidateHashes,
+                firstS5GreedyTreeIndex, lastS5GreedyTreeIndex);
+            PhaseLogger.end("Phase 3  Cluster extraction", t3, false);
+
+            if (cfg.isVerifyClusters()) {
+                Phase3Verifier.dump(trees, registry, pref, clusterTable, cfg.getOutputFile());
+                return;
+            }
+
+            if (!streamDiscoCandidates && cfg.getDumpClustersFile() != null) {
+                dumpClusters(clusterTable, trees, registry, cfg.getDumpClustersFile());
+            }
+
+            // ── Phase 3.6: Gene-tree polytomy X-enrichment (mechanism B, opt-in) ──
+            // Resolve each INPUT gene-tree polytomy against the UPGMA guide tree into
+            // arm-union (multi-range) clusters (ASTRAL-MP addBipartitionsFromSignleIndTreesToX).
+            // Distinct from rooted-partition scoring; gated since it enlarges X.
+            // No DISCO components means S4 has no triplet guide for this optional step.
+            if (cfg.isResolveInputGeneTreePolytomies()
+                    && anyPolytomous(trees, originalTrees.size())
+                    && (cfg.getSearchSpace() != Config.SearchSpace.S4
+                        || similarityMatrix != null)) {
+                long t36 = PhaseLogger.begin("Phase 3.6 Gene-tree polytomy enrichment", false);
+                int nT = registry.size();
+                if (similarityMatrix == null) {
+                    similarityMatrix = SimilarityMatrixBuilder.buildCPU(trees, nT);
+                }
+                Tree guide = upgmaGuideTree != null
+                    ? upgmaGuideTree
+                    : UPGMAClusterer.build(similarityMatrix, trees.size());
+                stelarx.greedy.GeneTreePolytomySampler.run(
+                    trees, originalTrees.size(), guide, pref, nT, pref.numSeeds(),
+                    cfg.getBaseSeed() ^ 0xC0FFEEL, clusterTable);
+                PhaseLogger.end("Phase 3.6 Gene-tree polytomy enrichment", t36, false);
+            }
+
+            // ── Phase 3.5: S3 greedy consensus + polytomy resolution ─────────
+            // S3 builds consensus only from completed single-copy DISCO trees.
+            // Original multicopy trees remain the sole Phase 4/6 scoring data.
+            // Exemplar list the WEIGHT phase uses for cluster position lookups.
+            // Defaults to the completed/gene trees; the consensus bridge may append
+            // consensus snapshot trees as membership-only exemplars. The DP
+            // (Phase 5) keeps using `trees` directly,
+            // so consensus trees are never mined for local transitions.
+            List<Tree> weightClusterTrees = trees;
+            if (discoConsensus || cfg.isVerifyGreedyConsensus()
+                    || cfg.isConsensusExperimental()) {
+                List<Tree> geneTreesForGreedy = discoConsensus
+                    ? consensusSourceTrees
+                    : trees.subList(0, originalTrees.size());
+
+                if (cfg.isVerifyGreedyConsensus()) {
+                    GreedyConsensusVerifier.dump(geneTreesForGreedy, trees, registry,
+                        clusterTable, pref, hasher, similarityMatrix, cfg.getOutputFile());
+                    return;
+                }
+                if (geneTreesForGreedy.isEmpty()) {
+                    Logging.info("%s consensus: no retained DISCO trees; consensus enrichment skipped",
+                        cfg.getSearchSpace());
+                } else {
+                    long t35 = PhaseLogger.begin(
+                        "Phase 3.5 Greedy consensus build + polytomy resolution", false);
+                    GreedyConsensus.Result gcResult = GreedyConsensus.build(
+                        clusterTable, geneTreesForGreedy, trees, pref, hasher,
+                        similarityMatrix, registry.size());
+                    PhaseLogger.end(
+                        "Phase 3.5 Greedy consensus build + polytomy resolution", t35, false);
+
+                    // Bridge consensus clades and their refinements into X. New
+                    // exemplars affect membership queries only, never evidence.
+                    List<Tree> ext = new ArrayList<>(trees);
+                    int[] bridged = EmissionBridge.bridge(gcResult.emissions, clusterTable,
+                                                          ext, registry.size(),
+                                                          anchorFreeX, cfg.getAnchorTaxon());
+                    if (ext.size() > trees.size()) weightClusterTrees = ext;
+                    Logging.info("Consensus emission → X: %d already in X (tier-1), "
+                        + "%d synthesized (tier-2); +%d exemplar trees",
+                        bridged[0], bridged[1], ext.size() - trees.size());
+                    if (cfg.getSearchMode() != Config.SearchMode.FULL && bridged[1] > 0) {
+                        Logging.info("Note: synthesized consensus clusters gain DP transitions only "
+                            + "via Mode 2 (--search-mode full); in local mode they remain inert.");
+                    }
+                }
+            }
+
+            // Overflow-streamed similarity preprocessing uses large, short-lived
+            // Java arrays.  Nothing after Phase 3.5 consumes the matrix, so drop
+            // its final reference and request one collection before Phase 4's
+            // allocation-heavy candidate scan.  This is deliberately gated to
+            // the 100k-class overflow path: established one-shot runs receive no
+            // extra full-GC pause. The JVM may ignore the hint when explicit GC
+            // is disabled, without affecting correctness.
+            boolean reclaimStreamedSimilarity = !streamDiscoCandidates
+                && similarityUsedStreamedHostBatches;
+            // S2/S4/S7 bounded completion still needs this matrix in Phase 5;
+            // all other paths can end its lifetime after consensus.
+            if (!streamDiscoCandidates) similarityMatrix = null;
+            if (reclaimStreamedSimilarity) {
+                long heapBefore = Runtime.getRuntime().totalMemory()
+                    - Runtime.getRuntime().freeMemory();
+                System.gc();
+                long heapAfter = Runtime.getRuntime().totalMemory()
+                    - Runtime.getRuntime().freeMemory();
+                Logging.info("Released streamed similarity host buffers before Phase 4: "
+                        + "heap %d MiB -> %d MiB",
+                    heapBefore >> 20, heapAfter >> 20);
+            }
+
+            // ── Phase 4: Gene-tree tripartition extraction (from ORIGINAL trees) ──
+            // Uses originalTrees so tripartitions reflect actual gene-tree signal.
+            long t4 = PhaseLogger.begin("Phase 4  Rooted child-partition extraction", false);
+            UniqueTaxonSubtreeHashes originalHashes =
+                (cfg.getSearchSpace() == Config.SearchSpace.S5
+                    || cfg.getSearchSpace() == Config.SearchSpace.S6)
+                    ? new UniqueTaxonSubtreeHashes(originalTrees, hasher)
+                    : candidateHashes;
+            PartitionTable partTable = new PartitionTable(
+                originalTrees, prefParts, originalHashes);
+            if (originalHashes != candidateHashes) originalHashes.release();
+            PhaseLogger.end("Phase 4  Rooted child-partition extraction", t4, false);
+
+            if (cfg.isVerifyPartitions()) {
+                Phase4Verifier.dump(originalTrees, registry, hasher, prefParts,
+                    partTable, cfg.getOutputFile());
+                return;
+            }
+
+            // ── Phase 5: Local DP transitions from candidate-source trees ────
+            long t5 = PhaseLogger.begin("Phase 5  DP local transitions", false);
+            DPTable dpTable = new DPTable(
+                candidateSourceTrees, pref, clusterTable, candidateHashes,
+                firstS5GreedyTreeIndex, lastS5GreedyTreeIndex);
+            // X, rooted partitions, and DP transitions now own every canonical
+            // hash they need; discard the much larger per-node lookup indexes.
+            candidateHashes.release();
+            if (streamDiscoCandidates) {
+                // Preserve completion's per-tree CPU parallelism, but merge each
+                // bounded batch directly into X/DP before releasing node graphs.
+                int batchSize = Math.min(256, Math.max(64, cfg.getThreadCount()));
+                S2CandidateStreamer.Result streamed = S2CandidateStreamer.add(
+                    streamedDiscoTrees, completionRows, upgmaGuideTree,
+                    candidateSourceTrees,
+                    clusterTable, dpTable, hasher, registry, batchSize,
+                    cfg.getDumpCompletedTreesFile(), cfg.getSearchSpace().toString(),
+                    strictLineageDisco);
+                trees = streamed.exemplarTrees();
+                weightClusterTrees = trees;
+                streamedDiscoTrees = List.of();
+                completionRows = null;
+                similarityMatrix = null;
+                if (cfg.getDumpClustersFile() != null) {
+                    dumpClusters(clusterTable, trees, registry, cfg.getDumpClustersFile());
+                }
+            }
+            PhaseLogger.end("Phase 5  DP local transitions", t5, false);
+
+            // ── Phase 5b: Cross-tree transitions (Mode 2, optional) ───────────
+            if (cfg.getSearchMode() == Config.SearchMode.FULL) {
+                boolean gpuDP = (cfg.getComputeMode() == Config.ComputeMode.GPU)
+                                && GPUDPBuilder.tryLoad();
+                long t5b = PhaseLogger.begin("Phase 5b Cross-tree transitions", gpuDP);
+                dpTable.addCrossTreeTransitions(clusterTable, gpuDP);
+                PhaseLogger.end("Phase 5b Cross-tree transitions", t5b, gpuDP);
+            }
+
+            // ── Anchored-outgroup root (exact for unrooted inference) ─────────
+            // Replace the all-taxa root's entire transition set with the single
+            // split ({anchor} | S\{anchor}).  Every unrooted tree is representable
+            // rooted on the anchor's pendant edge, so the optimum is unchanged; the
+            // reachability prune then drops the now-unreachable with-anchor cluster
+            // orientations. Local emission includes the leaf-induced Type-2
+            // rotation needed to enter S\{anchor}; full mode additionally has all
+            // cross-tree resolutions.
+            if (cfg.isAnchorOutgroup()) {
+                dpTable.applyAnchoredRoot(clusterTable.getAnchorHash());
+            }
+
+            if (cfg.isVerifyDPSpace()) {
+                Phase5Verifier.dump(trees, registry, pref, clusterTable, dpTable, cfg.getOutputFile());
+                return;
+            }
+            pref = null;     // no longer needed after Phase 5; free before Phase 6
+            prefParts = null; // likewise (may be same object as pref — both nulled safely)
+
+            // Hint JVM to collect Phase 3-5 intermediates before Phase 6 allocates its working set.
+            // System.gc() is a hint — JVM may ignore it if -XX:+DisableExplicitGC is set.
+            long gcHeapBefore = Runtime.getRuntime().totalMemory() - Runtime.getRuntime().freeMemory();
+            System.gc();
+            long gcHeapAfter = Runtime.getRuntime().totalMemory() - Runtime.getRuntime().freeMemory();
+            Logging.debug("Pre-Phase-6 GC hint: heap %d MB → %d MB (freed %d MB)",
+                gcHeapBefore / 1_000_000, gcHeapAfter / 1_000_000,
+                (gcHeapBefore - gcHeapAfter) / 1_000_000);
+
+            // ── Phase 6: Weight calculation ───────────────────────────────────
+            boolean gpuWeight = (cfg.getComputeMode() == Config.ComputeMode.GPU)
+                                && GPUWeightCalculator.isLoaded();
+            long t6 = PhaseLogger.begin("Phase 6  Weight calculation", gpuWeight);
+            // weightClusterTrees = candidate-source trees (+ any consensus exemplars)
+            //                      for cluster position lookups
+            // originalTrees      = original trees (for rooted gene-tree triplet scoring)
+            WeightTable weightTable = new WeightTable(dpTable, partTable, clusterTable, weightClusterTrees, originalTrees);
+            PhaseLogger.end("Phase 6  Weight calculation", t6, gpuWeight);
+
+            if (cfg.isVerifyWeights()) {
+                Phase6Verifier.dump(trees, registry, clusterTable, dpTable, weightTable, cfg.getOutputFile());
+                return;
+            }
+
+            // ── Phase 7: Inference DP + tree reconstruction ───────────────────
+            long t7 = PhaseLogger.begin("Phase 7  Inference", false);
+            Inference inference = new Inference();
+            String speciesTree = inference.run(
+                dpTable, weightTable, clusterTable, weightClusterTrees,
+                registry, hasher);
+            finalTripletScore = inference.getLastTripletScore();
+            PhaseLogger.end("Phase 7  Inference", t7, false);
+
+            if (cfg.getSearchSpace() == Config.SearchSpace.S5
+                    && cfg.getMaxSearchPasses() > 1) {
+                // Keep only greedy and UPGMA candidate trees. Original genes
+                // remain scoring evidence and never enter the S5 candidate set.
+                List<Tree> accumulated = new ArrayList<>(trees);
+                weightTable = null;
+                partTable = null;
+                dpTable = null;
+                clusterTable = null;
+                weightClusterTrees = null;
+                candidateHashes = null;
+                System.gc();
+                for (int pass = 1; pass < cfg.getMaxSearchPasses(); pass++) {
+                    boolean gpuTripletDP = cfg.getComputeMode() == Config.ComputeMode.GPU;
+                    long t7b = PhaseLogger.begin(
+                        "Phase 7b S5 adaptive pass " + pass + " (CPU greedy + triplet DP)",
+                        gpuTripletDP);
+                    String previousTree = speciesTree;
+                    long greedyStart = System.nanoTime();
+                    Tree previousUpgma = accumulated.remove(accumulated.size() - 1);
+                    List<Tree> added = AProGreedySearch.generate(
+                        preprocessingInput, cfg.getInputFile(), registry,
+                        accumulated.size(), cfg.getThreadCount(),
+                        cfg.getS5Seed() + pass, cfg.getS5Rounds(),
+                        false, previousTree, s5GuideMatrix);
+                    Logging.info("S5 adaptive pass %d: %d CPU greedy proposals "
+                            + "with %d threads in %d ms", pass, added.size(),
+                        cfg.getThreadCount(), (System.nanoTime() - greedyStart) / 1_000_000);
+                    accumulated.addAll(added);
+                    // Keep UPGMA last so the greedy trees form one contiguous
+                    // index range for opposite-edge candidate extraction.
+                    accumulated.add(new Tree(accumulated.size(), previousUpgma.root,
+                        previousUpgma.postorderArray, previousUpgma.positionMap,
+                        previousUpgma.leafCount, registry.size()));
+                    S5OverallSearch.Result updated = S5OverallSearch.infer(
+                        originalTrees, accumulated, registry);
+                    boolean unchanged = S5OverallSearch.sameRootedTopology(
+                        previousTree, updated.newick(), registry);
+                    speciesTree = updated.newick();
+                    finalTripletScore = updated.tripletScore();
+                    Logging.info("S5 adaptive DP pass %d/%d: +%d greedy trees, "
+                        + "%d total; rooted topology %s", pass,
+                        cfg.getMaxSearchPasses() - 1, added.size(),
+                        accumulated.size() - 1,
+                        unchanged ? "unchanged (stop)" : "changed");
+                    PhaseLogger.end("Phase 7b S5 adaptive pass " + pass
+                        + " (CPU greedy + triplet DP)", t7b, gpuTripletDP);
+                    if (unchanged) break;
+                    System.gc();
+                }
+            }
+
+            // The focused CUDA index and borrowed colour states serve search
+            // construction only; final scoring uses the original gene trees.
+            if (s6Support != null) {
+                s6Support.close();
+                s6Support = null;
+            }
+
+            // Persist the inferred topology before the independent final scoring
+            // pass.  If scoring encounters an environmental/runtime failure, the
+            // expensive inference result remains available for a score-only retry.
+            if (cfg.getOutputFile() != null) {
+                try (java.io.PrintStream out = new java.io.PrintStream(
+                        new java.io.FileOutputStream(cfg.getOutputFile()))) {
+                    out.println(speciesTree);
+                }
+                Logging.info("Species tree written to %s", cfg.getOutputFile());
+            } else {
+                System.out.println(speciesTree);
+            }
+
+            boolean recomputeFinalScore = inferenceInputHasPolytomy
+                && !cfg.isKeepPolytomyDuringInference();
+            if (recomputeFinalScore) {
+                // The inference state can be enormous.  Drop all topology/weight
+                // references before re-reading unresolved gene trees so the final
+                // fixed-tree pass does not require both full working sets at once.
+                weightTable = null;
+                partTable = null;
+                dpTable = null;
+                clusterTable = null;
+                weightClusterTrees = null;
+                trees = null;
+                originalTrees = null;
+                hasher = null;
+                System.gc();
+
+                long t8 = PhaseLogger.begin(
+                    "Phase 8  Final triplet scoring against unresolved input", false);
+                FinalScoringInput scoringInput = parseFinalScoringInput(cfg, registry);
+                Tree scoredSpeciesTree = TreeParser.parseSpeciesTreeNewick(
+                    speciesTree, scoringInput.registry());
+                TaxonHasher scoringHasher = new TaxonHasher(
+                    scoringInput.registry().size(), cfg.getNumHashSeeds(), cfg.getBaseSeed());
+                PrefixHashArrays scoringPref = new PrefixHashArrays(
+                    scoringInput.trees(), scoringHasher);
+                finalTripletScore = calculateFixedTreeScore(
+                    cfg, scoringInput.registry(), scoringInput.trees(), scoringPref,
+                    scoringHasher, scoredSpeciesTree, "Final score", "Final scoring");
+                PhaseLogger.end(
+                    "Phase 8  Final triplet scoring against unresolved input", t8, false);
+                Logging.info("Final triplet score = %s  [recomputed from native input "
+                    + "polytomies]", finalTripletScore);
+            } else {
+                String reason = cfg.isKeepPolytomyDuringInference()
+                    ? "inference preserved native input polytomies"
+                    : "no unresolved input polytomies detected";
+                Logging.info("Final triplet score = %s  [reused inference DP score; %s]",
+                    finalTripletScore, reason);
+            }
+
+            analysisCompleted = true;
+
+        } finally {
+            if (s6Support != null) s6Support.close();
+            Threading.shutdown();
+            cfg.setInputFile(unrootedInputFile);
+            if (automaticTaggedInput != null) Files.deleteIfExists(automaticTaggedInput);
+            if (automaticResolvedInput != null) Files.deleteIfExists(automaticResolvedInput);
+            long ms = (System.nanoTime() - t0) / 1_000_000;
+            Logging.info("Total time: %d ms", ms);
+            if (analysisCompleted) {
+                PhaseLogger.printRunSummary(finalTripletScore, ms,
+                    cfg.getComputeMode() == Config.ComputeMode.GPU);
+            }
+        }
+    }
+
+    private static boolean parseArgs(String[] args, Config cfg) {
+        Config.SearchMode explicitSearchMode = null;
+        for (int i = 0; i < args.length; i++) {
+            if (args[i].startsWith("--log-file=")) {
+                String path = args[i].substring("--log-file=".length());
+                if (path.isBlank()) return false;
+                cfg.setLogFile(path);
+                continue;
+            }
+            switch (args[i]) {
+                case "-i","--input"    -> { if (++i>=args.length) return false; cfg.setInputFile(args[i]); }
+                case "-o","--output"   -> { if (++i>=args.length) return false; cfg.setOutputFile(args[i]); }
+                case "--log-file"      -> { if (++i>=args.length) return false; cfg.setLogFile(args[i]); }
+                case "-T", "--tag-only" -> cfg.setTagOnly(true);
+                case "--astral-pro-executable" -> {
+                    if (++i >= args.length) return false;
+                    cfg.setAstralProExecutable(args[i]);
+                }
+                case "--gene-species-map" -> {
+                    if (++i >= args.length) return false;
+                    cfg.setGeneSpeciesMapFile(args[i]);
+                }
+                case "-c", "--score", "--species-tree", "--score-species-tree" -> {
+                    if (++i>=args.length) return false;
+                    cfg.setScoreSpeciesTreeFile(args[i]);
+                }
+                case "--taxa-file", "--species-list", "--species-list-file" -> {
+                    if (++i>=args.length) return false;
+                    cfg.setTaxaFile(args[i]);
+                }
+                case "--extract-taxa" -> cfg.setExtractTaxa(true);
+                case "--taxa-set", "--taxa-operation" -> {
+                    if (++i>=args.length) return false;
+                    if (args[i].equalsIgnoreCase("union"))
+                        cfg.setTaxaSetMode(Config.TaxaSetMode.UNION);
+                    else if (args[i].equalsIgnoreCase("intersection"))
+                        cfg.setTaxaSetMode(Config.TaxaSetMode.INTERSECTION);
+                    else {
+                        System.err.println("Unknown --taxa-set: " + args[i]
+                            + " (expected: union | intersection)");
+                        return false;
+                    }
+                }
+                case "-t", "--threads", "--num-threads" -> {
+                    if (++i>=args.length) return false;
+                    cfg.setThreadCount(Integer.parseInt(args[i]));
+                }
+                case "--auto"          -> cfg.setComputeMode(Config.ComputeMode.AUTO);
+                case "--cpu"           -> cfg.setComputeMode(Config.ComputeMode.CPU);
+                case "--gpu"           -> cfg.setComputeMode(Config.ComputeMode.GPU);
+                case "--gpu-strict"    -> { cfg.setComputeMode(Config.ComputeMode.GPU); cfg.setGpuStrict(true); }
+                case "--search-space"  -> {
+                    if (++i >= args.length) return false;
+                    try { CliPresets.applySearchSpace(args[i], cfg); }
+                    catch (IllegalArgumentException e) {
+                        System.err.println(e.getMessage());
+                        return false;
+                    }
+                }
+                case "--s5-rounds" -> {
+                    if (++i >= args.length) return false;
+                    cfg.setS5Rounds(Integer.parseInt(args[i]));
+                }
+                case "--s5-adaptive-passes" -> {
+                    if (++i >= args.length) return false;
+                    cfg.setS5AdaptivePasses(Integer.parseInt(args[i]));
+                }
+                case "--max-search-passes" -> {
+                    if (++i >= args.length) return false;
+                    cfg.setMaxSearchPasses(Integer.parseInt(args[i]));
+                }
+                case "--s5-seed" -> {
+                    if (++i >= args.length) return false;
+                    cfg.setS5Seed(Long.parseLong(args[i]));
+                }
+                case "--s6-rounds" -> {
+                    if (++i >= args.length) return false;
+                    cfg.setS6Rounds(Integer.parseInt(args[i]));
+                }
+                case "--s6-seed" -> {
+                    if (++i >= args.length) return false;
+                    cfg.setS6Seed(Long.parseLong(args[i]));
+                }
+                case "--s6-no-upgma-candidate" ->
+                    cfg.setS6IncludeUpgmaCandidate(false);
+                case "--subsetlocal" -> cfg.setS6SubsetLocal(true);
+                case "--s7-rounds" -> {
+                    if (++i >= args.length) return false;
+                    cfg.setS7Rounds(Integer.parseInt(args[i]));
+                }
+                case "--s7-seed" -> {
+                    if (++i >= args.length) return false;
+                    cfg.setS7Seed(Long.parseLong(args[i]));
+                }
+                case "--cross-tree-splits" ->
+                    explicitSearchMode = Config.SearchMode.FULL;
+                case "--no-cross-tree-splits" ->
+                    explicitSearchMode = Config.SearchMode.LOCAL;
+                case "--exhaustive" ->
+                    cfg.setExhaustiveDiscoCandidates(true);
+                case "--search-mode"   -> {
+                    if (++i >= args.length) return false;
+                    if (args[i].equalsIgnoreCase("full"))
+                        explicitSearchMode = Config.SearchMode.FULL;
+                    else if (args[i].equalsIgnoreCase("local"))
+                        explicitSearchMode = Config.SearchMode.LOCAL;
+                    else {
+                        System.err.println("Unknown --search-mode: " + args[i]
+                            + " (expected: local | full)");
+                        return false;
+                    }
+                }
+                case "--anchor-outgroup", "--anchor" ->
+                    cfg.setAnchorOutgroup(true);
+                case "--no-anchor-outgroup", "--no-anchor" ->
+                    cfg.setAnchorOutgroup(false);
+                case "--anchor-taxon" -> {
+                    if (++i >= args.length) return false;
+                    try { cfg.setAnchorTaxon(Integer.parseInt(args[i])); }
+                    catch (NumberFormatException e) {
+                        System.err.println("Invalid --anchor-taxon (expected an integer taxon id): " + args[i]);
+                        return false;
+                    }
+                }
+                case "--no-prune-search-space", "--no-prune-unreachable" ->
+                    cfg.setPruneUnreachableSplits(false);
+                case "--prune-search-space", "--prune-unreachable" ->
+                    cfg.setPruneUnreachableSplits(true);
+                case "--intersection-method", "--im", "--weight-intersection-method" -> {
+                    System.err.println(args[i] + " was removed; STELAR-Pro now uses one "
+                        + "built-in duplicate-aware intersection implementation.");
+                    return false;
+                }
+                case "--large-n-score-type", "--large-score-type" -> {
+                    if (++i >= args.length) return false;
+                    String t = args[i].toLowerCase().replace('_', '-');
+                    switch (t) {
+                        case "int128", "i128", "exact" ->
+                            cfg.setLargeScoreType(Config.LargeScoreType.INT128);
+                        case "double", "fp64", "float" ->
+                            cfg.setLargeScoreType(Config.LargeScoreType.DOUBLE);
+                        default -> {
+                            System.err.println("Unknown --large-n-score-type: " + args[i]
+                                + "  (expected: int128 | double)");
+                            return false;
+                        }
+                    }
+                }
+                case "-vv"             -> cfg.setVerbosity(Logging.DEBUG);
+                case "-vvv"            -> cfg.setVerbosity(Logging.TRACE);
+                case "-q","--quiet"    -> cfg.setVerbosity(Logging.QUIET);
+                case "-m","--seeds"    -> { if (++i>=args.length) return false; cfg.setNumHashSeeds(Integer.parseInt(args[i])); }
+                case "--rooted"        -> cfg.setTreatAsUnrooted(false);
+                case "--unrooted"      -> cfg.setTreatAsUnrooted(true);
+                case "--keep-polytomy-during-inference" ->
+                    cfg.setKeepPolytomyDuringInference(true);
+                case "--no-gpu-batch"    -> cfg.setGpuBatch(false);
+                case "--gpu-batch-size"  -> { if (++i>=args.length) return false; cfg.setGpuBatchSize(Integer.parseInt(args[i])); }
+                case "--gpu-batches"     -> { if (++i>=args.length) return false; cfg.setGpuNumBatches(Integer.parseInt(args[i])); }
+                case "--gpu-vram-control-factor"   -> { if (++i>=args.length) return false; cfg.setGpuVramControlFactor(Double.parseDouble(args[i])); }
+                case "--gpu-vram-occupancy-factor" -> { if (++i>=args.length) return false; cfg.setGpuVramFraction(Double.parseDouble(args[i])); }
+                case "--gpu-treewalk-vram-cap-mb"  -> { if (++i>=args.length) return false; cfg.setGpuTreeWalkVramCapMiB(Integer.parseInt(args[i])); }
+                case "--gpu-progress-interval"     -> { if (++i>=args.length) return false; cfg.setGpuProgressIntervalSec(Double.parseDouble(args[i])); }
+                case "--gpu-dp-state-space-construction-output-cap" -> { if (++i>=args.length) return false; cfg.setGpuDpStateSpaceConstructionOutputCap(args[i]); }
+                case "--gpu-dp-state-space-progress-time-interval"  -> { if (++i>=args.length) return false; cfg.setGpuDpProgressInterval(Double.parseDouble(args[i])); }
+                case "--gpu-dp-state-space-progress-max-steps"      -> { if (++i>=args.length) return false; cfg.setGpuDpProgressMaxSteps(Integer.parseInt(args[i])); }
+                case "--verify-parse"  -> cfg.setVerifyParse(true);
+                case "--verify-hash"      -> cfg.setVerifyHash(true);
+                case "--verify-clusters"    -> cfg.setVerifyClusters(true);
+                case "--verify-partitions" -> cfg.setVerifyPartitions(true);
+                case "--verify-dp"         -> cfg.setVerifyDPSpace(true);
+                case "--verify-weights"    -> cfg.setVerifyWeights(true);
+                case "--verify-distance-matrix"    -> cfg.setVerifyDistanceMatrix(true);
+                case "--verify-similarity-matrix"  -> cfg.setVerifySimilarityMatrix(true);
+                case "--verify-upgma"              -> cfg.setVerifyUpgma(true);
+                case "--verify-greedy-consensus"   -> cfg.setVerifyGreedyConsensus(true);
+                case "--consensus-experimental"    -> cfg.setConsensusExperimental(true);
+                case "--stepb-restriction"         -> {
+                    if (++i >= args.length) return false;
+                    String v = args[i].toLowerCase();
+                    if (v.equals("dlogd") || v.equals("fast"))      cfg.setStepBFastRestriction(true);
+                    else if (v.equals("n") || v.equals("full"))     cfg.setStepBFastRestriction(false);
+                    else { System.err.println("--stepb-restriction expects dlogd|n"); return false; }
+                }
+                case "--stepb-quadratic-nn-balls"          -> cfg.setStepBQuadraticNnBalls(true);
+                case "--stepb-random-leftover-resolution"  -> cfg.setStepBRandomLeftoverResolution(true);
+                case "--stepb-process-large-polytomies"    -> cfg.setStepBProcessLargePolytomies(true);
+                case "--resolve-input-gene-tree-polytomies" -> cfg.setResolveInputGeneTreePolytomies(true);
+                case "--autocomplete-incomplete-gene-trees" -> cfg.setAutoCompleteIncompleteTrees(true);
+                case "--completion-method" -> {
+                    if (++i >= args.length) return false;
+                    if (args[i].equalsIgnoreCase("distance"))
+                        cfg.setCompletionMethod(Config.CompletionMethod.DISTANCE);
+                    else if (args[i].equalsIgnoreCase("similarity"))
+                        cfg.setCompletionMethod(Config.CompletionMethod.SIMILARITY);
+                    else {
+                        System.err.println("Unknown --completion-method: " + args[i]
+                            + " (expected: similarity | distance)");
+                        return false;
+                    }
+                }
+                case "--dump-clusters"         -> { if (++i>=args.length) return false; cfg.setDumpClustersFile(args[i]); }
+                case "--dump-completed-gene-trees" -> { if (++i>=args.length) return false; cfg.setDumpCompletedTreesFile(args[i]); }
+                case "--gpu-dist-tile-size" -> { if (++i>=args.length) return false; cfg.setGpuDistTileSizeB(Integer.parseInt(args[i])); }
+                case "--gpu-sim-vram-cap-mb" -> { if (++i>=args.length) return false; cfg.setGpuSimilarityVramCapMiB(Integer.parseInt(args[i])); }
+                case "--diagnose"       -> cfg.setDiagnose(true);
+                case "-v", "--version"  -> { Banner.printVersion(); System.exit(0); }
+                case "-h","--help"     -> { printUsage(); System.exit(0); }
+                default -> { System.err.println("Unknown arg: " + args[i]); return false; }
+            }
+        }
+        // Search-mode overrides are independent of --search-space argument order.
+        if (explicitSearchMode != null) cfg.setSearchMode(explicitSearchMode);
+        if (!cfg.isS6IncludeUpgmaCandidate()
+                && cfg.getSearchSpace() != Config.SearchSpace.S6) {
+            System.err.println("--s6-no-upgma-candidate requires --search-space S6");
+            return false;
+        }
+        if (cfg.isS6SubsetLocal() && cfg.getSearchSpace() != Config.SearchSpace.S6) {
+            System.err.println("--subsetlocal requires --search-space S6");
+            return false;
+        }
+        if (cfg.getInputFile() == null && !cfg.isDiagnose()) return false;
+        if (cfg.isExtractTaxa() && cfg.isScoreOnly()) {
+            System.err.println("--extract-taxa cannot be combined with --score-species-tree");
+            return false;
+        }
+        if (cfg.isExtractTaxa() && cfg.getTaxaFile() != null) {
+            System.err.println("--extract-taxa cannot be combined with --taxa-file");
+            return false;
+        }
+        if (cfg.isTagOnly() && cfg.isScoreOnly()) {
+            System.err.println("-T/--tag-only cannot be combined with --score-species-tree");
+            return false;
+        }
+        if (cfg.isTagOnly() && cfg.isExtractTaxa()) {
+            System.err.println("-T/--tag-only cannot be combined with --extract-taxa");
+            return false;
+        }
+        if (cfg.isTagOnly() && cfg.getOutputFile() == null) {
+            System.err.println("-T/--tag-only requires -o/--output FILE");
+            return false;
+        }
+        if (cfg.isDiagnose() && cfg.getTaxaFile() != null) {
+            System.err.println("--taxa-file requires a gene-tree analysis input");
+            return false;
+        }
+        return true;
+    }
+
+    /** Resolve AUTO/GPU requests using the bundled CUDA backend itself. */
+    /**
+     * Every inference and tag-only run needs ASTRAL-Pro3. Probe it before any
+     * preprocessing so a binary built for another machine (glibc, CPU) fails in
+     * milliseconds with the loader's own message instead of after resolution.
+     */
+    private static void requireRootingBackend(Config cfg) {
+        GeneTreeRooterTagger.Preflight backend =
+            GeneTreeRooterTagger.preflight(cfg.getAstralProExecutable());
+        if (!backend.usable()) {
+            throw new IllegalStateException("Rooting/tagging backend is not usable on this machine: "
+                + backend.executable() + " — " + backend.detail() + ". "
+                + GeneTreeRooterTagger.REBUILD_HINT);
+        }
+    }
+
+    private static void resolveComputeMode(Config cfg) {
+        Config.ComputeMode requested = cfg.getRequestedComputeMode();
+        if (requested == Config.ComputeMode.CPU) {
+            cfg.resolveComputeMode(Config.ComputeMode.CPU, "explicit --cpu");
+            return;
+        }
+
+        GPUWeightCalculator.Probe probe = GPUWeightCalculator.probe();
+        if (probe.cudaAvailable()) {
+            String selection = requested == Config.ComputeMode.AUTO
+                ? "auto-selected CUDA device " + probe.deviceName()
+                : "CUDA device " + probe.deviceName();
+            cfg.resolveComputeMode(Config.ComputeMode.GPU, selection);
+            return;
+        }
+
+        String reason = probe.detail();
+        if (requested == Config.ComputeMode.GPU && cfg.isGpuStrict()) {
+            throw new IllegalStateException("--gpu-strict requested, but CUDA is unavailable: " + reason);
+        }
+        cfg.resolveComputeMode(Config.ComputeMode.CPU,
+            (requested == Config.ComputeMode.AUTO ? "automatic CPU fallback: " : "GPU unavailable; CPU fallback: ")
+            + reason);
+        if (requested == Config.ComputeMode.GPU) {
+            Logging.warn("GPU requested but unavailable; continuing on CPU. %s", reason);
+        } else {
+            Logging.info("CUDA unavailable; using CPU. %s", reason);
+        }
+    }
+
+    /**
+     * Print distance matrix to stdout in a machine-parseable format:
+     *   DISTANCE_MATRIX
+     *   n=<count>
+     *   taxa=name0,name1,...
+     *   row0=d00,d01,...
+     *   row1=d10,d11,...
+     *   ...
+     */
+    private static void dumpDistanceMatrix(stelarx.completion.DistanceMatrix dm,
+                                            TaxonRegistry registry) {
+        int n = dm.n;
+        StringBuilder taxa = new StringBuilder("taxa=");
+        for (int i = 0; i < n; i++) {
+            if (i > 0) taxa.append(',');
+            taxa.append(registry.getName(i));
+        }
+        System.out.println("DISTANCE_MATRIX");
+        System.out.println("n=" + n);
+        System.out.println(taxa);
+        for (int i = 0; i < n; i++) {
+            StringBuilder row = new StringBuilder("row").append(i).append('=');
+            for (int j = 0; j < n; j++) {
+                if (j > 0) row.append(',');
+                double d = dm.dist[i * n + j];
+                if (d == Double.MAX_VALUE) row.append("inf");
+                else row.append(String.format("%.6f", d));
+            }
+            System.out.println(row);
+        }
+    }
+
+    /**
+     * Print similarity matrix to stdout in the same machine-parseable format as
+     * dumpDistanceMatrix — just with SIMILARITY_MATRIX header and sim_rowN keys.
+     */
+    private static void dumpSimilarityMatrix(stelarx.completion.SimilarityMatrix sm,
+                                              TaxonRegistry registry) {
+        int n = sm.n;
+        StringBuilder taxa = new StringBuilder("taxa=");
+        for (int i = 0; i < n; i++) {
+            if (i > 0) taxa.append(',');
+            taxa.append(registry.getName(i));
+        }
+        System.out.println("SIMILARITY_MATRIX");
+        System.out.println("n=" + n);
+        System.out.println(taxa);
+        for (int i = 0; i < n; i++) {
+            StringBuilder row = new StringBuilder("sim_row").append(i).append('=');
+            for (int j = 0; j < n; j++) {
+                if (j > 0) row.append(',');
+                row.append(String.format("%.8f", sm.getSim(i, j)));
+            }
+            System.out.println(row);
+        }
+    }
+
+    /**
+     * Dump UPGMA bipartitions to stdout.
+     *
+     * Format:
+     *   UPGMA_BIPARTITIONS
+     *   n=<count>
+     *   taxa=name0,name1,...
+     *   bipartition=nameA,nameB,...   (one line per internal non-root node, names sorted)
+     *
+     * Each bipartition is the sorted set of taxon names in that subtree.
+     * Root (all-taxa) is skipped automatically (rangeSize == n).
+     */
+    /** True iff any of the first {@code numGeneTrees} trees contains a polytomous node. */
+    private static boolean anyPolytomous(java.util.List<Tree> trees, int numGeneTrees) {
+        for (int g = 0; g < numGeneTrees && g < trees.size(); g++) {
+            if (hasPolytomousNode(trees.get(g).root)) return true;
+        }
+        return false;
+    }
+
+    private static boolean hasPolytomousNode(stelarx.tree.TreeNode node) {
+        if (node == null || node.isLeaf()) return false;
+        if (node.isPolytomous()) return true;
+        return hasPolytomousNode(node.left) || hasPolytomousNode(node.right);
+    }
+
+    /** Admit every internal node of an auxiliary S2 tree as a candidate proposal. */
+    private static void markSyntheticCandidateNodes(stelarx.tree.TreeNode node) {
+        if (node == null || node.isLeaf()) return;
+        node.isDuplicationNode = false;
+        node.isSpeciationNode = true;
+        if (node.isPolytomous()) {
+            for (stelarx.tree.TreeNode child : node.children) {
+                markSyntheticCandidateNodes(child);
+            }
+        } else {
+            markSyntheticCandidateNodes(node.left);
+            markSyntheticCandidateNodes(node.right);
+        }
+    }
+
+    private static void dumpUpgmaBipartitions(Tree upgmaTree, TaxonRegistry registry) {
+        int n = registry.size();
+        StringBuilder taxaLine = new StringBuilder("taxa=");
+        for (int i = 0; i < n; i++) {
+            if (i > 0) taxaLine.append(',');
+            taxaLine.append(registry.getName(i));
+        }
+        System.out.println("UPGMA_BIPARTITIONS");
+        System.out.println("n=" + n);
+        System.out.println(taxaLine);
+
+        // Post-order walk; print subtree leaf set for every internal non-root node
+        dumpUpgmaNode(upgmaTree.root, upgmaTree, registry, n);
+    }
+
+    private static void dumpUpgmaNode(stelarx.tree.TreeNode node, Tree tree,
+                                       TaxonRegistry registry, int n) {
+        if (node.isLeaf()) return;
+        dumpUpgmaNode(node.left,  tree, registry, n);
+        dumpUpgmaNode(node.right, tree, registry, n);
+        if (node.isRoot()) return;  // skip all-taxa bipartition
+
+        // Collect and sort taxon names in [rangeStart, rangeEnd)
+        java.util.List<String> names = new java.util.ArrayList<>(node.rangeSize());
+        for (int pos = node.rangeStart; pos < node.rangeEnd; pos++) {
+            names.add(registry.getName(tree.postorderArray[pos]));
+        }
+        java.util.Collections.sort(names);
+        System.out.println("bipartition=" + String.join(",", names));
+    }
+
+    /**
+     * Dump completed gene trees to a file, one Newick per line.
+     * Ordering matches the original input gene tree order.
+     */
+    static void dumpCompletedTrees(List<Tree> trees, TaxonRegistry registry,
+                                    String outFile) throws IOException {
+        try (PrintStream out = new PrintStream(new FileOutputStream(outFile))) {
+            for (Tree t : trees) {
+                out.println(t.toNewick(registry));
+            }
+        }
+        Logging.info("Completed gene trees written to %s (%d trees)", outFile, trees.size());
+    }
+
+    /**
+     * Dump all clusters in ClusterTable to a file in canonical sorted format.
+     * Each line: {A,B,C} with taxon names sorted alphabetically, lines sorted lexicographically.
+     * This format matches the ASTRAL-MP --dump-clusters output for head-to-head comparison.
+     */
+    static void dumpClusters(ClusterTable clusterTable, List<Tree> trees,
+                              TaxonRegistry registry, String outFile) throws IOException {
+        List<String> lines = new ArrayList<>(clusterTable.size());
+        for (ClusterTable.Entry e : clusterTable.entries()) {
+            Cluster ex = e.exemplar;
+            Tree tree = trees.get(ex.treeIndex);
+            int[] arr = tree.postorderArray;
+            List<String> taxa = new ArrayList<>(e.hash.size);
+            if (!ex.complement) {
+                for (int i = ex.left; i < ex.right; i++)
+                    taxa.add(registry.getName(arr[i]));
+            } else {
+                for (int i = 0; i < tree.leafCount; i++) {
+                    if (i >= ex.left && i < ex.right) continue;
+                    taxa.add(registry.getName(arr[i]));
+                }
+            }
+            Collections.sort(taxa);
+            lines.add("{" + String.join(",", taxa) + "}");
+        }
+        Collections.sort(lines);
+        try (PrintStream out = new PrintStream(new FileOutputStream(outFile))) {
+            for (String line : lines) out.println(line);
+        }
+        Logging.info("Cluster dump written to %s (%d entries)", outFile, lines.size());
+    }
+
+    private static void printUsage() {
+        Banner.printTitle(System.err);
+        System.err.print("""
+            Usage:
+              stelar-pro -i <unrooted_gene_trees.tre> [-o <species_tree.tre>] [options]
+              stelar-pro -i <unrooted_gene_trees.tre> --score-species-tree <rooted_species_tree.tre> [options]
+              stelar-pro -T -i <unrooted_gene_trees.tre> -o <tagged_gene_trees.tre>
+              stelar-pro -i <trees.tre> --extract-taxa [-o <taxa.txt>]
+              stelar-pro --diagnose
+
+            General:
+              -i, --input FILE                 Input gene trees (one Newick tree per line)
+              -o, --output FILE                Species-tree output, or tagged-tree output with -T
+              --log-file FILE                  Save run messages to FILE (progress remains terminal-only)
+              -c, --score-species-tree FILE    Score one supplied species tree and exit
+              --taxa-file FILE                 Restrict inference to these gene-tree taxa,
+                                                 or both inputs in score-only mode
+                                                 (one name per non-empty line)
+              --extract-taxa                   Write input taxa, one name per line, and exit
+              --taxa-set union|intersection    Multi-tree extraction operation (default: union)
+              -T, --tag-only                   Root/tag gene trees, write -o FILE, and exit
+              --astral-pro-executable FILE     Override the bundled astral-pro3 executable
+              --gene-species-map FILE          Optional gene-copy to species mapping for
+                                                 ASTRAL-Pro3 (two columns: gene species)
+              -t, --threads, --num-threads N
+                                                 CPU worker threads (default: available cores)
+              --auto                           Automatically use CUDA or fall back to CPU (default)
+              --cpu                            Force CPU execution; do not require GPU libraries
+              --gpu                            Prefer CUDA; S5 greedy proposals still use CPU workers
+                                                 (warn and fall back to CPU if CUDA is unavailable)
+              --gpu-strict                     Require CUDA; fail before reading input if unavailable
+              --diagnose                       Print installation/hardware diagnostics and exit
+              -v, --version                    Print version and exit
+              -h, --help                       Show this help and exit
+              -q, --quiet                      Quiet logging
+              -vv | -vvv                       Debug or trace logging
+
+            Search and scoring:
+              --search-space S1|S2|S3|S4|S5|S6|S7    S1 native search (default); S2 uses lineage-scoped
+                                                 DISCO completion and UPGMA, without S1 candidates;
+                                                 S3 retains global DISCO + S1 + greedy consensus;
+                                                 S4 uses S2's scoped candidates with a triplet guide;
+                                                 S5 uses S2 backbones, A-Pro placement + UPGMA (no S1);
+                                                 S6 uses S4 backbones, triplet placement + UPGMA (no S1);
+                                                 S7 combines S5 greedy with S2 DISCO/UPGMA
+              --s5-rounds N                  Greedy trees per S5 DP pass (default: 4;
+                                             >=100 taxa use triplet-DP two-step backbones)
+              --s5-seed N                    S5 greedy-search random seed
+              --max-search-passes N          Maximum S5 search/DP passes (default: 1; S6 requires 1)
+              --s5-adaptive-passes N         Legacy S5 alias: N extra passes (0-5)
+              --s6-rounds N                  Rooted-triplet greedy trees per S6 DP pass (default: 4)
+              --s6-seed N                    S6 greedy-search random seed
+              --s6-no-upgma-candidate        S6 experiment: omit UPGMA from final DP candidates
+              --subsetlocal                   S6: local similarity/completion; guides-only final DP
+              --s7-rounds N                  S7 A-Pro greedy trees (default: 4)
+              --s7-seed N                    S7 greedy-search random seed
+              --cross-tree-splits             Enable cross-tree DP splits for S2/S4/S5/S6/S7
+              --no-cross-tree-splits          Disable them (S2/S4/S5/S6/S7 default)
+              --exhaustive                    S2/S4: add S1 candidates and complete
+                                              DISCO trees to all species (old behavior)
+              --search-mode local|full         Legacy alias for cross-tree control
+              --large-n-score-type T            int128 (exact) | double
+              --no-prune-search-space           Disable reachability pruning
+              --rooted | --unrooted             Compatibility flags; normal STELAR-Pro runs
+                                                 resolve, root, and tag before parsing
+              --keep-polytomy-during-inference   Legacy STELAR-Pro option; STELAR-Pro
+                                                 inference pre-resolves polytomies
+              -m, --seeds N                     Number of cluster-hash seeds
+
+            Incomplete trees and enrichment:
+              --autocomplete-incomplete-gene-trees
+              --completion-method similarity|distance
+              --consensus-experimental
+              --stepb-restriction dlogd|n
+              --stepb-quadratic-nn-balls
+              --stepb-random-leftover-resolution
+              --stepb-process-large-polytomies
+              --resolve-input-gene-tree-polytomies
+
+            GPU memory and batching:
+              --no-gpu-batch
+              --gpu-batch-size N
+              --gpu-batches N
+              --gpu-vram-occupancy-factor F
+              --gpu-vram-control-factor F
+              --gpu-treewalk-vram-cap-mb MiB    Default: 512
+              --gpu-sim-vram-cap-mb MiB         Default: 512; large-N auto may raise within free VRAM
+              --gpu-dist-tile-size N
+              --gpu-dp-state-space-construction-output-cap SIZE
+              --gpu-progress-interval SECONDS
+
+            Verification/debug outputs:
+              --verify-parse | --verify-hash | --verify-clusters
+              --verify-partitions | --verify-dp | --verify-weights
+              --verify-distance-matrix | --verify-similarity-matrix
+              --verify-upgma | --verify-greedy-consensus
+              --dump-clusters FILE
+              --dump-completed-gene-trees FILE
+
+            The standalone distribution includes its own Java runtime. CUDA is optional;
+            a missing/incompatible NVIDIA driver always has a CPU fallback unless
+            --gpu-strict is used.
+            """);
+    }
+
+    private static void runTaxaExtraction(Config cfg) throws IOException {
+        if (cfg.getOutputFile() != null
+                && sameNormalizedPath(cfg.getInputFile(), cfg.getOutputFile())) {
+            throw new IllegalArgumentException(
+                "Taxa output file must differ from the input tree file");
+        }
+        int count = TreeTaxa.writeExtracted(
+            cfg.getInputFile(), cfg.getOutputFile(), cfg.getTaxaSetMode());
+        String destination = cfg.getOutputFile() == null ? "stdout" : cfg.getOutputFile();
+        Logging.info("Extracted %d taxa by %s across the input trees; written to %s",
+            count, cfg.getTaxaSetMode().name().toLowerCase(), destination);
+    }
+
+    /**
+     * Build the inference universe from the allow-list and parse only its
+     * induced gene-tree leaves. The initial token scan determines which listed
+     * names actually occur; absent names are intentionally never registered.
+     */
+    private static RestrictedInferenceInput parseTaxonRestrictedInferenceInput(
+            Config cfg) throws IOException {
+        if (cfg.getOutputFile() != null
+                && sameNormalizedPath(cfg.getTaxaFile(), cfg.getOutputFile())) {
+            throw new IllegalArgumentException(
+                "Species-tree output file must differ from --taxa-file");
+        }
+
+        TreeTaxa.TaxaList taxaList = TreeTaxa.readTaxaList(cfg.getTaxaFile());
+        java.util.LinkedHashSet<String> requested = taxaList.names();
+        TreeTaxa.SelectionScan coverage =
+            TreeTaxa.scanSelection(cfg.getInputFile(), requested);
+        java.util.LinkedHashSet<String> effective = new java.util.LinkedHashSet<>();
+        for (String name : requested) {
+            if (coverage.selectedUnion().contains(name)) effective.add(name);
+        }
+
+        int requestedCount = requested.size();
+        int presentCount = coverage.selectedUnion().size();
+        int absent = requestedCount - presentCount;
+
+        Logging.info("Taxon filter report:");
+        Logging.info("  Taxa file: %d unique name(s)%s", requestedCount,
+            taxaList.duplicateLines() == 0 ? ""
+                : String.format(" (%d duplicate line(s) ignored)",
+                    taxaList.duplicateLines()));
+        Logging.info("  Gene trees: %d tree(s); listed taxa missing per tree "
+                + "mean=%.2f (%.3f%%), min=%d, max=%d",
+            coverage.treeCount(), coverage.meanMissing(),
+            percentage(coverage.meanMissing(), requestedCount),
+            coverage.minMissing(), coverage.maxMissing());
+        Logging.info("  Listed taxa absent from every gene tree: %d (%.3f%%)",
+            absent, percentage(absent, requestedCount));
+        Logging.info("  Ignored unlisted leaf occurrences: %d",
+            coverage.ignoredLeafOccurrences());
+        Logging.info("  Effective inference universe: %d taxa", effective.size());
+        if (absent > 0) {
+            Logging.warn("The inference universe excludes listed taxa absent from every "
+                + "gene tree; no placement is invented for them");
+        }
+        if (effective.size() < 3) {
+            throw new IllegalArgumentException("Fewer than three taxa from --taxa-file "
+                + "occur in the gene-tree union");
+        }
+
+        TaxonRegistry registry = new TaxonRegistry();
+        for (String name : effective) registry.register(name);
+        registry.lock();
+        if (cfg.isAnchorOutgroup() && cfg.getAnchorTaxon() >= registry.size()) {
+            throw new IllegalArgumentException("--anchor-taxon " + cfg.getAnchorTaxon()
+                + " is outside the filtered taxon range [0,"
+                + (registry.size() - 1) + "]");
+        }
+
+        TreeParser.RestrictedGeneTrees parsed = TreeParser.parseRestrictedGeneTrees(
+            cfg.getInputFile(), registry, cfg.isKeepPolytomyDuringInference());
+        Logging.info("Taxon restriction retained %d/%d induced gene tree(s); discarded "
+                + "%d with fewer than two selected taxa",
+            parsed.trees().size(), parsed.sourceTreeCount(), parsed.droppedTreeCount());
+        Logging.info("Mode: INFERENCE with taxa file (outside and globally absent taxa ignored)");
+        return new RestrictedInferenceInput(registry, parsed.trees(),
+            parsed.detectedPolytomyNodeCount() > 0);
+    }
+
+    private record RestrictedInferenceInput(TaxonRegistry registry, List<Tree> trees,
+                                            boolean hasPolytomy) {}
+
+    /**
+     * Re-read exactly the scoring universe while retaining native input
+     * multifurcations.  The inference registry is reused for a taxa-file run so
+     * globally absent listed names remain excluded exactly as they were during
+     * inference.
+     */
+    private static FinalScoringInput parseFinalScoringInput(
+            Config cfg, TaxonRegistry inferenceRegistry) throws IOException {
+        if (cfg.getTaxaFile() == null) {
+            TaxonRegistry scoringRegistry = new TaxonRegistry();
+            List<Tree> scoringTrees = TreeParser.parseGeneTrees(
+                cfg.getInputFile(), scoringRegistry, true);
+            return new FinalScoringInput(scoringRegistry, scoringTrees);
+        }
+
+        TreeParser.RestrictedGeneTrees parsed = TreeParser.parseRestrictedGeneTrees(
+            cfg.getInputFile(), inferenceRegistry, true);
+        Logging.info("Final scoring retained %d/%d taxa-restricted gene tree(s)",
+            parsed.trees().size(), parsed.sourceTreeCount());
+        return new FinalScoringInput(inferenceRegistry, parsed.trees());
+    }
+
+    private record FinalScoringInput(TaxonRegistry registry, List<Tree> trees) {}
+
+    /**
+     * Opt-in fixed-tree scoring on a named taxon subset.  This path is kept
+     * separate from ordinary inference and strict score-only mode so neither
+     * incurs filtering branches, extra scans, or changed taxon semantics.
+     */
+    private static String runTaxonRestrictedScoreOnly(Config cfg) throws IOException {
+        if (cfg.getOutputFile() != null
+                && sameNormalizedPath(cfg.getTaxaFile(), cfg.getOutputFile())) {
+            throw new IllegalArgumentException(
+                "Score output file must differ from --taxa-file");
+        }
+        TreeTaxa.TaxaList taxaList = TreeTaxa.readTaxaList(cfg.getTaxaFile());
+        java.util.LinkedHashSet<String> requested = taxaList.names();
+        TreeTaxa.Scan geneCoverage = TreeTaxa.scan(cfg.getInputFile(), requested);
+        TreeTaxa.Scan speciesCoverage = TreeTaxa.scan(
+            cfg.getScoreSpeciesTreeFile(), requested);
+        if (speciesCoverage.treeCount() != 1) {
+            throw new IllegalArgumentException(
+                "Species tree file must contain exactly one Newick tree: "
+                + cfg.getScoreSpeciesTreeFile());
+        }
+
+        java.util.LinkedHashSet<String> effective = new java.util.LinkedHashSet<>();
+        for (String name : requested) {
+            if (geneCoverage.union().contains(name)
+                    && speciesCoverage.union().contains(name)) {
+                effective.add(name);
+            }
+        }
+
+        int requestedCount = requested.size();
+        int absentGeneUnion = requestedCount
+            - intersectionSize(requested, geneCoverage.union());
+        int absentSpecies = requestedCount
+            - intersectionSize(requested, speciesCoverage.union());
+        int ignoredGeneTaxa = geneCoverage.union().size()
+            - intersectionSize(geneCoverage.union(), requested);
+        int ignoredSpeciesTaxa = speciesCoverage.union().size()
+            - intersectionSize(speciesCoverage.union(), requested);
+
+        Logging.info("Taxon filter report:");
+        Logging.info("  Taxa file: %d unique name(s)%s", requestedCount,
+            taxaList.duplicateLines() == 0 ? ""
+                : String.format(" (%d duplicate line(s) ignored)", taxaList.duplicateLines()));
+        Logging.info("  Gene trees: %d tree(s), %d union taxa; listed taxa missing per tree "
+                + "mean=%.2f (%.3f%%), min=%d, max=%d",
+            geneCoverage.treeCount(), geneCoverage.union().size(),
+            geneCoverage.meanMissing(), percentage(geneCoverage.meanMissing(), requestedCount),
+            geneCoverage.minMissing(), geneCoverage.maxMissing());
+        Logging.info("  Listed taxa absent from every gene tree: %d (%.3f%%)",
+            absentGeneUnion, percentage(absentGeneUnion, requestedCount));
+        Logging.info("  Species tree: %d listed taxa missing (%.3f%%)",
+            absentSpecies, percentage(absentSpecies, requestedCount));
+        Logging.info("  Ignored outside taxa: gene-tree union=%d, species tree=%d",
+            ignoredGeneTaxa, ignoredSpeciesTaxa);
+        Logging.info("  Effective common scoring universe: %d taxa", effective.size());
+        if (absentGeneUnion > 0 || absentSpecies > 0) {
+            Logging.warn("The effective scoring universe excludes listed taxa absent from "
+                + "the gene-tree union or species tree; no placement is invented for them");
+        }
+        if (effective.size() < 3) {
+            throw new IllegalArgumentException("Fewer than three taxa from --taxa-file "
+                + "occur in both the gene-tree union and species tree");
+        }
+
+        TaxonRegistry targetRegistry = new TaxonRegistry();
+        for (String name : effective) targetRegistry.register(name);
+        targetRegistry.lock();
+        if (cfg.isAnchorOutgroup() && cfg.getAnchorTaxon() >= targetRegistry.size()) {
+            throw new IllegalArgumentException("--anchor-taxon " + cfg.getAnchorTaxon()
+                + " is outside the filtered taxon range [0,"
+                + (targetRegistry.size() - 1) + "]");
+        }
+
+        long tg = PhaseLogger.begin("Score filter  Parse and restrict gene trees", false);
+        TaxonRegistry sourceRegistry = new TaxonRegistry();
+        List<Tree> sourceTrees = TreeParser.parseGeneTrees(
+            cfg.getInputFile(), sourceRegistry, true);
+        TreeRestrictor.GeneResult restrictedGenes = TreeRestrictor.restrictGeneTrees(
+            sourceTrees, sourceRegistry, targetRegistry);
+        List<Tree> geneTrees = restrictedGenes.trees();
+        Logging.info("Taxon restriction retained %d/%d gene tree(s); dropped %d with "
+                + "fewer than three selected taxa (zero rooted-triplet contribution)",
+            geneTrees.size(), sourceTrees.size(), restrictedGenes.droppedTreeCount());
+        PhaseLogger.end("Score filter  Parse and restrict gene trees", tg, false);
+
+        long ts = PhaseLogger.begin("Score filter  Parse and restrict species tree", false);
+        TreeParser.StandaloneTree sourceSpecies = TreeParser.parseStandaloneTree(
+            cfg.getScoreSpeciesTreeFile());
+        Tree speciesTree = TreeRestrictor.restrictSpeciesTree(
+            sourceSpecies.tree(), sourceSpecies.registry(), targetRegistry);
+        Logging.info("Restricted supplied species tree: %d leaves", speciesTree.leafCount);
+        PhaseLogger.end("Score filter  Parse and restrict species tree", ts, false);
+
+        long th = PhaseLogger.begin("Score filter  Taxon hashing", false);
+        TaxonHasher hasher = new TaxonHasher(targetRegistry.size(),
+            cfg.getNumHashSeeds(), cfg.getBaseSeed());
+        PrefixHashArrays genePref = new PrefixHashArrays(geneTrees, hasher);
+        PhaseLogger.end("Score filter  Taxon hashing", th, false);
+
+        Logging.info("Mode: SCORE-ONLY with taxa file (score supplied induced species tree; "
+            + "no species-tree inference)");
+        return scorePreparedSpeciesTree(
+            cfg, targetRegistry, geneTrees, genePref, hasher, speciesTree);
+    }
+
+    private static int intersectionSize(java.util.Set<String> a,
+                                        java.util.Set<String> b) {
+        java.util.Set<String> smaller = a.size() <= b.size() ? a : b;
+        java.util.Set<String> larger = smaller == a ? b : a;
+        int count = 0;
+        for (String name : smaller) if (larger.contains(name)) count++;
+        return count;
+    }
+
+    private static double percentage(double count, int total) {
+        return total == 0 ? 0.0 : 100.0 * count / total;
+    }
+
+    private static boolean sameNormalizedPath(String first, String second) {
+        return java.nio.file.Path.of(first).toAbsolutePath().normalize().equals(
+            java.nio.file.Path.of(second).toAbsolutePath().normalize());
+    }
+
+    /** Keep preset-owned search-space combinations from being changed accidentally. */
+    private static void validateCurrentProScope(Config cfg) {
+        boolean fixedMode = cfg.getSearchSpace() == Config.SearchSpace.S1
+            || cfg.getSearchSpace() == Config.SearchSpace.S3;
+        Config.SearchMode expectedMode = cfg.getSearchSpace() == Config.SearchSpace.S1
+            ? Config.SearchMode.LOCAL : Config.SearchMode.FULL;
+        if ((fixedMode && cfg.getSearchMode() != expectedMode)
+                || cfg.isAutoCompleteIncompleteTrees()
+                || cfg.isConsensusExperimental()
+                || cfg.isResolveInputGeneTreePolytomies()
+                || (cfg.getSearchSpace() == Config.SearchSpace.S7
+                    && cfg.getMaxSearchPasses() != 1)) {
+            throw new UnsupportedOperationException(
+                cfg.getSearchSpace() + " does not support that search configuration");
+        }
+    }
+
+    /** Reject read/write aliases before any analysis output can replace an input. */
+    private static void validatePathCollisions(Config cfg) {
+        String[][] reads = {
+            {"input tree file", cfg.getInputFile()},
+            {"species tree file", cfg.getScoreSpeciesTreeFile()},
+            {"taxa file", cfg.getTaxaFile()},
+            {"gene-to-species mapping file", cfg.getGeneSpeciesMapFile()},
+            {"ASTRAL-Pro3 executable", cfg.getAstralProExecutable()}
+        };
+        String[][] writes = {
+            {"output file", cfg.getOutputFile()},
+            {"log file", cfg.getLogFile()},
+            {"cluster dump", cfg.getDumpClustersFile()},
+            {"completed-tree dump", cfg.getDumpCompletedTreesFile()}
+        };
+        for (String[] write : writes) {
+            if (write[1] == null) continue;
+            for (String[] read : reads) {
+                if (read[1] != null && sameNormalizedPath(write[1], read[1])) {
+                    throw new IllegalArgumentException(
+                        write[0] + " must differ from the " + read[0]);
+                }
+            }
+        }
+        for (int i = 0; i < writes.length; i++) {
+            if (writes[i][1] == null) continue;
+            for (int j = i + 1; j < writes.length; j++) {
+                if (writes[j][1] != null
+                        && sameNormalizedPath(writes[i][1], writes[j][1])) {
+                    throw new IllegalArgumentException(
+                        writes[i][0] + " must differ from the " + writes[j][0]);
+                }
+            }
+        }
+    }
+
+    private static String runScoreOnly(Config cfg, TaxonRegistry registry,
+                                       List<Tree> geneTrees, PrefixHashArrays genePref,
+                                       TaxonHasher hasher) throws IOException {
+        Logging.info("Mode: SCORE-ONLY (score supplied species tree; no species-tree inference)");
+        // The weight table dispatches GPU/CPU internally from the compute mode, so
+        // both paths are supported here.  The GPU path falls back to CPU on its own
+        // if it reports infeasible, so no forced downgrade is needed.
+
+        long ts = PhaseLogger.begin("Score mode  Parse supplied species tree", false);
+        Tree speciesTree = TreeParser.parseSpeciesTree(cfg.getScoreSpeciesTreeFile(), registry);
+        PhaseLogger.end("Score mode  Parse supplied species tree", ts, false);
+
+        return scorePreparedSpeciesTree(
+            cfg, registry, geneTrees, genePref, hasher, speciesTree);
+    }
+
+    private static String scorePreparedSpeciesTree(Config cfg, TaxonRegistry registry,
+                                                   List<Tree> geneTrees,
+                                                   PrefixHashArrays genePref,
+                                                   TaxonHasher hasher,
+                                                   Tree speciesTree) throws IOException {
+        String score = calculateFixedTreeScore(
+            cfg, registry, geneTrees, genePref, hasher, speciesTree,
+            "Score mode", "Score-only");
+        String line = "TRIPLET_SCORE: " + score;
+        System.out.println(line);
+        if (cfg.getOutputFile() != null) {
+            try (PrintStream out = new PrintStream(new FileOutputStream(cfg.getOutputFile()))) {
+                out.println(line);
+            }
+            Logging.info("Triplet score written to %s", cfg.getOutputFile());
+        }
+        return score;
+    }
+
+    private static String calculateFixedTreeScore(Config cfg,
+                                                   TaxonRegistry registry,
+                                                   List<Tree> geneTrees,
+                                                   PrefixHashArrays genePref,
+                                                   TaxonHasher hasher,
+                                                   Tree speciesTree,
+                                                   String phasePrefix,
+                                                   String scoreLogLabel) {
+        List<Tree> speciesTrees = java.util.List.of(speciesTree);
+
+        long tp = PhaseLogger.begin(phasePrefix + "  Species-tree hashing", false);
+        PrefixHashArrays speciesPref = new PrefixHashArrays(speciesTrees, hasher);
+        PhaseLogger.end(phasePrefix + "  Species-tree hashing", tp, false);
+
+        long tc = PhaseLogger.begin(phasePrefix + "  Species-tree clusters", false);
+        ClusterTable speciesClusters = new ClusterTable(speciesTrees, speciesPref, registry.size());
+        PhaseLogger.end(phasePrefix + "  Species-tree clusters", tc, false);
+
+        long tg = PhaseLogger.begin(phasePrefix + "  Gene-tree rooted child partitions", false);
+        // Simple tree-walk consumes the original gene-tree topology directly; it
+        // never reads PartitionTable.  Avoid materialising that very large table
+        // in score-only mode (notably, the 9,524-taxon angiosperm data otherwise
+        // needs tens of GiB merely to reach the weight kernel).
+        PartitionTable genePartitions = null;
+        if (cfg.getWeightIntersectionMethod()
+                != Config.WeightIntersectionMethod.SIMPLE_TREE_WALK) {
+            // Score only the same duplicate-invariant, speciation-rooted records
+            // used by S1 inference; duplication roots never enter the weight map.
+            UniqueTaxonSubtreeHashes geneHashes =
+                new UniqueTaxonSubtreeHashes(geneTrees, hasher);
+            genePartitions = new PartitionTable(geneTrees, genePref, geneHashes);
+            geneHashes.release();
+        } else {
+            Logging.info("%s tree-walk: skipped unused gene-tree PartitionTable",
+                scoreLogLabel);
+        }
+        PhaseLogger.end(phasePrefix + "  Gene-tree rooted child partitions", tg, false);
+
+        long td = PhaseLogger.begin(phasePrefix + "  Fixed-tree DP transitions", false);
+        DPTable speciesDP = new DPTable(speciesTrees, speciesPref, speciesClusters);
+        if (cfg.isAnchorOutgroup()) {
+            speciesDP.applyAnchoredRoot(speciesClusters.getAnchorHash());
+        }
+        PhaseLogger.end(phasePrefix + "  Fixed-tree DP transitions", td, false);
+
+        boolean gpuWeight = cfg.getComputeMode() == Config.ComputeMode.GPU
+                            && GPUWeightCalculator.isLoaded();
+        long tw = PhaseLogger.begin(phasePrefix + "  Weight calculation", gpuWeight);
+        WeightTable weightTable = new WeightTable(speciesDP, genePartitions, speciesClusters,
+                                                  speciesTrees, geneTrees);
+        PhaseLogger.end(phasePrefix + "  Weight calculation", tw, gpuWeight);
+
+        Inference scorer = new Inference();
+        return scorer.scoreFixedTree(speciesDP, weightTable, scoreLogLabel);
+    }
+}

@@ -1,0 +1,187 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="2400" height="1780" viewBox="0 0 2400 1780"><defs><marker id="arrow" markerWidth="9" markerHeight="9" refX="7" refY="4.5" orient="auto"><path d="M0,0 L9,4.5 L0,9 Z" fill="#607086"/></marker><marker id="arrow-purple" markerWidth="9" markerHeight="9" refX="7" refY="4.5" orient="auto"><path d="M0,0 L9,4.5 L0,9 Z" fill="#7452B7"/></marker><marker id="arrow-teal" markerWidth="9" markerHeight="9" refX="7" refY="4.5" orient="auto"><path d="M0,0 L9,4.5 L0,9 Z" fill="#148675"/></marker><marker id="arrow-blue" markerWidth="9" markerHeight="9" refX="7" refY="4.5" orient="auto"><path d="M0,0 L9,4.5 L0,9 Z" fill="#3974D1"/></marker><marker id="arrow-green" markerWidth="9" markerHeight="9" refX="7" refY="4.5" orient="auto"><path d="M0,0 L9,4.5 L0,9 Z" fill="#329953"/></marker><marker id="arrow-rose" markerWidth="9" markerHeight="9" refX="7" refY="4.5" orient="auto"><path d="M0,0 L9,4.5 L0,9 Z" fill="#D55470"/></marker><marker id="arrow-orange" markerWidth="9" markerHeight="9" refX="7" refY="4.5" orient="auto"><path d="M0,0 L9,4.5 L0,9 Z" fill="#D97828"/></marker></defs>
+<rect x="0" y="0" width="2400" height="1780" rx="0" fill="#F6F8FC" stroke="#F6F8FC" stroke-width="0"/>
+<polyline points="671,361 750,361" fill="none" stroke="#7452B7" stroke-width="4" stroke-linejoin="round" marker-end="url(#arrow-purple)"/>
+<polyline points="1048,361 1128,361" fill="none" stroke="#148675" stroke-width="4" stroke-linejoin="round" marker-end="url(#arrow-teal)"/>
+<polyline points="1600,503 1600,515 25,515 25,710 50,710" fill="none" stroke="#148675" stroke-width="3" stroke-linejoin="round" marker-end="url(#arrow-teal)"/>
+<polyline points="797,725 843,725" fill="none" stroke="#3974D1" stroke-width="4" stroke-linejoin="round" marker-end="url(#arrow-blue)"/>
+<polyline points="735,866 735,887 2000,887 2000,870" fill="none" stroke="#3974D1" stroke-width="3" stroke-linejoin="round" marker-end="url(#arrow-blue)"/>
+<polyline points="842,1598 925,1598" fill="none" stroke="#D55470" stroke-width="4" stroke-linejoin="round" marker-end="url(#arrow-rose)"/>
+<polyline points="1769,1598 1803,1598" fill="none" stroke="#329953" stroke-width="4" stroke-linejoin="round" marker-end="url(#arrow-green)"/>
+<rect x="0" y="0" width="2400" height="132" rx="0" fill="#17233D" stroke="#17233D" stroke-width="0"/>
+<rect x="0" y="128" width="2400" height="4" rx="0" fill="#7452B7" stroke="#7452B7" stroke-width="0"/>
+<rect x="50" y="157" width="48" height="48" rx="12" fill="#17233D" stroke="#17233D" stroke-width="0"/>
+<rect x="50" y="220" width="620" height="283" rx="18" fill="#EDE7FA" stroke="#7452B7" stroke-width="2"/>
+<rect x="74" y="279" width="570" height="62" rx="10" fill="#FFFFFF" stroke="#B7A3DC" stroke-width="1.5"/>
+<rect x="74" y="352" width="570" height="62" rx="10" fill="#FFFFFF" stroke="#B7A3DC" stroke-width="1.5"/>
+<rect x="74" y="425" width="570" height="62" rx="10" fill="#FFFFFF" stroke="#B7A3DC" stroke-width="1.5"/>
+<rect x="757" y="264" width="290" height="187" rx="22" fill="#EDE7FA" stroke="#7452B7" stroke-width="3"/>
+<rect x="1134" y="220" width="1216" height="283" rx="18" fill="#E1F5F0" stroke="#148675" stroke-width="2"/>
+<rect x="1155" y="278" width="1175" height="62" rx="10" fill="#FFFFFF" stroke="#83C5B8" stroke-width="1.5"/>
+<rect x="1155" y="352" width="1175" height="62" rx="10" fill="#FFFFFF" stroke="#83C5B8" stroke-width="1.5"/>
+<rect x="1155" y="425" width="1175" height="62" rx="10" fill="#FFFFFF" stroke="#83C5B8" stroke-width="1.5"/>
+<rect x="50" y="528" width="48" height="48" rx="12" fill="#17233D" stroke="#17233D" stroke-width="0"/>
+<rect x="50" y="591" width="745" height="275" rx="18" fill="#E7F0FF" stroke="#3974D1" stroke-width="2"/>
+<rect x="78" y="656" width="689" height="90" rx="9" fill="#FFFFFF" stroke="#B8D0F8" stroke-width="1"/>
+<rect x="850" y="591" width="740" height="275" rx="18" fill="#E5F8FB" stroke="#1C93A7" stroke-width="2"/>
+<rect x="1645" y="591" width="705" height="275" rx="18" fill="#E6F6E8" stroke="#329953" stroke-width="2"/>
+<rect x="50" y="908" width="48" height="48" rx="12" fill="#17233D" stroke="#17233D" stroke-width="0"/>
+<rect x="50" y="966" width="2300" height="432" rx="18" fill="#FFF3D9" stroke="#D89122" stroke-width="2"/>
+<rect x="76" y="1007" width="480" height="355" rx="13" fill="#FFFFFF" stroke="#ECC981" stroke-width="1.5"/>
+<ellipse cx="128" cy="1096" rx="21" ry="21" fill="#E7F0FF" stroke="#3974D1" stroke-width="2"/>
+<ellipse cx="232" cy="1154" rx="21" ry="21" fill="#EDE7FA" stroke="#7452B7" stroke-width="2"/>
+<ellipse cx="348" cy="1209" rx="21" ry="21" fill="#EDE7FA" stroke="#7452B7" stroke-width="2"/>
+<rect x="213" y="1055" width="128" height="34" rx="10" fill="#E6F6E8" stroke="#329953" stroke-width="1"/>
+<rect x="328" y="1101" width="200" height="34" rx="10" fill="#E1F5F0" stroke="#148675" stroke-width="1"/>
+<rect x="426" y="1174" width="106" height="34" rx="10" fill="#E1F5F0" stroke="#148675" stroke-width="1"/>
+<rect x="426" y="1222" width="106" height="34" rx="10" fill="#FDE8EB" stroke="#D55470" stroke-width="1"/>
+<rect x="578" y="1007" width="389" height="355" rx="13" fill="#FFFFFF" stroke="#ECC981" stroke-width="1.5"/>
+<rect x="989" y="1007" width="418" height="355" rx="13" fill="#FFFFFF" stroke="#ECC981" stroke-width="1.5"/>
+<rect x="1011" y="1213" width="373" height="92" rx="11" fill="#FDE8EB" stroke="#D55470" stroke-width="1"/>
+<rect x="1429" y="1007" width="408" height="355" rx="13" fill="#FFFFFF" stroke="#ECC981" stroke-width="1.5"/>
+<rect x="1859" y="1007" width="466" height="355" rx="13" fill="#FFFFFF" stroke="#ECC981" stroke-width="1.5"/>
+<rect x="1880" y="1135" width="420" height="85" rx="10" fill="#E1F5F0" stroke="#148675" stroke-width="1.5"/>
+<rect x="50" y="1413" width="48" height="48" rx="12" fill="#17233D" stroke="#17233D" stroke-width="0"/>
+<rect x="50" y="1471" width="790" height="258" rx="18" fill="#FDE8EB" stroke="#D55470" stroke-width="2"/>
+<rect x="932" y="1471" width="835" height="258" rx="18" fill="#253552" stroke="#253552" stroke-width="2"/>
+<rect x="1810" y="1471" width="540" height="258" rx="18" fill="#E6F6E8" stroke="#329953" stroke-width="2"/>
+<rect x="50" y="1744" width="2300" height="29" rx="0" fill="#EDF1F7" stroke="#EDF1F7" stroke-width="0"/>
+<polyline points="150,1092 213,1072" fill="none" stroke="#607086" stroke-width="2" stroke-linejoin="round"/>
+<polyline points="149,1105 213,1148" fill="none" stroke="#607086" stroke-width="2" stroke-linejoin="round"/>
+<polyline points="252,1145 328,1118" fill="none" stroke="#607086" stroke-width="2" stroke-linejoin="round"/>
+<polyline points="251,1160 329,1203" fill="none" stroke="#D97828" stroke-width="3" stroke-linejoin="round"/>
+<polyline points="369,1197 427,1191" fill="none" stroke="#607086" stroke-width="2" stroke-linejoin="round"/>
+<polyline points="368,1217 427,1239" fill="none" stroke="#D97828" stroke-width="3" stroke-linejoin="round"/>
+<polyline points="556,1178 574,1178" fill="none" stroke="#D97828" stroke-width="3" stroke-linejoin="round" marker-end="url(#arrow-orange)"/>
+<polyline points="967,1178 985,1178" fill="none" stroke="#D97828" stroke-width="3" stroke-linejoin="round" marker-end="url(#arrow-orange)"/>
+<polyline points="1407,1178 1425,1178" fill="none" stroke="#D97828" stroke-width="3" stroke-linejoin="round" marker-end="url(#arrow-orange)"/>
+<polyline points="1837,1178 1855,1178" fill="none" stroke="#D97828" stroke-width="3" stroke-linejoin="round" marker-end="url(#arrow-orange)"/>
+<text x="54" y="58.4" text-anchor="start" font-family="Arial,sans-serif" font-size="34" font-weight="700" fill="#FFFFFF">S4 SEARCH SPACE  |  DISCO + ROOTED-TRIPLET GUIDE</text>
+<text x="55" y="98.8" text-anchor="start" font-family="Arial,sans-serif" font-size="18" font-weight="400" fill="#D8E3F5">Candidate trees are single-copy proxies; the final objective is scored only on the original rooted/tagged multicopy genes.</text>
+<text x="74" y="189.75" text-anchor="middle" font-family="Arial,sans-serif" font-size="25" font-weight="700" fill="#FFFFFF">1</text>
+<text x="112" y="189.4" text-anchor="start" font-family="Arial,sans-serif" font-size="24" font-weight="700" fill="#17233D">FROM ROOTED/TAGGED MULTICOPY GENES TO SINGLE-COPY DISCO COMPONENTS</text>
+<text x="76" y="258.2" text-anchor="start" font-family="Arial,sans-serif" font-size="22" font-weight="700" fill="#17233D">ORIGINAL GENE FAMILIES</text>
+<text x="92" y="302.8" text-anchor="start" font-family="Arial,sans-serif" font-size="18" font-weight="700" fill="#17233D">G1  •  nested duplications D1, D2</text>
+<text x="92" y="327.1" text-anchor="start" font-family="Arial,sans-serif" font-size="16" font-weight="400" fill="#607086">A occurs on both sides; other copies may recur.</text>
+<text x="92" y="376.8" text-anchor="start" font-family="Arial,sans-serif" font-size="18" font-weight="700" fill="#17233D">G2  •  another multicopy gene tree</text>
+<text x="92" y="400.1" text-anchor="start" font-family="Arial,sans-serif" font-size="16" font-weight="400" fill="#607086">Rooted/tagged speciation and duplication nodes.</text>
+<text x="92" y="449.8" text-anchor="start" font-family="Arial,sans-serif" font-size="18" font-weight="700" fill="#17233D">G3  •  another multicopy gene tree</text>
+<text x="92" y="473.1" text-anchor="start" font-family="Arial,sans-serif" font-size="16" font-weight="400" fill="#607086">Input trees stay unchanged for final scoring.</text>
+<text x="902.5" y="304.6" text-anchor="middle" font-family="Arial,sans-serif" font-size="26" font-weight="700" fill="#7452B7">DISCO</text>
+<text x="778" y="340.45" text-anchor="start" font-family="Arial,sans-serif" font-size="17" font-weight="400" fill="#243247">At each D node:</text>
+<text x="778" y="365.45" text-anchor="start" font-family="Arial,sans-serif" font-size="17" font-weight="400" fill="#243247">cut smaller child</text>
+<text x="778" y="390.45" text-anchor="start" font-family="Arial,sans-serif" font-size="17" font-weight="400" fill="#243247">(tie → right child).</text>
+<text x="778" y="415.45" text-anchor="start" font-family="Arial,sans-serif" font-size="17" font-weight="400" fill="#243247">Keep components with</text>
+<text x="778" y="440.45" text-anchor="start" font-family="Arial,sans-serif" font-size="17" font-weight="400" fill="#243247">at least 4 leaves.</text>
+<text x="1160" y="258.2" text-anchor="start" font-family="Arial,sans-serif" font-size="22" font-weight="700" fill="#17233D">RETAINED SINGLE-COPY COMPONENT TREES</text>
+<text x="1176" y="301.3" text-anchor="start" font-family="Arial,sans-serif" font-size="18" font-weight="700" fill="#243247">G1 → Croot {A,B,C,D,E,F,G,H,I}, CR {A,E,F,G}, CQ {A,K,L,M}</text>
+<text x="1176" y="326.6" text-anchor="start" font-family="Arial,sans-serif" font-size="16" font-weight="400" fill="#607086">Three smaller rooted trees; each has no more than one leaf per species.</text>
+<text x="1176" y="378.3" text-anchor="start" font-family="Arial,sans-serif" font-size="18" font-weight="400" fill="#243247">G2 → C4, C5, …   (single-copy pieces from its duplication cuts)</text>
+<text x="1176" y="451.3" text-anchor="start" font-family="Arial,sans-serif" font-size="18" font-weight="400" fill="#243247">G3 → C6, C7, …   (components below four leaves are discarded)</text>
+<text x="74" y="560.75" text-anchor="middle" font-family="Arial,sans-serif" font-size="25" font-weight="700" fill="#FFFFFF">2</text>
+<text x="112" y="560.4" text-anchor="start" font-family="Arial,sans-serif" font-size="24" font-weight="700" fill="#17233D">ONE TRIPLET-BASED GUIDE MATRIX FEEDS TWO SEARCH-SPACE BRANCHES</text>
+<text x="77" y="631.55" text-anchor="start" font-family="Arial,sans-serif" font-size="23" font-weight="700" fill="#17233D">ROOTED-TRIPLET PAIR SIMILARITY  M</text>
+<text x="97" y="683.5" text-anchor="start" font-family="Arial,sans-serif" font-size="20" font-weight="700" fill="#3974D1">Nₜ(a,b) = kₜ − |desc(LCAₜ(a,b))|</text>
+<text x="97" y="719.5" text-anchor="start" font-family="Arial,sans-serif" font-size="20" font-weight="700" fill="#3974D1">M[a,b] = Σₜ Nₜ(a,b) / Σₜ (kₜ − 2)</text>
+<text x="80" y="783.95" text-anchor="start" font-family="Arial,sans-serif" font-size="17" font-weight="400" fill="#243247">Computed from retained DISCO single-copy trees.</text>
+<text x="80" y="813.95" text-anchor="start" font-family="Arial,sans-serif" font-size="17" font-weight="400" fill="#243247">This guide matrix is not the final GDL objective.</text>
+<text x="878" y="631.55" text-anchor="start" font-family="Arial,sans-serif" font-size="23" font-weight="700" fill="#17233D">PARTIAL LINEAGE-SCOPED COMPLETION</text>
+<text x="880" y="683.8" text-anchor="start" font-family="Arial,sans-serif" font-size="18" font-weight="400" fill="#243247">For each component, record its pre-cut root scope.</text>
+<text x="880" y="714.8" text-anchor="start" font-family="Arial,sans-serif" font-size="18" font-weight="400" fill="#243247">Eligible insertions = scope taxa missing after cuts.</text>
+<text x="880" y="745.8" text-anchor="start" font-family="Arial,sans-serif" font-size="18" font-weight="400" fill="#243247">For missing x, choose the most similar present</text>
+<text x="880" y="776.8" text-anchor="start" font-family="Arial,sans-serif" font-size="18" font-weight="400" fill="#243247">anchor in M; insert x as that leaf&apos;s sister.</text>
+<text x="880" y="807.8" text-anchor="start" font-family="Arial,sans-serif" font-size="18" font-weight="400" fill="#243247">Existing rooted relationships remain intact.</text>
+<text x="880" y="838.8" text-anchor="start" font-family="Arial,sans-serif" font-size="18" font-weight="400" fill="#243247">Completed components are streamed in batches.</text>
+<text x="1673" y="631.55" text-anchor="start" font-family="Arial,sans-serif" font-size="23" font-weight="700" fill="#17233D">GLOBAL UPGMA GUIDE</text>
+<text x="1675" y="690.8" text-anchor="start" font-family="Arial,sans-serif" font-size="18" font-weight="400" fill="#243247">Use the SAME M:  distance(a,b) = 1 − M[a,b].</text>
+<text x="1675" y="729.8" text-anchor="start" font-family="Arial,sans-serif" font-size="18" font-weight="400" fill="#243247">Agglomerate all species into one rooted tree.</text>
+<text x="1675" y="768.8" text-anchor="start" font-family="Arial,sans-serif" font-size="18" font-weight="400" fill="#243247">Its internal rooted clades add candidates.</text>
+<text x="1675" y="807.8" text-anchor="start" font-family="Arial,sans-serif" font-size="18" font-weight="400" fill="#243247">Guide construction never supplies GDL weights.</text>
+<text x="1355" y="878.6" text-anchor="middle" font-family="Arial,sans-serif" font-size="16" font-weight="700" fill="#3974D1">same M → UPGMA</text>
+<text x="74" y="940.75" text-anchor="middle" font-family="Arial,sans-serif" font-size="25" font-weight="700" fill="#FFFFFF">3</text>
+<text x="112" y="940.4" text-anchor="start" font-family="Arial,sans-serif" font-size="24" font-weight="700" fill="#17233D">WORKED EXAMPLE: WHY COMPLETION IS PARTIAL, NOT GLOBAL</text>
+<text x="97" y="1042.65" text-anchor="start" font-family="Arial,sans-serif" font-size="19" font-weight="700" fill="#17233D">G1  •  TWO NESTED D NODES</text>
+<text x="128" y="1101.95" text-anchor="middle" font-family="Arial,sans-serif" font-size="17" font-weight="700" fill="#3974D1">S</text>
+<text x="232" y="1158.9" text-anchor="middle" font-family="Arial,sans-serif" font-size="14" font-weight="700" fill="#7452B7">D1</text>
+<text x="348" y="1213.9" text-anchor="middle" font-family="Arial,sans-serif" font-size="14" font-weight="700" fill="#7452B7">D2</text>
+<text x="277" y="1077.6" text-anchor="middle" font-family="Arial,sans-serif" font-size="16" font-weight="700" fill="#243247">H, I</text>
+<text x="428" y="1123.6" text-anchor="middle" font-family="Arial,sans-serif" font-size="16" font-weight="700" fill="#243247">L7: A…G</text>
+<text x="479" y="1195.55" text-anchor="middle" font-family="Arial,sans-serif" font-size="13" font-weight="700" fill="#243247">A,E,F,G</text>
+<text x="479" y="1243.55" text-anchor="middle" font-family="Arial,sans-serif" font-size="13" font-weight="700" fill="#243247">A,K,L,M</text>
+<text x="96" y="1299.25" text-anchor="start" font-family="Arial,sans-serif" font-size="15" font-weight="700" fill="#D97828">D2 tie → cut right; D1 tie → cut right.</text>
+<text x="96" y="1328.75" text-anchor="start" font-family="Arial,sans-serif" font-size="15" font-weight="400" fill="#607086">D1 child scopes: L7=7 taxa, R7=7 taxa.</text>
+<text x="600" y="1043.15" text-anchor="start" font-family="Arial,sans-serif" font-size="19" font-weight="700" fill="#17233D">DISCO OUTPUT FROM G1</text>
+<text x="601" y="1098.3" text-anchor="start" font-family="Arial,sans-serif" font-size="18" font-weight="400" fill="#243247">Croot: observed A–I</text>
+<text x="601" y="1140.3" text-anchor="start" font-family="Arial,sans-serif" font-size="18" font-weight="400" fill="#243247">          missing K,L,M</text>
+<text x="601" y="1182.3" text-anchor="start" font-family="Arial,sans-serif" font-size="18" font-weight="400" fill="#243247">CR: observed A,E,F,G</text>
+<text x="601" y="1224.3" text-anchor="start" font-family="Arial,sans-serif" font-size="18" font-weight="400" fill="#243247">       missing K,L,M</text>
+<text x="601" y="1266.3" text-anchor="start" font-family="Arial,sans-serif" font-size="18" font-weight="400" fill="#243247">CQ: observed A,K,L,M</text>
+<text x="601" y="1308.3" text-anchor="start" font-family="Arial,sans-serif" font-size="18" font-weight="400" fill="#243247">       missing ∅</text>
+<text x="600" y="1348.6" text-anchor="start" font-family="Arial,sans-serif" font-size="16" font-weight="700" fill="#148675">All three are single-copy.</text>
+<text x="1010" y="1043.15" text-anchor="start" font-family="Arial,sans-serif" font-size="19" font-weight="700" fill="#17233D">CR&apos;S PRE-CUT SCOPE</text>
+<text x="1011" y="1099.3" text-anchor="start" font-family="Arial,sans-serif" font-size="18" font-weight="400" fill="#243247">Scope = {A,E,F,G,K,L,M}</text>
+<text x="1011" y="1141.3" text-anchor="start" font-family="Arial,sans-serif" font-size="18" font-weight="400" fill="#243247">Observed = {A,E,F,G}</text>
+<text x="1011" y="1183.3" text-anchor="start" font-family="Arial,sans-serif" font-size="18" font-weight="400" fill="#243247">Eligible = {K,L,M}</text>
+<text x="1025" y="1243.45" text-anchor="start" font-family="Arial,sans-serif" font-size="17" font-weight="700" fill="#D55470">NOT eligible: B,C,D,H,I</text>
+<text x="1025" y="1280.75" text-anchor="start" font-family="Arial,sans-serif" font-size="15" font-weight="400" fill="#243247">Outside this component&apos;s lineage.</text>
+<text x="1451" y="1043.15" text-anchor="start" font-family="Arial,sans-serif" font-size="19" font-weight="700" fill="#17233D">ANCHORS FROM M</text>
+<text x="1452" y="1103.3" text-anchor="start" font-family="Arial,sans-serif" font-size="18" font-weight="400" fill="#3974D1">K → E   :  M[K,E] = 0.82</text>
+<text x="1452" y="1145.3" text-anchor="start" font-family="Arial,sans-serif" font-size="18" font-weight="400" fill="#3974D1">L → F   :  M[L,F] = 0.77</text>
+<text x="1452" y="1187.3" text-anchor="start" font-family="Arial,sans-serif" font-size="18" font-weight="400" fill="#3974D1">M → G   :  M[M,G] = 0.73</text>
+<text x="1452" y="1273.6" text-anchor="start" font-family="Arial,sans-serif" font-size="16" font-weight="400" fill="#607086">Illustrative values; choose the best</text>
+<text x="1452" y="1300.1" text-anchor="start" font-family="Arial,sans-serif" font-size="16" font-weight="400" fill="#607086">currently present anchor for each x.</text>
+<text x="1880" y="1043.15" text-anchor="start" font-family="Arial,sans-serif" font-size="19" font-weight="700" fill="#17233D">COMPLETED CR</text>
+<text x="1881" y="1104.3" text-anchor="start" font-family="Arial,sans-serif" font-size="18" font-weight="400" fill="#243247">Before:  ((A,E),(F,G))</text>
+<text x="1895" y="1162.95" text-anchor="start" font-family="Arial,sans-serif" font-size="17" font-weight="700" fill="#148675">After:</text>
+<text x="1895" y="1194.8" text-anchor="start" font-family="Arial,sans-serif" font-size="18" font-weight="700" fill="#243247">((A,(E,K)),((F,L),(G,M)))</text>
+<text x="1881" y="1270.1" text-anchor="start" font-family="Arial,sans-serif" font-size="16" font-weight="400" fill="#243247">Only K,L,M were inserted.</text>
+<text x="1881" y="1301.1" text-anchor="start" font-family="Arial,sans-serif" font-size="16" font-weight="400" fill="#243247">Old-leaf topology is preserved.</text>
+<text x="74" y="1445.75" text-anchor="middle" font-family="Arial,sans-serif" font-size="25" font-weight="700" fill="#FFFFFF">4</text>
+<text x="112" y="1445.4" text-anchor="start" font-family="Arial,sans-serif" font-size="24" font-weight="700" fill="#17233D">CANDIDATE CLADES ENTER STELAR DP; ORIGINAL GENES SUPPLY THE SCORE</text>
+<text x="79" y="1512.55" text-anchor="start" font-family="Arial,sans-serif" font-size="23" font-weight="700" fill="#17233D">CANDIDATE SET  X</text>
+<text x="80" y="1561.8" text-anchor="start" font-family="Arial,sans-serif" font-size="18" font-weight="400" fill="#243247">Rooted subtree clades from completed DISCO trees</text>
+<text x="80" y="1592.8" text-anchor="start" font-family="Arial,sans-serif" font-size="18" font-weight="400" fill="#243247">plus rooted clades of the global UPGMA tree.</text>
+<text x="80" y="1623.8" text-anchor="start" font-family="Arial,sans-serif" font-size="18" font-weight="400" fill="#243247">Partial component-root clades are valid candidates.</text>
+<text x="80" y="1654.8" text-anchor="start" font-family="Arial,sans-serif" font-size="18" font-weight="400" fill="#243247">Default S4: no S1 input clades; cross-tree</text>
+<text x="80" y="1685.8" text-anchor="start" font-family="Arial,sans-serif" font-size="18" font-weight="400" fill="#243247">transitions are disabled unless requested.</text>
+<text x="960" y="1512.55" text-anchor="start" font-family="Arial,sans-serif" font-size="23" font-weight="700" fill="#FFFFFF">ROOTED STELAR DYNAMIC PROGRAM</text>
+<text x="961" y="1562.3" text-anchor="start" font-family="Arial,sans-serif" font-size="18" font-weight="400" fill="#FFFFFF">Find the highest triplet-score tree allowed by X.</text>
+<text x="961" y="1592.3" text-anchor="start" font-family="Arial,sans-serif" font-size="18" font-weight="400" fill="#FFFFFF">Weights use original rooted/tagged G1, G2, G3, …</text>
+<text x="961" y="1622.3" text-anchor="start" font-family="Arial,sans-serif" font-size="18" font-weight="400" fill="#FFFFFF">Count only speciation-rooted triplets.</text>
+<text x="961" y="1652.3" text-anchor="start" font-family="Arial,sans-serif" font-size="18" font-weight="400" fill="#FFFFFF">Equivalent triplets at the same gene-tree root</text>
+<text x="961" y="1682.3" text-anchor="start" font-family="Arial,sans-serif" font-size="18" font-weight="400" fill="#FFFFFF">count once; duplication-rooted triplets are ignored.</text>
+<text x="1837" y="1513.05" text-anchor="start" font-family="Arial,sans-serif" font-size="23" font-weight="700" fill="#17233D">ESTIMATED SPECIES TREE</text>
+<text x="1837" y="1578.7" text-anchor="start" font-family="Arial,sans-serif" font-size="22" font-weight="700" fill="#329953">T* = argmax  triplet score(T)</text>
+<text x="1838" y="1640.3" text-anchor="start" font-family="Arial,sans-serif" font-size="18" font-weight="400" fill="#243247">Search proxies ≠ scoring evidence.</text>
+<text x="1838" y="1672.3" text-anchor="start" font-family="Arial,sans-serif" font-size="18" font-weight="400" fill="#243247">One rooted species tree is returned.</text>
+<text x="63" y="1763.75" text-anchor="start" font-family="Arial,sans-serif" font-size="15" font-weight="400" fill="#607086">S4 default = strict-lineage DISCO + rooted-triplet similarity + local DP transitions.  Optional --exhaustive and --cross-tree-splits change the search space.</text>
+<line x1="548" y1="310" x2="578" y2="296" stroke="#7452B7" stroke-width="2"/>
+<line x1="548" y1="310" x2="620" y2="329" stroke="#7452B7" stroke-width="2"/>
+<line x1="578" y1="296" x2="620" y2="284" stroke="#7452B7" stroke-width="2"/>
+<line x1="578" y1="296" x2="620" y2="308" stroke="#7452B7" stroke-width="2"/>
+<circle cx="548" cy="310" r="6.5" fill="#E7F0FF" stroke="#3974D1" stroke-width="1.5"/>
+<circle cx="578" cy="296" r="10" fill="#EDE7FA" stroke="#7452B7" stroke-width="1.5"/>
+<text x="578" y="300" text-anchor="middle" font-family="Arial,sans-serif" font-weight="700" font-size="11" fill="#7452B7">D</text>
+<circle cx="620" cy="284" r="4.5" fill="#E1F5F0" stroke="#148675" stroke-width="1.5"/>
+<circle cx="620" cy="308" r="4.5" fill="#E1F5F0" stroke="#148675" stroke-width="1.5"/>
+<circle cx="620" cy="329" r="4.5" fill="#E1F5F0" stroke="#148675" stroke-width="1.5"/>
+<line x1="548" y1="383" x2="620" y2="363" stroke="#7452B7" stroke-width="2"/>
+<line x1="548" y1="383" x2="578" y2="398" stroke="#7452B7" stroke-width="2"/>
+<line x1="578" y1="398" x2="620" y2="389" stroke="#7452B7" stroke-width="2"/>
+<line x1="578" y1="398" x2="620" y2="408" stroke="#7452B7" stroke-width="2"/>
+<circle cx="548" cy="383" r="6.5" fill="#E7F0FF" stroke="#3974D1" stroke-width="1.5"/>
+<circle cx="578" cy="398" r="10" fill="#EDE7FA" stroke="#7452B7" stroke-width="1.5"/>
+<text x="578" y="402" text-anchor="middle" font-family="Arial,sans-serif" font-weight="700" font-size="11" fill="#7452B7">D</text>
+<circle cx="620" cy="363" r="4.5" fill="#E1F5F0" stroke="#148675" stroke-width="1.5"/>
+<circle cx="620" cy="389" r="4.5" fill="#E1F5F0" stroke="#148675" stroke-width="1.5"/>
+<circle cx="620" cy="408" r="4.5" fill="#E1F5F0" stroke="#148675" stroke-width="1.5"/>
+<line x1="548" y1="456" x2="578" y2="442" stroke="#7452B7" stroke-width="2"/>
+<line x1="548" y1="456" x2="620" y2="478" stroke="#7452B7" stroke-width="2"/>
+<line x1="578" y1="442" x2="620" y2="431" stroke="#7452B7" stroke-width="2"/>
+<line x1="578" y1="442" x2="620" y2="455" stroke="#7452B7" stroke-width="2"/>
+<circle cx="548" cy="456" r="6.5" fill="#E7F0FF" stroke="#3974D1" stroke-width="1.5"/>
+<circle cx="578" cy="442" r="10" fill="#EDE7FA" stroke="#7452B7" stroke-width="1.5"/>
+<text x="578" y="446" text-anchor="middle" font-family="Arial,sans-serif" font-weight="700" font-size="11" fill="#7452B7">D</text>
+<circle cx="620" cy="431" r="4.5" fill="#E1F5F0" stroke="#148675" stroke-width="1.5"/>
+<circle cx="620" cy="455" r="4.5" fill="#E1F5F0" stroke="#148675" stroke-width="1.5"/>
+<circle cx="620" cy="478" r="4.5" fill="#E1F5F0" stroke="#148675" stroke-width="1.5"/>
+</svg>

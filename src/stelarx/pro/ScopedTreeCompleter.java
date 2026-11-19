@@ -18,7 +18,7 @@ public final class ScopedTreeCompleter {
         this.rows = rows;
     }
 
-    /** True when some component lost at least one within-lineage taxon to a cut. */
+    /** True when a component lacks at least one species allowed by its saved scope. */
     public static boolean anyMissing(List<Tree> trees) {
         for (Tree tree : trees) {
             if (!(tree instanceof DiscoDecomposer.ScopedTree scoped)) {
@@ -63,8 +63,9 @@ public final class ScopedTreeCompleter {
         TreeNode[] taxonNode = new TreeNode[n];
         indexLeaves(root, taxonNode);
 
-        // The packed bits represent taxa lost to cuts below this root, not
-        // taxa in ancestral speciation siblings or absent from the gene tree.
+        // The mask already restricts completion to a pre-cut lineage (S4) or
+        // duplication-vertex union (S6). It excludes ancestral speciation
+        // siblings and species absent from that saved observed scope.
         long[] missing = source.missingWords();
         for (int wi = 0; wi < missing.length; wi++) {
             long word = missing[wi];

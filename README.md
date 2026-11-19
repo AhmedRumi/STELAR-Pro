@@ -173,40 +173,49 @@ bundled ASTRAL-Pro3 binary instead uses score improvement and a different cap.
 Every backbone and full-tree DP remains rooted-triplet based.
 
 S6 is a separate selectable path: select `--search-space S6`. It adds four rooted
-species-tree proposals and one UPGMA tree, with no S1 candidates
+species-tree proposals, with no S1 candidates
 (`--s6-rounds N`, `--s6-seed N`). Unlike S5, **all greedy placement and rooted
 NNI decisions use STELAR-Pro's speciation-driven triplet score** from the
 original tagged multicopy gene trees. S6 stores speciation-child taxon lists
 and incremental colour counts, not a dense triplet tensor; duplicate copies
 are collapsed within each child species set, and duplication-rooted nodes
 contribute no observations.
-For 100 or more taxa, S6 builds one strict-lineage DISCO/UPGMA pool using
-S4's rooted-triplet similarity matrix. Each randomized subset receives
-restricted guides; STELAR-DP infers its backbone from the induced original
-genes. Triplet scores assign the remaining taxa to backbone edges, UPGMA
-builds partition trees from the shared matrix, and cached triplet NNI refines
-the guides. S6 supports one outer DP pass; `--s6-rounds N` controls its
-independent guides. The opt-in `--s6-no-upgma-candidate` experiment leaves
-this guide construction unchanged but omits the global UPGMA tree from the
-final candidate DP.
-
-With `--subsetlocal`, S6 instead retains uncompleted DISCO components and
-builds a similarity matrix and completed guides only for each backbone subset.
+For 100 or more taxa, S6 retains uncompleted DISCO components and builds a
+triplet similarity matrix and completed guides only for each backbone subset.
+For a component detached at duplication vertex v, eligible species are the
+original observed union below v, including its sister locus. The residual
+top component uses the original gene's observed species set. These scopes
+exclude ancestral speciation siblings and do not propagate inferred taxa
+through younger duplications. Only a packed missing-species mask is retained
+per component. S4 continues to use strict lineage scope.
+STELAR-DP infers a backbone from the induced original genes, and triplet
+scores assign remaining species to its edges.
 After edge assignment, it restricts those components to disjoint partition
 groups in one pass and builds a small similarity matrix and UPGMA tree per
 group; partition trees need no completion. Each group matrix is released
 after its UPGMA tree is built. This mode has no global similarity matrix or
-global UPGMA candidate, so the final DP uses the greedy guides only. Without
-the flag, the shared-global S6 path above is unchanged. `--subsetlocal` is
-valid only with `--search-space S6`.
+global UPGMA candidate, so the final DP uses the greedy guides only. Cached
+triplet NNI refines the guides. S6 supports one outer DP pass;
+`--s6-rounds N` controls its independent guides. `--subsetlocal` and
+`--s6-no-upgma-candidate` remain accepted compatibility aliases for S6.
+For fewer than 100 species, the existing direct triplet insertion/NNI path
+constructs each guide; no backbone subset or DISCO completion is needed.
+
+The previous S6 is preserved as **S6 without subset-local** in
+[`temporary-builds/s6-without-subset-local/`](temporary-builds/s6-without-subset-local/README.md).
+Its frozen jar and source snapshots are outside the production source tree.
 
 S6 does not use ASTRAL-Pro's quartet placement counter;
 ASTRAL-Pro3 is used only for the common input
-rooting/tagging preprocessing. CPU workers score independent guides and NNI
-choices; CUDA builds bounded O(n²) slices for taxa being inserted. The final
+rooting/tagging preprocessing. Guide rounds run sequentially; up to three CPU
+scorer workers evaluate NNI choices, and CUDA builds bounded focused slices
+for taxa being inserted (backbone placement uses O(m²), for m backbone taxa).
+The final
 STELAR weight calculation remains CUDA-capable. Guide-slice reuse is capped at
 32 MiB, and one-pass runs release their search-only indexes and native pages
 before final DP.
+The phase-by-phase [parallelism and memory audit](DOCS/s4-s6-parallelism-memory-audit.md)
+describes current ownership/lifetimes and proposed optimizations.
 The backbone DP takes candidates from restricted DISCO/UPGMA guides and
 weights from the induced original genes. Native CPU colour states accelerate
 triplet placement and NNI queries, with a Java fallback when unavailable.

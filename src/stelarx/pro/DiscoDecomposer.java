@@ -25,7 +25,10 @@ public final class DiscoDecomposer {
 
     private static final long[] NO_MISSING_TAXA = new long[0];
 
-    /** A DISCO component plus taxa lost to cuts below its original root. */
+    /** Completion eligibility; cut selection and the observed trees are identical. */
+    public enum CompletionScope { GLOBAL, LINEAGE, DUPLICATION }
+
+    /** A DISCO component plus missing species allowed by its saved completion scope. */
     public static final class ScopedTree extends Tree {
         private final long[] missingWords;
         private final int missingCount;
@@ -83,9 +86,23 @@ public final class DiscoDecomposer {
     public static Result decomposeAll(List<Tree> inputTrees, int totalTaxa,
                                       int firstTreeIndex, int minimumLeaves,
                                       boolean lineageScoped) {
+        return decomposeAll(inputTrees, totalTaxa, firstTreeIndex, minimumLeaves,
+            lineageScoped ? CompletionScope.LINEAGE : CompletionScope.GLOBAL);
+    }
+
+    /**
+     * DUPLICATION records the observed union at the cut's duplication vertex.
+     * The residual top component keeps the original gene's observed scope.
+     * Only one packed missing-taxon mask per retained component survives.
+     */
+    public static Result decomposeAll(List<Tree> inputTrees, int totalTaxa,
+                                      int firstTreeIndex, int minimumLeaves,
+                                      CompletionScope completionScope) {
         if (minimumLeaves < 1) {
             throw new IllegalArgumentException("DISCO minimum leaf count must be positive");
         }
+        java.util.Objects.requireNonNull(completionScope, "completionScope");
+        boolean lineageScoped = completionScope != CompletionScope.GLOBAL;
 
         List<Tree> output = new ArrayList<>();
         int nextTreeIndex = firstTreeIndex;
@@ -101,7 +118,7 @@ public final class DiscoDecomposer {
 
             TreeNode root = copyTree(input.root, null);
             List<TreeNode> postorder = binaryPostorder(root);
-            CutPlan plan = chooseDuplicationCuts(postorder, totalTaxa, lineageScoped);
+            CutPlan plan = chooseDuplicationCuts(postorder, totalTaxa, completionScope);
             IdentityHashMap<TreeNode, Boolean> detachLeft = plan.detachLeft();
             List<TreeNode> componentRoots = new ArrayList<>(detachLeft.size() + 1);
 
@@ -142,7 +159,8 @@ public final class DiscoDecomposer {
 
     /** Record each DISCO cut while retaining only the live frontier taxon sets. */
     private static CutPlan chooseDuplicationCuts(
-            List<TreeNode> postorder, int totalTaxa, boolean lineageScoped) {
+            List<TreeNode> postorder, int totalTaxa, CompletionScope completionScope) {
+        boolean lineageScoped = completionScope != CompletionScope.GLOBAL;
         IdentityHashMap<TreeNode, Set<Integer>> liveTaxa = new IdentityHashMap<>();
         IdentityHashMap<TreeNode, Boolean> detachLeft = new IdentityHashMap<>();
         IdentityHashMap<TreeNode, long[]> scopes = lineageScoped
@@ -166,9 +184,15 @@ public final class DiscoDecomposer {
                 boolean cutLeft = left.size() < right.size();
                 detachLeft.put(node, cutLeft);
                 if (lineageScoped) {
-                    // One packed scope per detached component survives merging.
-                    scopes.put(cutLeft ? node.left : node.right,
-                        packTaxa(cutLeft ? left : right, totalTaxa));
+                    // Save before small-to-large merging mutates either child.
+                    // S4's LINEAGE scope stays at the detached child's root;
+                    // S6's DUPLICATION scope also includes its sister locus.
+                    long[] scope = packTaxa(cutLeft ? left : right, totalTaxa);
+                    if (completionScope == CompletionScope.DUPLICATION) {
+                        for (int taxon : cutLeft ? right : left)
+                            scope[taxon >>> 6] |= 1L << taxon;
+                    }
+                    scopes.put(cutLeft ? node.left : node.right, scope);
                 }
             }
             if (left.size() < right.size()) {
@@ -254,7 +278,7 @@ public final class DiscoDecomposer {
             return new Tree(treeIndex, root, postorderArray, positionMap,
                 leafCount, totalTaxa);
         }
-        // Only taxa absent after cuts within this lineage need completion.
+        // Only absent taxa inside the saved lineage/duplication scope need completion.
         int used = originalScope.length;
         while (used > 0 && originalScope[used - 1] == 0L) used--;
         long[] missing = used == 0 ? NO_MISSING_TAXA

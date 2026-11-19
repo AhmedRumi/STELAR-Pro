@@ -191,8 +191,8 @@ public class Main {
             // single-copy trees, and add a UPGMA guide. Only S3 adds greedy
             // consensus candidates; S4 uses triplet similarity for its guide.
             // S5 uses S2 backbones, A-Pro quartet placements, and UPGMA;
-            // S6 uses S4 backbones and triplet placements. Neither adds S1
-            // candidate clusters. S7 adds greedy trees to S2 proposals.
+            // S6 uses subset-local duplication-scoped backbones and triplet
+            // placements. Neither adds S1 clusters. S7 adds greedy trees to S2.
             // S2/S4 now use only lineage-scoped DISCO and UPGMA proposals by
             // default. --exhaustive restores their older S1 plus
             // globally completed DISCO search; S3/S7 retain their own paths.
@@ -249,7 +249,7 @@ public class Main {
                     throw new IllegalArgumentException(
                         "S6 supports one outer DP pass; use --s6-rounds for independent guides");
                 S6S2BBGuideData guideData = S6S2BBGuideData.prepare(
-                    originalTrees, registry, cfg.getS6Rounds(), cfg.isS6SubsetLocal());
+                    originalTrees, registry);
                 System.gc(); // release DISCO/matrix-build scratch
                 s6Support = S6DynamicTripletSupport.build(originalTrees, registry.size(),
                     cfg.getThreadCount());
@@ -257,19 +257,13 @@ public class Main {
                     originalTrees, cfg.getInputFile(), registry,
                     0,
                     cfg.getS6Seed(), cfg.getS6Rounds(), null, guideData);
-                boolean includeUpgma = cfg.isS6IncludeUpgmaCandidate()
-                    && !guideData.localMatrices();
-                List<Tree> candidateTrees = new ArrayList<>(
-                    greedyTrees.size() + (includeUpgma ? 1 : 0));
+                List<Tree> candidateTrees = new ArrayList<>(greedyTrees.size());
                 candidateTrees.addAll(greedyTrees);
-                // UPGMA still builds backbones and partition trees; this flag
-                // changes only the trees admitted to the final candidate DP.
-                if (includeUpgma) candidateTrees.add(guideData.upgmaTree());
                 trees = candidateTrees;
                 Logging.info("S6 candidates: %d rooted triplet-greedy tree(s), "
                     + "%d UPGMA tree(s), no S1 candidates; weights use original genes only",
-                    greedyTrees.size(), includeUpgma ? 1 : 0);
-                guideData = null; // completed DISCO guides and matrix no longer needed
+                    greedyTrees.size(), 0);
+                guideData = null; // uncompleted DISCO pool no longer needed
                 PhaseLogger.end("Phase 1b S6 rooted-triplet greedy proposals", t1b,
                     cfg.getComputeMode() == Config.ComputeMode.GPU);
                 // The one-pass search never reads greedy support again.
@@ -922,6 +916,7 @@ public class Main {
 
     private static boolean parseArgs(String[] args, Config cfg) {
         Config.SearchMode explicitSearchMode = null;
+        boolean explicitSubsetLocal = false; // compatibility alias, S6 is always local
         for (int i = 0; i < args.length; i++) {
             if (args[i].startsWith("--log-file=")) {
                 String path = args[i].substring("--log-file=".length());
@@ -1005,7 +1000,7 @@ public class Main {
                 }
                 case "--s6-no-upgma-candidate" ->
                     cfg.setS6IncludeUpgmaCandidate(false);
-                case "--subsetlocal" -> cfg.setS6SubsetLocal(true);
+                case "--subsetlocal" -> explicitSubsetLocal = true;
                 case "--s7-rounds" -> {
                     if (++i >= args.length) return false;
                     cfg.setS7Rounds(Integer.parseInt(args[i]));
@@ -1138,7 +1133,7 @@ public class Main {
             System.err.println("--s6-no-upgma-candidate requires --search-space S6");
             return false;
         }
-        if (cfg.isS6SubsetLocal() && cfg.getSearchSpace() != Config.SearchSpace.S6) {
+        if (explicitSubsetLocal && cfg.getSearchSpace() != Config.SearchSpace.S6) {
             System.err.println("--subsetlocal requires --search-space S6");
             return false;
         }
@@ -1434,7 +1429,8 @@ public class Main {
                                                  S3 retains global DISCO + S1 + greedy consensus;
                                                  S4 uses S2's scoped candidates with a triplet guide;
                                                  S5 uses S2 backbones, A-Pro placement + UPGMA (no S1);
-                                                 S6 uses S4 backbones, triplet placement + UPGMA (no S1);
+                                                 S6 uses subset-local duplication-scoped backbones,
+                                                 triplet placement + local UPGMA (no S1);
                                                  S7 combines S5 greedy with S2 DISCO/UPGMA
               --s5-rounds N                  Greedy trees per S5 DP pass (default: 4;
                                              >=100 taxa use triplet-DP two-step backbones)
@@ -1443,8 +1439,8 @@ public class Main {
               --s5-adaptive-passes N         Legacy S5 alias: N extra passes (0-5)
               --s6-rounds N                  Rooted-triplet greedy trees per S6 DP pass (default: 4)
               --s6-seed N                    S6 greedy-search random seed
-              --s6-no-upgma-candidate        S6 experiment: omit UPGMA from final DP candidates
-              --subsetlocal                   S6: local similarity/completion; guides-only final DP
+              --s6-no-upgma-candidate        Compatibility alias: S6 final DP uses guides only
+              --subsetlocal                   Compatibility alias: S6 is subset-local by default
               --s7-rounds N                  S7 A-Pro greedy trees (default: 4)
               --s7-seed N                    S7 greedy-search random seed
               --cross-tree-splits             Enable cross-tree DP splits for S2/S4/S5/S6/S7

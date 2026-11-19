@@ -50,15 +50,21 @@ test -s "${WORK}/s4.tre"
 grep -q "Triplet score" "${WORK}/s4.log"
 
 "${JAVA[@]}" --cpu -i "${ROOT}/test/input/stelar_candidate_5taxa.tre" \
-  --search-space S6 --subsetlocal --s6-rounds 1 \
+  --search-space S6 --s6-rounds 1 \
   -o "${WORK}/s6-subsetlocal.tre" >"${WORK}/s6-subsetlocal.log" 2>&1
 test -s "${WORK}/s6-subsetlocal.tre"
 grep -q 'S6 candidates: 1 rooted triplet-greedy tree(s), 0 UPGMA tree(s)' \
   "${WORK}/s6-subsetlocal.log"
 javac -cp "${ROOT}/build" -d "${WORK}" \
-  "${ROOT}/test/stelarx/pro/S6LocalRestrictionTest.java"
+  "${ROOT}/test/stelarx/pro/S6LocalRestrictionTest.java" \
+  "${ROOT}/test/stelarx/pro/S6DuplicationScopeTest.java" \
+  "${ROOT}/test/stelarx/pro/LineageScopeTest.java"
 java -cp "${ROOT}/build:${WORK}" stelarx.pro.S6LocalRestrictionTest \
   >"${WORK}/s6-restriction.log"
+java -cp "${ROOT}/build:${WORK}" stelarx.pro.S6DuplicationScopeTest \
+  >"${WORK}/s6-scope.log"
+java -cp "${ROOT}/build:${WORK}" stelarx.pro.LineageScopeTest \
+  >"${WORK}/s4-scope.log"
 expect_failure subsetlocal-s1 "${JAVA[@]}" --cpu -q \
   -i "${ROOT}/test/input/stelar_candidate_5taxa.tre" --subsetlocal
 grep -qF -- '--subsetlocal requires --search-space S6' \
