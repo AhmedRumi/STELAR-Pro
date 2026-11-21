@@ -53,8 +53,9 @@ grep -q "Triplet score" "${WORK}/s4.log"
   --search-space S6 --s6-rounds 1 \
   -o "${WORK}/s6-subsetlocal.tre" >"${WORK}/s6-subsetlocal.log" 2>&1
 test -s "${WORK}/s6-subsetlocal.tre"
-grep -q 'S6 candidates: 1 rooted triplet-greedy tree(s), 0 UPGMA tree(s)' \
+grep -q 'S6: 5 species (<= 100); using S4' \
   "${WORK}/s6-subsetlocal.log"
+python3 "${ROOT}/test/test_s6_small_switch.py"
 javac -cp "${ROOT}/build" -d "${WORK}" \
   "${ROOT}/test/stelarx/pro/S6LocalRestrictionTest.java" \
   "${ROOT}/test/stelarx/pro/S6DuplicationScopeTest.java" \
@@ -65,10 +66,13 @@ java -cp "${ROOT}/build:${WORK}" stelarx.pro.S6DuplicationScopeTest \
   >"${WORK}/s6-scope.log"
 java -cp "${ROOT}/build:${WORK}" stelarx.pro.LineageScopeTest \
   >"${WORK}/s4-scope.log"
-expect_failure subsetlocal-s1 "${JAVA[@]}" --cpu -q \
-  -i "${ROOT}/test/input/stelar_candidate_5taxa.tre" --subsetlocal
-grep -qF -- '--subsetlocal requires --search-space S6' \
-  "${WORK}/subsetlocal-s1.log"
+for removed_flag in --subsetlocal --s6-no-upgma-candidate; do
+  label="removed-${removed_flag#--}"
+  expect_failure "$label" "${JAVA[@]}" --cpu -q \
+    -i "${ROOT}/test/input/stelar_candidate_5taxa.tre" \
+    --search-space S6 "$removed_flag"
+  grep -qF -- "Unknown arg: $removed_flag" "${WORK}/${label}.log"
+done
 
 for option in --intersection-method --im --weight-intersection-method; do
   label="removed-${option#--}"

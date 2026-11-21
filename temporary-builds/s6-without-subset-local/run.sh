@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Frozen pre-promotion S6; production build.sh does not compile these snapshots.
+# Pre-promotion S6 with the small-species S4 switch; the original jar is retained.
 set -euo pipefail
 S6_ARCHIVE_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd -P)"
 S6_REPO_DIR="$(cd "${S6_ARCHIVE_DIR}/../.." && pwd -P)"
@@ -17,9 +17,9 @@ while [[ $# -gt 0 ]]; do
     *) S6_ARGS+=("$1"); shift ;;
   esac
 done
-echo 'S6 without subset-local (temporary frozen build, 2026-11-19)' >&2
+echo 'S6 without subset-local (temporary build; S4 at <=100 species)' >&2
 exec java -Xms256m "-Xmx${S6_HEAP}" \
   "-Dstelarpro.home=${S6_REPO_DIR}" \
   "-Djava.library.path=${S6_REPO_DIR}/native" \
-  -cp "${S6_ARCHIVE_DIR}/stelar-pro-s6-without-subset-local.jar" \
+  -cp "${S6_ARCHIVE_DIR}/stelar-pro-s6-small-s4.jar" \
   stelarx.Main "${S6_ARGS[@]}" --search-space S6

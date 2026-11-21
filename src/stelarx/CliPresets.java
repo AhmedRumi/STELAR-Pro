@@ -47,7 +47,8 @@ final class CliPresets {
             }
             case "6", "s6" -> {
                 cfg.setSearchSpace(Config.SearchSpace.S6);
-                // S6 independently adds rooted triplet-greedy trees to S1.
+                // S6 uses S4 for <=100 species; larger inputs use
+                // subset-local rooted-triplet greedy guides.
             }
             case "7", "s7" -> {
                 cfg.setSearchSpace(Config.SearchSpace.S7);

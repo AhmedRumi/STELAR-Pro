@@ -203,12 +203,14 @@ public class Banner {
         };
         out.println("    " + row("Search space",  c(WHT, searchSpace)));
         if (cfg.getSearchSpace() == Config.SearchSpace.S6) {
+            out.println("    " + row("Small species sets",
+                c(WHT, "S4 pipeline for 100 or fewer species")));
             out.println("    " + row("S6 guide preparation",
-                c(WHT, "subset-local similarity and completion (no global matrix)")));
+                c(WHT, "subset-local similarity and completion above 100 species")));
             out.println("    " + row("DISCO candidate scope",
-                c(WHT, "observed union below each duplication vertex")));
+                c(WHT, ">100: duplication union; <=100: S4 lineage scope")));
             out.println("    " + row("Final S6 candidate trees",
-                c(WHT, "guide trees only (UPGMA still builds guides)")));
+                c(WHT, ">100: greedy guides only; <=100: S4 candidates")));
         }
         if (cfg.getSearchSpace() == Config.SearchSpace.S2
                 || cfg.getSearchSpace() == Config.SearchSpace.S4) {
@@ -229,7 +231,7 @@ public class Banner {
         if (cfg.getSearchSpace() == Config.SearchSpace.S6) {
             out.println("    " + row("S6 greedy searches", c(WHT,
                 cfg.getS6Rounds() + (cfg.getS6Rounds() == 1 ? " round" : " rounds")
-                    + " (seed " + cfg.getS6Seed() + ")")));
+                    + " (seed " + cfg.getS6Seed() + "; ignored at <=100 species)")));
             out.println("    " + row("Max search passes", c(WHT,
                 Integer.toString(cfg.getMaxSearchPasses()))));
         }

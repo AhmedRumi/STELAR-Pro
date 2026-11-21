@@ -94,8 +94,6 @@ public class Config {
     /** Rooted-triplet greedy proposals per S6 DP pass. */
     private int s6Rounds = 4;
     private long s6Seed = baseSeed;
-    /** Legacy CLI flag; S6 final DP now always uses only its greedy guides. */
-    private boolean s6IncludeUpgmaCandidate = true;
     /** A-Pro greedy proposals used only by the combined S7 search. */
     private int s7Rounds = 4;
     private long s7Seed = baseSeed;
@@ -312,10 +310,6 @@ public class Config {
     }
     public long getS6Seed()                   { return s6Seed; }
     public void setS6Seed(long seed)          { this.s6Seed = seed; }
-    public boolean isS6IncludeUpgmaCandidate() { return s6IncludeUpgmaCandidate; }
-    public void setS6IncludeUpgmaCandidate(boolean value) {
-        this.s6IncludeUpgmaCandidate = value;
-    }
     public int getS7Rounds()                  { return s7Rounds; }
     public void setS7Rounds(int rounds) {
         if (rounds < 1) throw new IllegalArgumentException("--s7-rounds must be positive");

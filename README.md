@@ -180,7 +180,10 @@ original tagged multicopy gene trees. S6 stores speciation-child taxon lists
 and incremental colour counts, not a dense triplet tensor; duplicate copies
 are collapsed within each child species set, and duplication-rooted nodes
 contribute no observations.
-For 100 or more taxa, S6 retains uncompleted DISCO components and builds a
+For 100 or fewer species, selecting S6 runs the normal S4 triplet-guided
+DISCO completion and final DP. The cutoff counts distinct species after input
+restriction, not gene-copy leaves; S6 guide rounds and seed are unused there.
+For more than 100 species, S6 retains uncompleted DISCO components and builds a
 triplet similarity matrix and completed guides only for each backbone subset.
 For a component detached at duplication vertex v, eligible species are the
 original observed union below v, including its sister locus. The residual
@@ -196,14 +199,16 @@ group; partition trees need no completion. Each group matrix is released
 after its UPGMA tree is built. This mode has no global similarity matrix or
 global UPGMA candidate, so the final DP uses the greedy guides only. Cached
 triplet NNI refines the guides. S6 supports one outer DP pass;
-`--s6-rounds N` controls its independent guides. `--subsetlocal` and
-`--s6-no-upgma-candidate` remain accepted compatibility aliases for S6.
-For fewer than 100 species, the existing direct triplet insertion/NNI path
-constructs each guide; no backbone subset or DISCO completion is needed.
+`--s6-rounds N` controls its independent guides. The former `--subsetlocal`
+and `--s6-no-upgma-candidate` flags have been removed; subset-local search and
+guide-only final candidates are now built into S6 above 100 species.
 
 The previous S6 is preserved as **S6 without subset-local** in
 [`temporary-builds/s6-without-subset-local/`](temporary-builds/s6-without-subset-local/README.md).
 Its frozen jar and source snapshots are outside the production source tree.
+The previous **S6 subset-local strict-lineage** variant has a separate
+[`temporary-builds/s6-subset-local-strict/`](temporary-builds/s6-subset-local-strict/README.md)
+launcher. Both temporary launchers use the same S4 switch at 100 or fewer species.
 
 S6 does not use ASTRAL-Pro's quartet placement counter;
 ASTRAL-Pro3 is used only for the common input

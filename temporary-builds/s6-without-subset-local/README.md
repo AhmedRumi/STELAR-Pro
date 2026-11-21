@@ -5,7 +5,13 @@ duplication-scope S6. This jar contains the previous compiled production
 classes. The changed source files are copied under `src/` for review;
 the production build compiles only the repository's top-level `src/`.
 
-Jar SHA-256: `3de19a7b3027b34144e1a5e7b44cc33ab24c8265bb38e7d32fde0421f9d63fba`.
+Original jar SHA-256: `3de19a7b3027b34144e1a5e7b44cc33ab24c8265bb38e7d32fde0421f9d63fba`.
+The launcher now uses `stelar-pro-s6-small-s4.jar`, made by compiling this
+archive's patched `Main.java` against the original jar with
+`rebuild-small-s4.sh`. The original jar remains unchanged. At 100 or fewer
+distinct species, the patched entry point runs the ordinary S4 pipeline;
+above 100, it retains this archive's original global S6 behavior.
+Patched jar SHA-256: `e53b9f81b095630d6457bbc80755c72c734fa6537ffc714409c50ac8be7c3fc4`.
 
 Run from any directory:
 

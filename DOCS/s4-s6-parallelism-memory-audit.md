@@ -9,15 +9,27 @@ below are proposals; they have not been silently substituted into the algorithm.
 | Choice | Candidate construction | Final DP candidates | Scoring observations |
 |---|---|---|---|
 | `--search-space S4` | Strict lineage-scoped DISCO completion, one global triplet similarity matrix, UPGMA | Scoped completed DISCO clades/transitions and UPGMA; no S1 by default | Original rooted/tagged multicopy genes |
-| `--search-space S6` | Subset-local DISCO completion with duplication scope, triplet-DP backbones, triplet placements, local UPGMA partition trees, triplet NNI | Four rooted greedy guides by default; no standalone global UPGMA or S1 candidates | Original rooted/tagged multicopy genes; backbone DP uses their restrictions |
+| `--search-space S6`, <=100 species | Runs the complete S4 path above | S4 candidates | Original rooted/tagged multicopy genes |
+| `--search-space S6`, >100 species | Subset-local DISCO completion with duplication scope, triplet-DP backbones, triplet placements, local UPGMA partition trees, triplet NNI | Four rooted greedy guides by default; no standalone global UPGMA or S1 candidates | Original rooted/tagged multicopy genes; backbone DP uses their restrictions |
 | Temporary **S6 without subset-local** | Previous strict-lineage global DISCO guide pool, shared global triplet matrix and UPGMA | Previous greedy guides plus global UPGMA by default | Same original-gene model |
 
-S6 needs no `--subsetlocal` flag now. That flag remains an accepted S6-only
-compatibility alias. `--s6-no-upgma-candidate` is also an accepted alias because
-the final S6 candidate list already contains only its greedy guides. UPGMA is
-still used inside guide construction. Cross-tree splits remain off by default.
+For 100 or fewer distinct species, selecting S6 runs S4's complete triplet
+similarity, lineage-scoped DISCO, UPGMA and final DP path. At 101 or more,
+it runs the subset-local duplication-scope S6 path described below. The cutoff
+uses the parsed species registry, not the number of gene copies. S6 guide-round
+and seed options have no effect in the S4-sized branch.
+
+The old `--subsetlocal` and `--s6-no-upgma-candidate` flags are removed. Above
+100 species, S6 uses subset-local search and its final candidate list contains
+only greedy guides. UPGMA is still used inside guide construction. Cross-tree
+splits remain off by default.
 S4 retains its existing `--exhaustive` option; its normal strict scope is unchanged.
 The top-level search-space default remains S1; select S4 or S6 explicitly.
+
+`--cross-tree-splits` is independent of S4's `--exhaustive`: it recombines
+whichever candidate clusters the selected S4 source mode produced. For S6
+above 100 species it applies to both the subset-backbone DP and the final
+greedy-guide DP; at 100 or fewer species it applies to the selected S4 path.
 
 For a component detached from duplication vertex v, new S6 saves
 `observed species below v minus species remaining in the component`.
@@ -275,9 +287,9 @@ Opportunities, in likely useful order:
    matrices and scorer states; bounded assignment/group parallelism is a safer
    first improvement.
 
-For n<100, S6 uses direct triplet insertion/NNI. The current orchestration still
-prepares its DISCO pool before that decision; lazily skipping this unused pool
-is another small-input opportunity.
+The old direct triplet insertion/NNI path is no longer selected by the CLI for
+100 or fewer species; those analyses follow S4 before constructing any S6 guide
+data. The internal direct-guide routine remains available to callers.
 
 Code: [S6S2BBGuideData](../src/stelarx/pro/S6S2BBGuideData.java),
 [S6GreedySearch](../src/stelarx/pro/S6GreedySearch.java),

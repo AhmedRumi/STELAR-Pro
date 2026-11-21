@@ -186,6 +186,19 @@ public class Main {
                 return;
             }
 
+            // Small S6 analyses use the complete S4 pipeline. The species
+            // registry (rather than gene-copy leaf count) defines the cutoff.
+            if (cfg.getSearchSpace() == Config.SearchSpace.S6 && !cfg.isScoreOnly()) {
+                if (cfg.getMaxSearchPasses() != 1 || cfg.getS6Rounds() < 1)
+                    throw new IllegalArgumentException(
+                        "S6 requires one outer pass and at least one guide round");
+                if (registry.size() <= 100) {
+                    Logging.info("S6: %d species (<= 100); using S4 triplet-guided "
+                        + "DISCO completion and DP", registry.size());
+                    cfg.setSearchSpace(Config.SearchSpace.S4);
+                }
+            }
+
             // ── Phase 1b: Optional candidate-tree enrichment ─────────────────
             // S2-S4 and S7 decompose multicopy trees with DISCO, complete those
             // single-copy trees, and add a UPGMA guide. Only S3 adds greedy
@@ -1434,15 +1447,17 @@ public class Main {
                                                  S3 retains global DISCO + S1 + greedy consensus;
                                                  S4 uses S2's scoped candidates with a triplet guide;
                                                  S5 uses S2 backbones, A-Pro placement + UPGMA (no S1);
-                                                 S6 uses S4 backbones, triplet placement + UPGMA (no S1);
+                                                 S6 uses S4 for <=100 species; otherwise S4 backbones,
+                                                 triplet placement + UPGMA (no S1);
                                                  S7 combines S5 greedy with S2 DISCO/UPGMA
               --s5-rounds N                  Greedy trees per S5 DP pass (default: 4;
                                              >=100 taxa use triplet-DP two-step backbones)
               --s5-seed N                    S5 greedy-search random seed
               --max-search-passes N          Maximum S5 search/DP passes (default: 1; S6 requires 1)
               --s5-adaptive-passes N         Legacy S5 alias: N extra passes (0-5)
-              --s6-rounds N                  Rooted-triplet greedy trees per S6 DP pass (default: 4)
-              --s6-seed N                    S6 greedy-search random seed
+              --s6-rounds N                  Rooted-triplet greedy trees per S6 DP pass (default: 4;
+                                             unused for <=100 species)
+              --s6-seed N                    S6 greedy-search random seed (unused for <=100)
               --s6-no-upgma-candidate        S6 experiment: omit UPGMA from final DP candidates
               --subsetlocal                   S6: local similarity/completion; guides-only final DP
               --s7-rounds N                  S7 A-Pro greedy trees (default: 4)

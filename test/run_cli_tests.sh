@@ -23,8 +23,10 @@ HELP_TEXT="$(NO_COLOR=1 "${ROOT}/stelar-pro" --help 2>&1)"
 [[ "$HELP_TEXT" == *"S2 (lineage-scoped DISCO/UPGMA candidates)"* ]]
 [[ "$HELP_TEXT" == *"S3 (global DISCO + S1 + greedy consensus)"* ]]
 [[ "$HELP_TEXT" == *"S4 (S2 candidates with rooted-triplet similarity)"* ]]
-[[ "$HELP_TEXT" == *"S5 (A-Pro greedy trees + S1; rooted-triplet DP)"* ]]
+[[ "$HELP_TEXT" == *"S5 (S2-backbone A-Pro guides + UPGMA; triplet DP)"* ]]
 [[ "$HELP_TEXT" == *"--exhaustive"* ]]
+[[ "$HELP_TEXT" != *"--subsetlocal"* ]]
+[[ "$HELP_TEXT" != *"--s6-no-upgma-candidate"* ]]
 [[ "$HELP_TEXT" != *"--full-disco-candidates"* ]]
 [[ "$HELP_TEXT" != *"--intersection-method"* ]]
 [[ "$HELP_TEXT" != *"--weight-intersection-method"* ]]
@@ -104,6 +106,25 @@ NO_COLOR=1 "${ROOT}/stelar-pro" --no-build --cpu \
   >"$S4_CROSS_LOG" 2>&1
 [[ -s "${WORK}/s4-cross.tre" ]]
 grep -Fq 'Phase 5b Cross-tree transitions' "$S4_CROSS_LOG"
+for order in cross-first exhaustive-first; do
+  S4_BOTH_LOG="${WORK}/s4-${order}.log"
+  if [[ "$order" == cross-first ]]; then
+    options=(--cross-tree-splits --exhaustive)
+  else
+    options=(--exhaustive --cross-tree-splits)
+  fi
+  NO_COLOR=1 "${ROOT}/stelar-pro" --no-build --cpu \
+    -i "${ROOT}/test/input/stelar_candidate_5taxa.tre" \
+    -o "${WORK}/s4-${order}.tre" --search-space S4 "${options[@]}" \
+    >"$S4_BOTH_LOG" 2>&1
+  [[ -s "${WORK}/s4-${order}.tre" ]]
+  grep -Fq 'all species + S1 candidates (--exhaustive)' "$S4_BOTH_LOG"
+  grep -Fq 'Phase 5b Cross-tree transitions' "$S4_BOTH_LOG"
+done
+for removed_flag in --subsetlocal --s6-no-upgma-candidate; do
+  expect_launcher_failure "removed-${removed_flag#--}" 'Unknown option' \
+    --search-space S6 "$removed_flag"
+done
 javac -cp "${ROOT}/build" -d "$WORK" \
   "${ROOT}/test/TripletSimilarityTest.java"
 java -cp "${ROOT}/build:${WORK}" TripletSimilarityTest >/dev/null 2>&1

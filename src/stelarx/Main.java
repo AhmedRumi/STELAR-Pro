@@ -186,6 +186,19 @@ public class Main {
                 return;
             }
 
+            // Small S6 analyses use the complete S4 pipeline. The species
+            // registry (rather than gene-copy leaf count) defines the cutoff.
+            if (cfg.getSearchSpace() == Config.SearchSpace.S6 && !cfg.isScoreOnly()) {
+                if (cfg.getMaxSearchPasses() != 1 || cfg.getS6Rounds() < 1)
+                    throw new IllegalArgumentException(
+                        "S6 requires one outer pass and at least one guide round");
+                if (registry.size() <= 100) {
+                    Logging.info("S6: %d species (<= 100); using S4 triplet-guided "
+                        + "DISCO completion and DP", registry.size());
+                    cfg.setSearchSpace(Config.SearchSpace.S4);
+                }
+            }
+
             // ── Phase 1b: Optional candidate-tree enrichment ─────────────────
             // S2-S4 and S7 decompose multicopy trees with DISCO, complete those
             // single-copy trees, and add a UPGMA guide. Only S3 adds greedy
@@ -916,7 +929,6 @@ public class Main {
 
     private static boolean parseArgs(String[] args, Config cfg) {
         Config.SearchMode explicitSearchMode = null;
-        boolean explicitSubsetLocal = false; // compatibility alias, S6 is always local
         for (int i = 0; i < args.length; i++) {
             if (args[i].startsWith("--log-file=")) {
                 String path = args[i].substring("--log-file=".length());
@@ -998,9 +1010,6 @@ public class Main {
                     if (++i >= args.length) return false;
                     cfg.setS6Seed(Long.parseLong(args[i]));
                 }
-                case "--s6-no-upgma-candidate" ->
-                    cfg.setS6IncludeUpgmaCandidate(false);
-                case "--subsetlocal" -> explicitSubsetLocal = true;
                 case "--s7-rounds" -> {
                     if (++i >= args.length) return false;
                     cfg.setS7Rounds(Integer.parseInt(args[i]));
@@ -1128,15 +1137,6 @@ public class Main {
         }
         // Search-mode overrides are independent of --search-space argument order.
         if (explicitSearchMode != null) cfg.setSearchMode(explicitSearchMode);
-        if (!cfg.isS6IncludeUpgmaCandidate()
-                && cfg.getSearchSpace() != Config.SearchSpace.S6) {
-            System.err.println("--s6-no-upgma-candidate requires --search-space S6");
-            return false;
-        }
-        if (explicitSubsetLocal && cfg.getSearchSpace() != Config.SearchSpace.S6) {
-            System.err.println("--subsetlocal requires --search-space S6");
-            return false;
-        }
         if (cfg.getInputFile() == null && !cfg.isDiagnose()) return false;
         if (cfg.isExtractTaxa() && cfg.isScoreOnly()) {
             System.err.println("--extract-taxa cannot be combined with --score-species-tree");
@@ -1429,18 +1429,17 @@ public class Main {
                                                  S3 retains global DISCO + S1 + greedy consensus;
                                                  S4 uses S2's scoped candidates with a triplet guide;
                                                  S5 uses S2 backbones, A-Pro placement + UPGMA (no S1);
-                                                 S6 uses subset-local duplication-scoped backbones,
-                                                 triplet placement + local UPGMA (no S1);
+                                                 S6 uses S4 for <=100 species; otherwise subset-local
+                                                 duplication-scoped backbones and triplet placement;
                                                  S7 combines S5 greedy with S2 DISCO/UPGMA
               --s5-rounds N                  Greedy trees per S5 DP pass (default: 4;
                                              >=100 taxa use triplet-DP two-step backbones)
               --s5-seed N                    S5 greedy-search random seed
               --max-search-passes N          Maximum S5 search/DP passes (default: 1; S6 requires 1)
               --s5-adaptive-passes N         Legacy S5 alias: N extra passes (0-5)
-              --s6-rounds N                  Rooted-triplet greedy trees per S6 DP pass (default: 4)
-              --s6-seed N                    S6 greedy-search random seed
-              --s6-no-upgma-candidate        Compatibility alias: S6 final DP uses guides only
-              --subsetlocal                   Compatibility alias: S6 is subset-local by default
+              --s6-rounds N                  Rooted-triplet greedy trees per S6 DP pass (default: 4;
+                                             unused for <=100 species)
+              --s6-seed N                    S6 greedy-search random seed (unused for <=100)
               --s7-rounds N                  S7 A-Pro greedy trees (default: 4)
               --s7-seed N                    S7 greedy-search random seed
               --cross-tree-splits             Enable cross-tree DP splits for S2/S4/S5/S6/S7
